@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StreamMKV · Admin</title>
+<style>
+  :root{--bg:#0d0f13;--panel:#151920;--line:#252b35;--text:#d4d9e1;--dim:#7d8696;--accent:#4a9eff;--ok:#5fd38d;--warn:#ffc163;--bad:#ff7a7a}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+  a{color:var(--accent)}
+  header{display:flex;align-items:center;gap:12px;padding:14px 22px;border-bottom:1px solid var(--line);background:#11141a;position:sticky;top:0;z-index:5}
+  header h1{font-size:17px;margin:0;color:#fff;letter-spacing:.3px}
+  header .sp{flex:1}
+  .ver{color:var(--dim);font-size:12px}
+  main{max-width:1180px;margin:0 auto;padding:22px}
+  button,.btn{background:#1d232d;color:var(--text);border:1px solid #2c3440;border-radius:7px;padding:6px 11px;font:inherit;cursor:pointer;white-space:nowrap}
+  button:hover{background:#262d39}
+  button.primary{background:#2b6fd6;border-color:#2b6fd6;color:#fff}
+  button.danger{color:var(--bad)}
+  button:disabled{opacity:.5;cursor:default}
+  input[type=text],input[type=password]{background:#0b0d11;border:1px solid #2c3440;border-radius:7px;color:#fff;padding:7px 10px;font:inherit}
+  input:focus{outline:none;border-color:var(--accent)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:22px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .card .k{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.6px}
+  .card .v{font-size:22px;color:#fff;margin-top:4px;font-variant-numeric:tabular-nums}
+  .card .s{color:var(--dim);font-size:12px;margin-top:2px;word-break:break-word}
+  .bar{height:6px;background:#262c36;border-radius:3px;overflow:hidden;margin-top:8px}
+  .bar>i{display:block;height:100%;background:var(--accent)}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:22px;overflow:hidden}
+  section>h2{font-size:14px;margin:0;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;color:#fff}
+  section>h2 .sp{flex:1}
+  .count{background:#252b35;color:var(--dim);border-radius:9px;padding:0 7px;font-size:12px;font-weight:normal}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:9px 16px;border-bottom:1px solid #1d222b;vertical-align:middle}
+  th{color:var(--dim);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  tr:last-child td{border-bottom:none}
+  td.file{max-width:420px;word-break:break-word}
+  .empty{padding:16px;color:var(--dim)}
+  .badge{display:inline-block;font-size:11px;padding:0 7px;border-radius:9px;background:#23402a;color:#8fe0a0;margin-left:6px}
+  .badge.you{background:#1e3352;color:#9cc8ff}
+  .badge.k-transcode,.badge.k-transcode\+burn{background:#4a3a1c;color:#ffcf7a}
+  .badge.k-direct,.badge.k-copy{background:#23402a;color:#8fe0a0}
+  .actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  .dim{color:var(--dim)}
+  .mini{height:4px;width:120px;background:#262c36;border-radius:2px;overflow:hidden;display:inline-block;vertical-align:middle;margin-right:8px}
+  .mini>i{display:block;height:100%;background:var(--accent)}
+  .update{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 16px}
+  .update .msg{flex:1;min-width:240px}
+  .update.avail{background:#1b2a1f}
+  .toggle{display:flex;align-items:center;gap:8px;color:var(--dim);cursor:pointer}
+  form.add{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px;border-top:1px solid var(--line)}
+  #login,#modal{position:fixed;inset:0;display:none;place-items:center;background:rgba(5,6,8,.75);z-index:20}
+  #login.show,#modal.show{display:grid}
+  .box{background:var(--panel);border:1px solid #2c3440;border-radius:12px;padding:22px;width:min(440px,92vw);display:flex;flex-direction:column;gap:12px;max-height:86vh;overflow:auto}
+  .box h3{margin:0;color:#fff;font-size:16px}
+  .box .row{display:flex;gap:8px;justify-content:flex-end}
+  .err{color:var(--bad);min-height:1em;font-size:13px}
+  pre.pw{background:#0b0d11;border:1px solid #2c3440;border-radius:8px;padding:12px;font-size:18px;text-align:center;user-select:all;margin:0;color:#fff}
+  pre.notes{white-space:pre-wrap;background:#0b0d11;border-radius:8px;padding:12px;margin:0;font:13px/1.5 ui-monospace,monospace;color:var(--dim)}
+  #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1d232d;border:1px solid #2c3440;padding:9px 16px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:30}
+  #toast.show{opacity:1}
+  @media (max-width:760px){th.h-m,td.h-m{display:none} main{padding:12px} td,th{padding:8px 10px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>StreamMKV <span class="dim" style="font-weight:normal">Admin</span></h1>
+  <span class="ver" id="ver"></span>
+  <span class="sp"></span>
+  <span class="dim" id="who"></span>
+  <button id="btn-pw">Change password</button>
+  <button id="btn-out">Log out</button>
+</header>
+
+<main id="app" hidden>
+  <section id="update-sec"><div class="update" id="update"></div></section>
+
+  <div class="cards" id="cards"></div>
+
+  <section>
+    <h2>Watching now <span class="count" id="n-watch">0</span></h2>
+    <div id="watching"></div>
+  </section>
+
+  <section>
+    <h2>Connections <span class="count" id="n-conn">0</span><span class="sp"></span><span class="dim" style="font-weight:normal;font-size:12px" id="tx"></span></h2>
+    <div id="conns"></div>
+  </section>
+
+  <section>
+    <h2>Users <span class="count" id="n-users">0</span></h2>
+    <div id="users"></div>
+    <form class="add" id="add-form">
+      <input type="text" name="name" placeholder="username" required pattern="[A-Za-z0-9._-]{1,32}" autocomplete="off">
+      <input type="password" name="password" placeholder="password (blank = generate)" autocomplete="new-password">
+      <label class="toggle"><input type="checkbox" name="admin"> admin</label>
+      <button class="primary">Add user</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Recently watched <span class="dim" style="font-weight:normal;font-size:12px">· last 7 days</span></h2>
+    <div id="recent"></div>
+  </section>
+</main>
+
+<main id="self" hidden>
+  <section><h2>My account</h2>
+    <div class="empty">You are signed in as <b id="self-name"></b>. Only admins can manage the server.
+      Use <b>Change password</b> above to update your password.</div>
+  </section>
+</main>
+
+<div id="login"><form class="box" id="login-form">
+  <h3>Sign in to StreamMKV</h3>
+  <input type="text" name="username" placeholder="Username" autocomplete="username" required>
+  <input type="password" name="password" placeholder="Password" autocomplete="current-password" required>
+  <div class="err"></div>
+  <div class="row"><button class="primary">Sign in</button></div>
+</form></div>
+
+<div id="modal"><div class="box" id="modal-box"></div></div>
+<div id="toast"></div>
+
+<script>
+(() => {
+  const BASE = location.pathname.replace(/admin\/?$/, '');
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const size = (b) => { const u = ['B','KB','MB','GB','TB','PB']; let i = 0; b = +b || 0; while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; } return b.toFixed(i >= 3 ? 1 : 0) + ' ' + u[i]; };
+  const tm = (s) => { s = Math.max(0, Math.floor(s || 0)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+  const ago = (t) => { if (!t) return '—'; const d = Date.now() / 1000 - t; if (d < 60) return 'just now'; if (d < 3600) return Math.floor(d / 60) + ' min ago'; if (d < 86400) return Math.floor(d / 3600) + ' h ago'; return Math.floor(d / 86400) + ' d ago'; };
+  const dur = (t) => { const d = Date.now() / 1000 - t; if (d < 3600) return Math.floor(d / 60) + 'm'; if (d < 86400) return Math.floor(d / 3600) + 'h ' + Math.floor(d % 3600 / 60) + 'm'; return Math.floor(d / 86400) + 'd ' + Math.floor(d % 86400 / 3600) + 'h'; };
+  const base = (p) => String(p).split('/').pop();
+  const agent = (a) => /StreamMKV|mpv|libmpv|Lavf/i.test(a) ? 'app' : /Firefox/.test(a) ? 'Firefox' : /Edg\//.test(a) ? 'Edge' : /Chrome/.test(a) ? 'Chrome' : /Safari/.test(a) ? 'Safari' : (a || '').slice(0, 24);
+
+  let toastT = 0;
+  function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
+
+  async function api(path, opts = {}) {
+    const r = await fetch(BASE + 'api/' + path, {
+      method: opts.method || 'GET', credentials: 'same-origin',
+      headers: opts.body ? { 'Content-Type': 'application/json' } : {},
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    if (r.status === 401 && !opts.noLogin) { showLogin(); throw new Error('unauthorized'); }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    return j;
+  }
+
+  // ---------------------------------------------------------- modal
+  function modal(html, bind) {
+    const m = $('#modal'), b = $('#modal-box');
+    b.innerHTML = html;
+    m.classList.add('show');
+    const close = () => m.classList.remove('show');
+    b.querySelectorAll('[data-close]').forEach((el) => el.onclick = close);
+    bind && bind(b, close);
+    const f = b.querySelector('input'); f && f.focus();
+    return close;
+  }
+  $('#modal').addEventListener('mousedown', (e) => { if (e.target.id === 'modal') e.currentTarget.classList.remove('show'); });
+  function showPassword(title, name, pw) {
+    modal(`<h3>${esc(title)}</h3><div class="dim">Password for <b>${esc(name)}</b> — shown only once:</div>
+      <pre class="pw">${esc(pw)}</pre><div class="row"><button id="cp">Copy</button><button class="primary" data-close>Done</button></div>`,
+      (b) => b.querySelector('#cp').onclick = () => navigator.clipboard.writeText(pw).then(() => toast('Copied')));
+  }
+  function confirmBox(text, label, fn, danger = true) {
+    modal(`<h3>${esc(text)}</h3><div class="row"><button data-close>Cancel</button><button class="${danger ? 'danger' : 'primary'}" id="ok">${esc(label)}</button></div>`,
+      (b, close) => b.querySelector('#ok').onclick = async () => { close(); try { await fn(); } catch (e) { toast(e.message); } });
+  }
+
+  // ---------------------------------------------------------- auth
+  function showLogin() { $('#login').classList.add('show'); $('#login-form').username.focus(); }
+  $('#login-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target, err = f.querySelector('.err');
+    err.textContent = '';
+    try {
+      await api('login', { method: 'POST', body: { username: f.username.value.trim(), password: f.password.value }, noLogin: true });
+      $('#login').classList.remove('show');
+      boot();
+    } catch (x) { err.textContent = x.message; }
+  };
+  $('#btn-out').onclick = async () => { await api('logout', { method: 'POST' }).catch(() => {}); location.reload(); };
+  $('#btn-pw').onclick = () => modal(`<h3>Change password</h3>
+      <input type="password" id="o" placeholder="Current password" autocomplete="current-password">
+      <input type="password" id="n" placeholder="New password (min 6)" autocomplete="new-password">
+      <div class="dim" style="font-size:12px">Other devices will be signed out.</div>
+      <div class="err" id="e"></div><div class="row"><button data-close>Cancel</button><button class="primary" id="ok">Change</button></div>`,
+    (b, close) => b.querySelector('#ok').onclick = async () => {
+      try { await api('me/password', { method: 'POST', body: { old: b.querySelector('#o').value, new: b.querySelector('#n').value } }); close(); toast('Password changed'); }
+      catch (x) { b.querySelector('#e').textContent = x.message; }
+    });
+
+  // ---------------------------------------------------------- render
+  let me = null, timer = 0;
+
+  function renderUpdate(u) {
+    const el = $('#update'), sec = $('#update-sec');
+    el.className = 'update' + (u.available ? ' avail' : '');
+    let msg;
+    if (u.installing) msg = `<b>Installing update…</b> the server restarts by itself.`;
+    else if (u.available) msg = `<b>StreamMKV ${esc(u.latest.version)} is available</b> <span class="dim">· you run ${esc(u.current)}</span>`;
+    else if (u.latest) msg = `<b>Up to date</b> <span class="dim">· ${esc(u.current)} · checked ${ago(u.lastCheck)}</span>`;
+    else msg = `<b>Version ${esc(u.current)}</b> <span class="dim">· not checked yet</span>`;
+    if (u.error) msg += `<div style="color:var(--bad);font-size:12px">${esc(u.error)}</div>`;
+    if (u.current === 'dev') msg += `<div class="dim" style="font-size:12px">Development build — automatic updates are disabled.</div>`;
+    el.innerHTML = `<div class="msg">${msg}</div>
+      <label class="toggle" title="Install new releases automatically when nobody is watching"><input type="checkbox" id="auto" ${u.autoUpdate ? 'checked' : ''}> Auto-update</label>
+      ${u.latest ? `<button id="notes">Release notes</button>` : ''}
+      <button id="chk">Check now</button>
+      ${u.available && u.supported ? `<button class="primary" id="inst">Update now</button>` : ''}`;
+    el.querySelector('#auto').onchange = async (e) => {
+      try { renderUpdate(await api('admin/settings', { method: 'POST', body: { autoUpdate: e.target.checked } })); toast('Saved'); } catch (x) { toast(x.message); }
+    };
+    el.querySelector('#chk').onclick = async () => { try { renderUpdate(await api('admin/update/check', { method: 'POST' })); } catch (x) { toast(x.message); } };
+    const n = el.querySelector('#notes');
+    if (n) n.onclick = () => modal(`<h3>StreamMKV ${esc(u.latest.version)}</h3><div class="dim">${esc((u.latest.date || '').slice(0, 10))} · <a href="${esc(u.latest.url)}" target="_blank" rel="noopener">GitHub</a></div><pre class="notes">${esc(u.latest.notes || '—')}</pre><div class="row"><button data-close>Close</button></div>`);
+    const i = el.querySelector('#inst');
+    if (i) i.onclick = () => confirmBox(`Update to ${u.latest.version} now? Active streams will stop for a few seconds.`, 'Update', installUpdate, false);
+    sec.hidden = false;
+  }
+
+  async function installUpdate() {
+    const target = (await api('admin/update')).latest.version;
+    await api('admin/update/install', { method: 'POST' });
+    clearInterval(timer);
+    $('#update').innerHTML = `<div class="msg"><b>Installing ${esc(target)}…</b> <span class="dim">waiting for the server to come back</span></div>`;
+    const t0 = Date.now();
+    const poll = async () => {
+      try {
+        const m = await api('me', { noLogin: true });
+        if (m.version === target) { toast('Updated to ' + target); return boot(); }
+      } catch (e) {}
+      if (Date.now() - t0 > 180000) { toast('Update did not finish — check the server log'); return boot(); }
+      setTimeout(poll, 2000);
+    };
+    setTimeout(poll, 2000);
+  }
+
+  function renderOverview(o) {
+    const lib = o.library || {}, d = o.disk || {};
+    const used = d.total ? (1 - d.free / d.total) : 0;
+    $('#ver').textContent = 'v' + o.version;
+    $('#cards').innerHTML = [
+      ['Users', o.users, ''],
+      ['Library', lib.files + ' files', size(lib.bytes)],
+      ['Disk', d.total ? size(d.free) + ' free' : '—', d.total ? `of ${size(d.total)}<div class="bar"><i style="width:${(used * 100).toFixed(1)}%"></i></div>` : ''],
+      ['Streams', o.conns.length, `${o.transcodes}/${o.maxStreams} ffmpeg slots busy`],
+      ['Uptime', dur(o.started), 'memory ' + size(o.memory)],
+      ['ffmpeg', `<span style="font-size:15px">${esc(o.ffmpeg)}</span>`, 'subtitle cache ' + size(lib.cacheBytes)],
+    ].map(([k, v, s]) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+
+    $('#n-watch').textContent = o.watching.length;
+    $('#watching').innerHTML = o.watching.length ? `<table><tr><th>User</th><th>File</th><th>Position</th><th class="h-m">Updated</th></tr>${
+      o.watching.map((w) => `<tr><td>${esc(w.user)}</td><td class="file" title="${esc(w.path)}">${esc(base(w.path))}</td>
+        <td><span class="mini"><i style="width:${w.duration ? (w.pos / w.duration * 100).toFixed(1) : 0}%"></i></span>${tm(w.pos)} / ${tm(w.duration)}</td>
+        <td class="h-m dim">${ago(w.updated)}</td></tr>`).join('')}</table>` : '<div class="empty">Nobody is watching right now.</div>';
+
+    $('#n-conn').textContent = o.conns.length;
+    $('#tx').textContent = o.transcodes ? `${o.transcodes} ffmpeg process${o.transcodes > 1 ? 'es' : ''}` : '';
+    $('#conns').innerHTML = o.conns.length ? `<table><tr><th>User</th><th>File</th><th>Mode</th><th class="h-m">Client</th><th class="h-m">Since</th></tr>${
+      o.conns.map((c) => `<tr><td>${esc(c.user)}</td><td class="file" title="${esc(c.path)}">${esc(base(c.path))}</td>
+        <td><span class="badge k-${esc(c.kind)}">${esc(c.kind)}</span></td>
+        <td class="h-m dim" title="${esc(c.agent)}">${esc(agent(c.agent))} · ${esc(c.remote.replace(/:\d+$/, ''))}</td>
+        <td class="h-m dim">${ago(c.since)}</td></tr>`).join('')}</table>` : '<div class="empty">No open streams.</div>';
+
+    const recent = (o.recent || []).slice(0, 25);
+    $('#recent').innerHTML = recent.length ? `<table><tr><th>User</th><th>File</th><th>Progress</th><th class="h-m">When</th></tr>${
+      recent.map((w) => `<tr><td>${esc(w.user)}</td><td class="file" title="${esc(w.path)}">${esc(base(w.path))}</td>
+        <td>${w.pos ? `<span class="mini"><i style="width:${w.duration ? (w.pos / w.duration * 100).toFixed(1) : 0}%"></i></span>${tm(w.pos)} / ${tm(w.duration)}` : '<span class="dim">finished</span>'}</td>
+        <td class="h-m dim">${ago(w.updated)}</td></tr>`).join('')}</table>` : '<div class="empty">Nothing yet.</div>';
+  }
+
+  function renderUsers(d) {
+    $('#n-users').textContent = d.users.length;
+    $('#users').innerHTML = `<table><tr><th>User</th><th class="h-m">Last seen</th><th class="h-m">Watching</th><th class="h-m">Created</th><th></th></tr>${
+      d.users.map((u) => `<tr data-u="${esc(u.name)}">
+        <td><b>${esc(u.name)}</b>${u.admin ? '<span class="badge">admin</span>' : ''}${u.name === d.me ? '<span class="badge you">you</span>' : ''}
+          ${u.streams ? `<span class="dim"> · ${u.streams} stream${u.streams > 1 ? 's' : ''}</span>` : ''}</td>
+        <td class="h-m dim">${ago(u.lastSeen)}</td>
+        <td class="h-m dim">${u.inProgress} in progress · ${u.watched} total</td>
+        <td class="h-m dim">${new Date(u.created * 1000).toLocaleDateString()}</td>
+        <td><div class="actions">
+          <button data-a="history">History</button>
+          <button data-a="password">Reset password</button>
+          <button data-a="role">${u.admin ? 'Remove admin' : 'Make admin'}</button>
+          <button data-a="revoke" title="Sign this user out on every device">Sign out</button>
+          ${u.name === d.me ? '' : '<button class="danger" data-a="delete">Delete</button>'}
+        </div></td></tr>`).join('')}</table>`;
+    $('#users').querySelectorAll('button[data-a]').forEach((b) => {
+      const name = b.closest('tr').dataset.u, u = d.users.find((x) => x.name === name);
+      b.onclick = () => userAction(b.dataset.a, u);
+    });
+  }
+
+  async function userAction(a, u) {
+    const n = encodeURIComponent(u.name);
+    try {
+      if (a === 'password') {
+        modal(`<h3>Reset password · ${esc(u.name)}</h3>
+          <input type="password" id="p" placeholder="New password (blank = generate)" autocomplete="new-password">
+          <div class="dim" style="font-size:12px">The user will be signed out everywhere.</div>
+          <div class="err" id="e"></div><div class="row"><button data-close>Cancel</button><button class="primary" id="ok">Reset</button></div>`,
+          (b, close) => b.querySelector('#ok').onclick = async () => {
+            try {
+              const pw = b.querySelector('#p').value;
+              const r = await api(`admin/users/${n}/password`, { method: 'POST', body: { password: pw } });
+              close();
+              r.password ? showPassword('Password reset', u.name, r.password) : toast('Password changed');
+            } catch (x) { b.querySelector('#e').textContent = x.message; }
+          });
+      } else if (a === 'role') {
+        await api(`admin/users/${n}/role`, { method: 'POST', body: { admin: !u.admin } });
+        toast(u.admin ? 'Admin removed' : 'Now an admin'); loadUsers();
+      } else if (a === 'revoke') {
+        confirmBox(`Sign ${u.name} out on every device?`, 'Sign out', async () => {
+          await api(`admin/users/${n}/revoke`, { method: 'POST' });
+          if (u.name === me.user) location.reload(); else toast('Signed out');
+        });
+      } else if (a === 'delete') {
+        confirmBox(`Delete ${u.name} and their watch history?`, 'Delete', async () => {
+          await api(`admin/users/${n}`, { method: 'DELETE' }); toast('Deleted'); loadUsers();
+        });
+      } else if (a === 'history') {
+        const h = await api(`admin/users/${n}/progress`);
+        modal(`<h3>History · ${esc(u.name)}</h3>${h.items.length ? `<table>${h.items.map((w) => `<tr><td class="file">${esc(base(w.path))}</td>
+            <td class="dim">${w.pos ? tm(w.pos) + ' / ' + tm(w.duration) : 'finished'}</td><td class="dim">${ago(w.updated)}</td></tr>`).join('')}</table>`
+          : '<div class="dim">No history.</div>'}
+          <div class="row">${h.items.length ? '<button class="danger" id="clr">Clear history</button>' : ''}<button data-close>Close</button></div>`,
+          (b, close) => { const c = b.querySelector('#clr'); if (c) c.onclick = async () => { await api(`admin/users/${n}/progress`, { method: 'DELETE' }); close(); toast('Cleared'); loadUsers(); }; });
+      }
+    } catch (x) { toast(x.message); }
+  }
+
+  $('#add-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    try {
+      const r = await api('admin/users', { method: 'POST', body: { name: f.name.value.trim(), password: f.password.value, admin: f.admin.checked } });
+      const name = f.name.value.trim();
+      f.reset();
+      r.password ? showPassword('User added', name, r.password) : toast('User added');
+      loadUsers();
+    } catch (x) { toast(x.message); }
+  };
+
+  const loadOverview = () => api('admin/overview').then(renderOverview).catch(() => {});
+  const loadUsers = () => api('admin/users').then(renderUsers).catch(() => {});
+  const loadUpdate = () => api('admin/update').then(renderUpdate).catch(() => {});
+
+  async function boot() {
+    try { me = await api('me', { noLogin: true }); } catch (e) { return showLogin(); }
+    $('#who').textContent = me.user;
+    $('#ver').textContent = 'v' + me.version;
+    if (!me.admin) { $('#self').hidden = false; $('#self-name').textContent = me.user; return; }
+    $('#app').hidden = false;
+    await Promise.all([loadOverview(), loadUsers(), loadUpdate()]);
+    clearInterval(timer);
+    let n = 0;
+    timer = setInterval(() => { loadOverview(); if (++n % 3 === 0) loadUsers(); if (n % 12 === 0) loadUpdate(); }, 5000);
+  }
+  boot();
+})();
+</script>
+</body>
+</html>

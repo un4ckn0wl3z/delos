@@ -1,16 +1,42 @@
+# Bump the version with `tools/bump.sh X.Y.Z` and push: this workflow builds the server
+# binaries and Android APKs, attaches them to a draft release and publishes it when complete.
 name: release
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths: ['VERSION']
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Release tag to create (e.g. v1.0.0)'
-        required: true
 permissions:
   contents: write
 jobs:
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      exists: ${{ steps.v.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(tr -d ' \n' < VERSION)
+          echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::VERSION must be X.Y.Z, got '$VERSION'"; exit 1; }
+          US=$(grep -m1 '@version' web/streammkv.user.js | awk '{print $3}')
+          [ "$US" = "$VERSION" ] || { echo "::error::userscript @version ($US) != VERSION ($VERSION) — use tools/bump.sh"; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VERSION" --json isDraft -q .isDraft 2>/dev/null | grep -q false; then
+            echo "::notice::v$VERSION is already published — nothing to do"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
   server:
+    needs: meta
+    if: needs.meta.outputs.exists != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,27 +47,42 @@ jobs:
         run: |
           mkdir -p dist
           for arch in amd64 arm64; do
-            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags="-s -w" -o dist/streammkv-linux-$arch .
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
+              -ldflags="-s -w -X main.version=${{ needs.meta.outputs.version }}" \
+              -o dist/streammkv-linux-$arch .
           done
-          ls -la dist
-      - name: Release
+          (cd dist && sha256sum streammkv-linux-* > SHA256SUMS && cat SHA256SUMS)
+      - name: Draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.meta.outputs.tag }}
         run: |
-          TAG="${{ inputs.tag || github.ref_name }}"
+          cat > notes.md <<NOTES
+          ### Install / upgrade
+          - **Seedbox:** run \`deploy/deploy.cmd\` (Windows) or \`deploy/deploy.sh\` from your PC, or on the seedbox:
+            \`curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/deploy/install.sh | MEDIA_ROOT=~/torrents bash\`
+            Servers with auto-update enabled install this release by themselves.
+          - **Android:** \`streammkv-android-arm64-v8a.apk\` (most phones). The app offers updates automatically.
+          - **Userscript:** Tampermonkey updates it automatically.
+          NOTES
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
           else
-            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --notes "Install on a seedbox (no root):
-          \`\`\`bash
-          curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/deploy/install.sh | MEDIA_ROOT=~/torrents bash
-          \`\`\`
-
-          Android app: install \`streammkv-android-arm64-v8a.apk\` (most phones)."
+            gh release create "$TAG" dist/* --draft --target "$GITHUB_SHA" --title "$TAG" --notes-file notes.md --generate-notes
           fi
+
   android:
-    needs: server
+    needs: [meta, server]
     uses: ./.github/workflows/app.yml
     with:
-      tag: ${{ inputs.tag || github.ref_name }}
+      tag: ${{ needs.meta.outputs.tag }}
+      version: ${{ needs.meta.outputs.version }}
     secrets: inherit
+
+  publish:
+    needs: [meta, android]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ needs.meta.outputs.tag }}" -R "$GITHUB_REPOSITORY" --draft=false --latest

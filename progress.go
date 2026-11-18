@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 )
@@ -22,16 +23,32 @@ type Progress struct {
 type ProgressStore struct {
 	mu    sync.Mutex
 	file  string
-	items map[string]*Progress
+	users map[string]map[string]*Progress // user → path → progress
 	dirty bool
 }
 
-func NewProgressStore(dir string) *ProgressStore {
-	ps := &ProgressStore{file: filepath.Join(dir, "progress.json"), items: map[string]*Progress{}}
+type progressFile struct {
+	Version int                             `json:"version"`
+	Users   map[string]map[string]*Progress `json:"users"`
+}
+
+// NewProgressStore loads progress.json. A v1 file (single-user, path → progress)
+// is migrated to [legacyOwner].
+func NewProgressStore(dir, legacyOwner string) *ProgressStore {
+	ps := &ProgressStore{file: filepath.Join(dir, "progress.json"), users: map[string]map[string]*Progress{}}
 	if b, err := os.ReadFile(ps.file); err == nil {
-		if err := json.Unmarshal(b, &ps.items); err != nil {
-			log.Printf("progress.json unreadable, starting empty: %v", err)
-			ps.items = map[string]*Progress{}
+		var f progressFile
+		if json.Unmarshal(b, &f) == nil && f.Version >= 2 && f.Users != nil {
+			ps.users = f.Users
+		} else {
+			var old map[string]*Progress
+			if err := json.Unmarshal(b, &old); err == nil && legacyOwner != "" {
+				ps.users[legacyOwner] = old
+				ps.dirty = true
+				log.Printf("progress.json: migrated %d entries to user %q", len(old), legacyOwner)
+			} else if err != nil {
+				log.Printf("progress.json unreadable, starting empty: %v", err)
+			}
 		}
 	}
 	go func() { // flush at most every 2s
@@ -48,7 +65,7 @@ func (ps *ProgressStore) flush() {
 		ps.mu.Unlock()
 		return
 	}
-	b, err := json.Marshal(ps.items)
+	b, err := json.Marshal(progressFile{Version: 2, Users: ps.users})
 	ps.dirty = false
 	ps.mu.Unlock()
 	if err != nil {
@@ -60,24 +77,78 @@ func (ps *ProgressStore) flush() {
 	}
 }
 
-func (ps *ProgressStore) Get(path string) *Progress {
+func (ps *ProgressStore) Get(user, path string) *Progress {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	if p, ok := ps.items[path]; ok {
+	if p, ok := ps.users[user][path]; ok {
 		c := *p
 		return &c
 	}
 	return nil
 }
 
-func (ps *ProgressStore) All() map[string]Progress {
+func (ps *ProgressStore) All(user string) map[string]Progress {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	out := make(map[string]Progress, len(ps.items))
-	for k, v := range ps.items {
+	out := make(map[string]Progress, len(ps.users[user]))
+	for k, v := range ps.users[user] {
 		out[k] = *v
 	}
 	return out
+}
+
+// Recent returns entries of every user updated within [within].
+func (ps *ProgressStore) Recent(within time.Duration) []WatchEntry {
+	cut := time.Now().Add(-within).Unix()
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	var out []WatchEntry
+	for u, m := range ps.users {
+		for path, p := range m {
+			if p.Updated >= cut {
+				out = append(out, WatchEntry{User: u, Path: path, Progress: *p})
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Updated > out[j].Updated })
+	return out
+}
+
+type WatchEntry struct {
+	User string `json:"user"`
+	Path string `json:"path"`
+	Progress
+}
+
+// List returns one user's entries, newest first.
+func (ps *ProgressStore) List(user string) []WatchEntry {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	out := []WatchEntry{}
+	for path, p := range ps.users[user] {
+		out = append(out, WatchEntry{User: user, Path: path, Progress: *p})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Updated > out[j].Updated })
+	return out
+}
+
+func (ps *ProgressStore) Count(user string) (total, inProgress int) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	for _, p := range ps.users[user] {
+		total++
+		if p.Pos > 0 {
+			inProgress++
+		}
+	}
+	return
+}
+
+func (ps *ProgressStore) Clear(user string) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	delete(ps.users, user)
+	ps.dirty = true
 }
 
 type progressUpdate struct {
@@ -89,10 +160,15 @@ type progressUpdate struct {
 	Done     bool     `json:"done"`
 }
 
-func (ps *ProgressStore) Update(u progressUpdate) {
+func (ps *ProgressStore) Update(user string, u progressUpdate) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	p := ps.items[u.Path]
+	m := ps.users[user]
+	if m == nil {
+		m = map[string]*Progress{}
+		ps.users[user] = m
+	}
+	p := m[u.Path]
 	if p == nil {
 		p = &Progress{}
 	}
@@ -112,7 +188,7 @@ func (ps *ProgressStore) Update(u progressUpdate) {
 		p.Sub = u.Sub
 	}
 	p.Updated = time.Now().Unix()
-	ps.items[u.Path] = p
+	m[u.Path] = p
 	ps.dirty = true
 }
 
@@ -121,14 +197,14 @@ func (ps *ProgressStore) Update(u progressUpdate) {
 // POST /api/progress            {"path","pos","duration","audio","sub","done"}
 func (s *Server) handleProgressGet(w http.ResponseWriter, r *http.Request) {
 	if p := r.URL.Query().Get("path"); p != "" {
-		if pr := s.progress.Get(p); pr != nil {
+		if pr := s.progress.Get(userOf(r), p); pr != nil {
 			writeJSON(w, 200, pr)
 		} else {
 			writeJSON(w, 200, map[string]any{})
 		}
 		return
 	}
-	writeJSON(w, 200, map[string]any{"items": s.progress.All()})
+	writeJSON(w, 200, map[string]any{"items": s.progress.All(userOf(r))})
 }
 
 func (s *Server) handleProgressPost(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +217,7 @@ func (s *Server) handleProgressPost(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 404, err.Error())
 		return
 	}
-	s.progress.Update(u)
+	s.progress.Update(userOf(r), u)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -158,6 +234,7 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer f.Close()
+	defer s.conns.Add(userOf(r), r, r.URL.Query().Get("path"), "direct")()
 	if filepath.Ext(p) == ".mkv" {
 		w.Header().Set("Content-Type", "video/x-matroska")
 	}

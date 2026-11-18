@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         StreamMKV
 // @namespace    https://github.com/un4ckn0wl3z/streammkv
-// @version      1.1.0
+// @version      1.2.0
 // @description  Watch MKV files from your seedbox in the browser — pick audio tracks and subtitles.
 // @author       un4ckn0wl3z
 // @homepageURL  https://github.com/un4ckn0wl3z/streammkv
@@ -655,6 +655,11 @@
     (async () => {
       await ensureLogin();
       loadList();
+      try {
+        const me = await api('me');
+        $('#smkv-admin').hidden = !me.admin;
+        $('#smkv-side header b').title = `Signed in as ${me.user} · server ${me.version || '?'}`;
+      } catch { /* old server */ }
     })();
   }
 
@@ -664,6 +669,7 @@
   <aside id="smkv-side">
     <header>
       <b>StreamMKV</b><span class="smkv-sp"></span>
+      <a id="smkv-admin" href="admin" target="_blank" title="Admin dashboard" hidden>🛡</a>
       <button id="smkv-refresh" title="Refresh list">⟳</button>
       <button id="smkv-settings" title="Settings">⚙</button>
       <button id="smkv-logout" title="Log out">⏻</button>
@@ -729,6 +735,8 @@ html,body{margin:0;height:100%;background:#0d0f13;color:#c9cfd8;font:14px/1.45 s
 .smkv-sp{flex:1}
 #smkv-app button,#smkv-login button{background:#1c212a;color:#c9cfd8;border:1px solid #2a313c;border-radius:6px;padding:5px 9px;cursor:pointer;font:inherit}
 #smkv-app button:hover{background:#262c37}
+#smkv-admin{text-decoration:none;background:#1c212a;border:1px solid #2a313c;border-radius:6px;padding:4px 8px;font-size:13px}
+#smkv-admin[hidden]{display:none}
 #smkv-search{margin:0 12px 8px;padding:8px 10px;background:#0b0d11;border:1px solid #2a313c;border-radius:6px;color:#fff;font:inherit}
 #smkv-list{overflow:auto;flex:1;padding-bottom:20px}
 .smkv-dir{padding:10px 14px 4px;color:#6f7988;font-size:11px;text-transform:uppercase;letter-spacing:.5px;word-break:break-all}

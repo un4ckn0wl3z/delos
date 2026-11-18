@@ -3,16 +3,17 @@
 package main
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"embed"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -24,7 +25,7 @@ import (
 	"time"
 )
 
-//go:embed web/index.html web/streammkv.user.js
+//go:embed web/index.html web/streammkv.user.js web/admin.html
 var webFS embed.FS
 
 type Config struct {
@@ -48,6 +49,11 @@ type Server struct {
 	cfg      Config
 	media    *Media
 	progress *ProgressStore
+	users    *UserStore
+	conns    *ConnRegistry
+	settings *SettingsStore
+	updater  *Updater
+	started  time.Time
 }
 
 func envOr(k, def string) string {
@@ -58,14 +64,22 @@ func envOr(k, def string) string {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "user" {
+		runUserCLI(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "-version") {
+		fmt.Println("streammkv", version)
+		return
+	}
 	var cfg Config
 	var exts, secret string
 	var maxStreams int
 	flag.StringVar(&cfg.Root, "root", envOr("STREAMMKV_ROOT", "."), "media root directory")
 	flag.StringVar(&cfg.Listen, "listen", envOr("STREAMMKV_LISTEN", ":8090"), "listen address")
-	flag.StringVar(&cfg.User, "user", envOr("STREAMMKV_USER", ""), "login username (required)")
-	flag.StringVar(&cfg.Pass, "pass", envOr("STREAMMKV_PASS", ""), "login password (required)")
-	flag.StringVar(&secret, "secret", envOr("STREAMMKV_SECRET", ""), "token signing secret (random if empty; tokens reset on restart)")
+	flag.StringVar(&cfg.User, "user", envOr("STREAMMKV_USER", ""), "initial admin username (used only when no users exist yet)")
+	flag.StringVar(&cfg.Pass, "pass", envOr("STREAMMKV_PASS", ""), "initial admin password (used only when no users exist yet)")
+	flag.StringVar(&secret, "secret", envOr("STREAMMKV_SECRET", ""), "token signing secret (default: random, saved in <data>/secret.key)")
 	flag.StringVar(&cfg.FFmpeg, "ffmpeg", envOr("STREAMMKV_FFMPEG", "ffmpeg"), "ffmpeg binary")
 	flag.StringVar(&cfg.FFprobe, "ffprobe", envOr("STREAMMKV_FFPROBE", "ffprobe"), "ffprobe binary")
 	flag.StringVar(&cfg.CacheDir, "cache", envOr("STREAMMKV_CACHE", ""), "subtitle cache dir (default: user cache dir)")
@@ -76,9 +90,6 @@ func main() {
 	flag.IntVar(&maxStreams, "max-streams", 3, "max concurrent ffmpeg streams")
 	flag.Parse()
 
-	if cfg.User == "" || cfg.Pass == "" {
-		log.Fatal("-user and -pass (or STREAMMKV_USER / STREAMMKV_PASS) are required")
-	}
 	root, err := filepath.Abs(cfg.Root)
 	if err != nil {
 		log.Fatal(err)
@@ -87,13 +98,6 @@ func main() {
 		log.Fatalf("root %q is not a directory", root)
 	}
 	cfg.Root = root
-	if secret == "" {
-		b := make([]byte, 32)
-		rand.Read(b)
-		cfg.Secret = b
-	} else {
-		cfg.Secret = []byte(secret)
-	}
 	if cfg.CacheDir == "" {
 		d, err := os.UserCacheDir()
 		if err != nil {
@@ -124,14 +128,61 @@ func main() {
 	cfg.MaxStreams = maxStreams
 	cfg.TokenTTL = 30 * 24 * time.Hour
 
-	s := &Server{cfg: cfg, media: NewMedia(&cfg), progress: NewProgressStore(cfg.DataDir)}
+	if secret == "" {
+		// persist a random signing key so sessions survive restarts and self-updates
+		keyFile := filepath.Join(cfg.DataDir, "secret.key")
+		if b, err := os.ReadFile(keyFile); err == nil && len(b) >= 32 {
+			cfg.Secret = b
+		} else {
+			b := make([]byte, 32)
+			rand.Read(b)
+			if err := os.WriteFile(keyFile, b, 0o600); err != nil {
+				log.Printf("warning: cannot save %s: %v (sessions reset on restart)", keyFile, err)
+			}
+			cfg.Secret = b
+		}
+	} else {
+		cfg.Secret = []byte(secret)
+	}
+	users, err := NewUserStore(cfg.DataDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if users.Count() == 0 {
+		if cfg.User == "" || cfg.Pass == "" {
+			log.Fatal("no users yet: set -user and -pass (STREAMMKV_USER / STREAMMKV_PASS) for the first admin, or run `streammkv user add NAME --admin`")
+		}
+		if err := users.AddBootstrap(cfg.User, cfg.Pass); err != nil {
+			log.Fatalf("create admin %q: %v", cfg.User, err)
+		}
+		log.Printf("created admin user %q", cfg.User)
+	}
+	go users.Watch()
+	legacy := cfg.User
+	if legacy == "" {
+		for _, u := range users.List() {
+			if u.Admin {
+				legacy = u.Name
+				break
+			}
+		}
+	}
+	s := &Server{cfg: cfg, media: NewMedia(&cfg), progress: NewProgressStore(cfg.DataDir, legacy),
+		users: users, conns: NewConnRegistry(), started: time.Now(), settings: NewSettingsStore(cfg.DataDir)}
+	s.updater = NewUpdater(s, s.settings)
+	go s.updater.Loop()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /streammkv.user.js", s.handleUserscript)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
-	mux.HandleFunc("GET /api/me", s.auth(func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"user": s.cfg.User}) }))
+	mux.HandleFunc("GET /api/me", s.auth(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "version": version})
+	}))
+	mux.HandleFunc("POST /api/me/password", s.auth(s.handleOwnPassword))
+	mux.HandleFunc("GET /admin", s.handleAdminPage)
+	s.adminRoutes(mux)
 	mux.HandleFunc("GET /api/list", s.auth(s.handleList))
 	mux.HandleFunc("GET /api/probe", s.auth(s.handleProbe))
 	mux.HandleFunc("GET /api/keyframe", s.auth(s.handleKeyframe))
@@ -146,7 +197,7 @@ func main() {
 		Handler:           logRequests(mux),
 		ReadHeaderTimeout: 15 * time.Second,
 	}
-	log.Printf("StreamMKV serving %s on %s (exts=%s)", cfg.Root, cfg.Listen, exts)
+	log.Printf("StreamMKV %s serving %s on %s (exts=%s, %d users)", version, cfg.Root, cfg.Listen, exts, users.Count())
 	if cfg.TLSCert != "" {
 		log.Fatal(srv.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey))
 	}
@@ -199,24 +250,43 @@ func (s *Server) sign(payload string) string {
 	return base64.RawURLEncoding.EncodeToString(m.Sum(nil))
 }
 
-func (s *Server) makeToken() (string, time.Time) {
+type ctxKey int
+
+const (
+	ctxUser ctxKey = iota
+	ctxAdmin
+)
+
+func userOf(r *http.Request) string { v, _ := r.Context().Value(ctxUser).(string); return v }
+func isAdmin(r *http.Request) bool  { v, _ := r.Context().Value(ctxAdmin).(bool); return v }
+
+func (s *Server) makeToken(user string, gen int) (string, time.Time) {
 	exp := time.Now().Add(s.cfg.TokenTTL)
-	payload := base64.RawURLEncoding.EncodeToString([]byte(s.cfg.User + "|" + strconv.FormatInt(exp.Unix(), 10)))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(user + "|" + strconv.FormatInt(exp.Unix(), 10) + "|" + strconv.Itoa(gen)))
 	return payload + "." + s.sign(payload), exp
 }
 
-func (s *Server) validToken(tok string) bool {
+// validToken returns the user name and admin flag for a valid token.
+func (s *Server) validToken(tok string) (string, bool, bool) {
 	payload, sig, ok := strings.Cut(tok, ".")
 	if !ok || !hmac.Equal([]byte(sig), []byte(s.sign(payload))) {
-		return false
+		return "", false, false
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(payload)
 	if err != nil {
-		return false
+		return "", false, false
 	}
-	user, expStr, ok := strings.Cut(string(raw), "|")
-	exp, err := strconv.ParseInt(expStr, 10, 64)
-	return ok && err == nil && user == s.cfg.User && time.Now().Unix() < exp
+	parts := strings.Split(string(raw), "|")
+	if len(parts) != 3 {
+		return "", false, false
+	}
+	exp, err1 := strconv.ParseInt(parts[1], 10, 64)
+	gen, err2 := strconv.Atoi(parts[2])
+	if err1 != nil || err2 != nil || time.Now().Unix() >= exp {
+		return "", false, false
+	}
+	admin, ok := s.users.Valid(parts[0], gen)
+	return parts[0], admin, ok
 }
 
 func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
@@ -231,12 +301,24 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 		if q := r.URL.Query().Get("token"); q != "" {
 			tok = q
 		}
-		if tok == "" || !s.validToken(tok) {
+		user, admin, ok := s.validToken(tok)
+		if tok == "" || !ok {
 			httpErr(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
-		h(w, r)
+		ctx := context.WithValue(context.WithValue(r.Context(), ctxUser, user), ctxAdmin, admin)
+		h(w, r.WithContext(ctx))
 	}
+}
+
+func (s *Server) adminOnly(h http.HandlerFunc) http.HandlerFunc {
+	return s.auth(func(w http.ResponseWriter, r *http.Request) {
+		if !isAdmin(r) {
+			httpErr(w, http.StatusForbidden, "admin only")
+			return
+		}
+		h(w, r)
+	})
 }
 
 func secureReq(r *http.Request) bool {
@@ -249,20 +331,21 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 400, "bad request")
 		return
 	}
-	uOK := subtle.ConstantTimeCompare([]byte(body.Username), []byte(s.cfg.User)) == 1
-	pOK := subtle.ConstantTimeCompare([]byte(body.Password), []byte(s.cfg.Pass)) == 1
-	if !uOK || !pOK {
+	gen, ok := s.users.Authenticate(body.Username, body.Password)
+	if !ok {
 		time.Sleep(time.Second) // slow down brute force
 		log.Printf("failed login from %s", r.RemoteAddr)
 		httpErr(w, 401, "invalid username or password")
 		return
 	}
-	tok, exp := s.makeToken()
+	admin, _ := s.users.Valid(body.Username, gen) // also marks last seen
+	tok, exp := s.makeToken(body.Username, gen)
 	http.SetCookie(w, &http.Cookie{
 		Name: cookieName, Value: tok, Path: "/", Expires: exp,
 		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secureReq(r),
 	})
-	writeJSON(w, 200, map[string]any{"token": tok, "expires": exp.Unix()})
+	log.Printf("login %q from %s", body.Username, r.RemoteAddr)
+	writeJSON(w, 200, map[string]any{"token": tok, "expires": exp.Unix(), "user": body.Username, "admin": admin})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -312,7 +395,7 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 		files = append(files, FileEntry{Path: rel, Name: name, Dir: dir, Size: info.Size(), MTime: info.ModTime().Unix()})
 		return nil
 	})
-	prog := s.progress.All()
+	prog := s.progress.All(userOf(r))
 	for i := range files {
 		if p, ok := prog[files[i].Path]; ok {
 			files[i].Pos, files[i].Duration = p.Pos, p.Duration

@@ -12,6 +12,22 @@
 └────────────────────────────────────────────────┘        └──────────────────────────────────────┘
 ```
 
+## Users & admin dashboard
+
+StreamMKV supports several users. Each user has their own watch progress, resume positions and track choices, and everyone sees the same library.
+
+- **Dashboard:** `http://<server>/admin`. Admins can add users, reset passwords, promote users to admin, sign a user out on every device, and view or clear a user's history. The dashboard also shows who is watching now, the open streams and whether each one is direct or transcode, library and disk stats, and update status. A user who is not an admin only gets a "change password" page there.
+- **CLI on the seedbox:** `~/streammkv/run.sh user list | add NAME [--admin] [--password P] | passwd NAME | admin NAME on|off | revoke NAME | del NAME`. If you leave out the password, a random one is generated. The running server picks up changes within 2 seconds.
+- **Storage:** users are kept in `<data>/users.json` with PBKDF2-SHA256 password hashes. When you change a password or sign a user out, every existing session for that user stops working.
+- **First start:** the first admin is created from `-user/-pass`. After that those flags are ignored. When you upgrade from a single-user install, your existing account becomes the admin and keeps its watch progress.
+
+## Versions & updates
+
+- The `VERSION` file is the single source for the version. `tools/bump.sh X.Y.Z` updates it together with the userscript and app versions. Commit and push, and CI builds the server binaries, `SHA256SUMS` and the APKs. It uploads them to a draft release and publishes the release once everything is there.
+- **Server:** checks GitHub every 6 hours. With auto-update on (the default, which you can toggle in the dashboard), it downloads the new binary, checks it against `SHA256SUMS`, swaps it in and re-execs itself with the same PID. The previous binary is kept as `streammkv.old`. It only installs while nobody is streaming. You can also press **Update now** in the dashboard.
+- **App:** when it starts, it checks the latest release and offers the APK built for your phone's CPU. *Settings → Check for app updates* runs the check by hand. Android does not let sideloaded apps install updates silently, so you still have to tap Install.
+- **Userscript:** Tampermonkey updates it from GitHub through `@updateURL`.
+
 ## Android app
 
 The `app/` folder holds a Flutter app that uses [media_kit](https://github.com/media-kit/media-kit) (libmpv). Install the APK from [Releases](https://github.com/un4ckn0wl3z/streammkv/releases): `streammkv-android-arm64-v8a.apk` works on most phones.
@@ -87,12 +103,13 @@ To keep it running with no systemd: `nohup ... > streammkv.log 2>&1 &` or `scree
 |---|---|---|---|
 | `-root` | `STREAMMKV_ROOT` | `.` | media folder (scanned recursively, hidden folders skipped) |
 | `-listen` | `STREAMMKV_LISTEN` | `:8090` | |
-| `-user` / `-pass` | `STREAMMKV_USER` / `STREAMMKV_PASS` | — | required |
-| `-secret` | `STREAMMKV_SECRET` | random | key for signing tokens. If empty, tokens reset on restart (the userscript logs in again automatically) |
+| `-user` / `-pass` | `STREAMMKV_USER` / `STREAMMKV_PASS` | — | first admin (only used while no users exist) |
+| `-secret` | `STREAMMKV_SECRET` | random, saved in `<data>/secret.key` | key for signing tokens |
 | `-ffmpeg` / `-ffprobe` | `STREAMMKV_FFMPEG` / `STREAMMKV_FFPROBE` | from PATH | |
 | `-ext` | `STREAMMKV_EXT` | `.mkv` | e.g. `.mkv,.mp4,.avi` |
 | `-cache` | `STREAMMKV_CACHE` | `~/.cache/streammkv` | WebVTT cache |
-| `-data` | `STREAMMKV_DATA` | same as cache | `progress.json` (watch progress) |
+| `-data` | `STREAMMKV_DATA` | same as cache | `users.json`, `progress.json`, `settings.json`, `secret.key` |
+| | `STREAMMKV_UPDATE_REPO` | `un4ckn0wl3z/streammkv` | GitHub repo to update from (forks) |
 | `-tls-cert` / `-tls-key` | `STREAMMKV_TLS_CERT` / `_KEY` | — | serve HTTPS directly |
 | `-max-streams` | | `3` | max number of ffmpeg processes at once |
 
@@ -140,7 +157,7 @@ For each file, the server remembers your playback position and the audio/subtitl
 All endpoints except `/`, `/streammkv.user.js` and `/api/login` need auth: the `streammkv` cookie, an `Authorization: Bearer <token>` header, or `?token=`.
 
 ```
-POST /api/login        {"username","password"} → {"token","expires"} + Set-Cookie
+POST /api/login        {"username","password"} → {"token","expires","user","admin"} + Set-Cookie
 GET  /api/list         → {"files":[{path,name,dir,size,mtime}]}
 GET  /api/probe        ?path=            → {duration,start,video,audio[],subs[]}
 GET  /api/keyframe     ?path=&t=         → {"t": keyframe time ≤ t}
@@ -148,5 +165,17 @@ GET  /api/stream       ?path=&audio=N&start=S&v=copy|transcode&burn=N&maxh=1080&
 GET  /api/subtitle     ?path=&sub=N      → text/vtt
 GET  /api/raw          ?path=            → original file (HTTP Range)
 GET  /api/progress     [?path=]          → {"items":{path:{pos,duration,audio,sub,updated}}} or a single entry
-POST /api/progress     {"path","pos","duration","audio","sub" (-1 = off),"done"}
+POST /api/progress     {"path","pos","duration","audio","sub" (-1 = off),"done"}      (per user)
+GET  /api/me                              → {"user","admin","version"}
+POST /api/me/password  {"old","new"}
+
+# admin only
+GET    /api/admin/overview                → stats, connections, watching now, recent
+GET    /api/admin/users                   POST /api/admin/users {"name","password"?,"admin"}
+POST   /api/admin/users/{name}/password   {"password"?}  (blank = generate)
+POST   /api/admin/users/{name}/role       {"admin": bool}
+POST   /api/admin/users/{name}/revoke     DELETE /api/admin/users/{name}
+GET|DELETE /api/admin/users/{name}/progress
+GET    /api/admin/update                  POST /api/admin/update/check | /api/admin/update/install
+POST   /api/admin/settings                {"autoUpdate": bool}
 ```

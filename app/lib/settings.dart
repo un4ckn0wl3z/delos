@@ -35,6 +35,10 @@ class Settings {
   double get subScale => _p.getDouble('subScale') ?? 1.0;
   set subScale(double v) => _p.setDouble('subScale', v);
 
+  /// Release the user chose to skip in the update dialog.
+  String get skipVersion => _p.getString('skipVersion') ?? '';
+  set skipVersion(String v) => _p.setString('skipVersion', v);
+
   bool get loggedIn => server.isNotEmpty && token != null;
 
   Future<void> logout() async {

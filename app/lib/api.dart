@@ -74,6 +74,9 @@ class Api {
   /// Makes sure the token is valid (re-logs in if needed). Call before handing URLs to the player.
   Future<void> ensureSession() => _req('GET', 'me');
 
+  /// {"user","admin","version"} — version is missing on servers older than 1.2.
+  Future<Map<String, dynamic>> me() async => Map<String, dynamic>.from(await _req('GET', 'me') as Map);
+
   Future<List<MediaFile>> list() async {
     final res = await _req('GET', 'list') as Map;
     return (res['files'] as List).map((e) => MediaFile.fromJson(e as Map)).toList();

@@ -122,10 +122,13 @@ STREAMMKV_DATA='$DIR/data'
 EOF
 umask 022
 
+FIRST_INSTALL=1
+[ -f "$DIR/data/users.json" ] && FIRST_INSTALL=0
+
 # ---------------------------------------------------------------- run script
 cat > "$DIR/run.sh" <<'EOF'
 #!/usr/bin/env bash
-# usage: run.sh [start|stop|restart|status|ensure]
+# usage: run.sh [start|stop|restart|status|ensure|version|user ...]
 DIR="$(cd "$(dirname "$0")" && pwd)"
 PID="$DIR/streammkv.pid"
 running() { [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null; }
@@ -144,6 +147,9 @@ case "${1:-start}" in
   restart) stop; sleep 1; start ;;
   status) running && echo "running (pid $(cat "$PID"))" || echo "not running" ;;
   ensure) running || start ;;
+  version) "$DIR/bin/streammkv" version ;;
+  user) shift; set -a; . "$DIR/streammkv.env"; set +a; exec "$DIR/bin/streammkv" user "$@" ;;
+  *) echo "usage: $0 {start|stop|restart|status|version|user ...}"; exit 2 ;;
 esac
 EOF
 chmod +x "$DIR/run.sh"
@@ -161,17 +167,25 @@ else
 fi
 
 HOST="$(hostname -f 2>/dev/null || hostname)"
+URL="http://$HOST:$PORT/"
+G=$(printf '\033[1;32m'); N=$(printf '\033[0m')
+echo
+echo "${G}StreamMKV $("$BIN/streammkv" version | cut -d' ' -f2) is running${N}"
+echo "  URL       : $URL"
+if [ "$FIRST_INSTALL" = 1 ]; then
+  echo "  Admin     : $USER_NAME"
+  echo "  Password  : $PASS"
+else
+  echo "  Users     : unchanged (manage them in the dashboard)"
+fi
 cat <<EOF
-
-$(printf '\033[1;32m')StreamMKV is running$(printf '\033[0m')
-  URL       : http://$HOST:$PORT/
-  Username  : $USER_NAME
-  Password  : $PASS
+  Dashboard : ${URL}admin
   Media     : $MEDIA_ROOT
-  Manage    : $DIR/run.sh {start|stop|restart|status}
+  Manage    : $DIR/run.sh {start|stop|restart|status|version}
+  Users CLI : $DIR/run.sh user {list|add NAME [--admin]|passwd NAME|del NAME}
   Log       : $DIR/streammkv.log
-  Config    : $ENVF
 
-Install the userscript from http://$HOST:$PORT/streammkv.user.js
-then set Server URL / Username / Password in Tampermonkey → StreamMKV settings.
+Userscript : ${URL}streammkv.user.js
+Android app: https://github.com/$REPO/releases/latest
+The server updates itself from GitHub releases (toggle in the dashboard).
 EOF

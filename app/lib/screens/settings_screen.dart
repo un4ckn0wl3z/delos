@@ -1,20 +1,33 @@
 import 'package:flutter/material.dart';
 
+import '../api.dart';
 import '../settings.dart';
+import '../update.dart';
 
 /// Pops `true` when the user chose to sign out.
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, required this.settings});
-  final Settings settings;
+  const SettingsScreen({super.key, required this.api});
+  final Api api;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  Settings get s => widget.settings;
+  Settings get s => widget.api.settings;
   late final _audio = TextEditingController(text: s.audioLang);
   late final _sub = TextEditingController(text: s.subLang);
+  String _server = '…';
+
+  @override
+  void initState() {
+    super.initState();
+    widget.api.me().then((m) {
+      if (mounted) setState(() => _server = '${m['version'] ?? 'older than 1.2'}${m['admin'] == true ? ' · you are admin' : ''}');
+    }).catchError((_) {
+      if (mounted) setState(() => _server = 'unreachable');
+    });
+  }
 
   @override
   void dispose() {
@@ -87,6 +100,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: Text('Comma-separated ISO codes, first match wins. Your choice per movie is remembered '
                 'and synced with the browser.', style: TextStyle(fontSize: 12, color: Color(0xFF7D8696))),
+          ),
+          const _Section('About'),
+          ListTile(title: const Text('App version'), subtitle: Text(appVersion)),
+          ListTile(title: const Text('Server version'), subtitle: Text(_server)),
+          ListTile(
+            leading: const Icon(Icons.system_update),
+            title: const Text('Check for app updates'),
+            onTap: () => checkForUpdate(context, s, manual: true),
           ),
           const _Section('Account'),
           ListTile(title: const Text('Server'), subtitle: Text(s.server)),

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -355,7 +356,12 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 500, "ffmpeg: "+err.Error())
 		return
 	}
-	log.Printf("stream %q start=%.1f audio=%d mode=%s burn=%d", r.URL.Query().Get("path"), start, audio, mode, burn)
+	log.Printf("stream %q user=%s start=%.1f audio=%d mode=%s burn=%d", r.URL.Query().Get("path"), userOf(r), start, audio, mode, burn)
+	kind := mode
+	if burn >= 0 {
+		kind = "transcode+burn"
+	}
+	defer s.conns.Add(userOf(r), r, r.URL.Query().Get("path"), kind)()
 
 	w.Header().Set("Content-Type", "video/mp4")
 	w.Header().Set("Cache-Control", "no-store")
@@ -464,4 +470,53 @@ func (s *Server) handleSubtitle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 	w.Header().Set("Cache-Control", "private, max-age=86400")
 	io.Copy(w, f)
+}
+
+// ---------- active connections (for the admin dashboard) ----------
+
+type Conn struct {
+	ID     int64  `json:"id"`
+	User   string `json:"user"`
+	Path   string `json:"path"`
+	Kind   string `json:"kind"` // direct | copy | transcode | transcode+burn
+	Remote string `json:"remote"`
+	Agent  string `json:"agent"`
+	Since  int64  `json:"since"`
+}
+
+type ConnRegistry struct {
+	mu    sync.Mutex
+	next  int64
+	conns map[int64]*Conn
+}
+
+func NewConnRegistry() *ConnRegistry { return &ConnRegistry{conns: map[int64]*Conn{}} }
+
+// Add registers a connection and returns the function that removes it.
+func (c *ConnRegistry) Add(user string, r *http.Request, path, kind string) func() {
+	remote := r.Header.Get("X-Forwarded-For")
+	if remote == "" {
+		remote = r.RemoteAddr
+	}
+	c.mu.Lock()
+	c.next++
+	id := c.next
+	c.conns[id] = &Conn{ID: id, User: user, Path: path, Kind: kind, Remote: remote, Agent: r.UserAgent(), Since: time.Now().Unix()}
+	c.mu.Unlock()
+	return func() {
+		c.mu.Lock()
+		delete(c.conns, id)
+		c.mu.Unlock()
+	}
+}
+
+func (c *ConnRegistry) List() []Conn {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]Conn, 0, len(c.conns))
+	for _, v := range c.conns {
+		out = append(out, *v)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }

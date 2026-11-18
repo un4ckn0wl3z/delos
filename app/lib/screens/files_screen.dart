@@ -6,6 +6,7 @@ import '../util.dart';
 import 'login_screen.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
+import '../update.dart';
 
 class FilesScreen extends StatefulWidget {
   const FilesScreen({super.key, required this.api});
@@ -22,10 +23,16 @@ class _FilesScreenState extends State<FilesScreen> {
   bool _searching = false;
   final _search = TextEditingController();
 
+  static bool _updateChecked = false;
+
   @override
   void initState() {
     super.initState();
     _load();
+    if (!_updateChecked) {
+      _updateChecked = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => checkForUpdate(context, widget.api.settings));
+    }
   }
 
   Future<void> _load() async {
@@ -132,7 +139,7 @@ class _FilesScreenState extends State<FilesScreen> {
             icon: const Icon(Icons.settings_outlined),
             onPressed: () async {
               final signOut = await Navigator.of(context)
-                  .push<bool>(MaterialPageRoute(builder: (_) => SettingsScreen(settings: widget.api.settings)));
+                  .push<bool>(MaterialPageRoute(builder: (_) => SettingsScreen(api: widget.api)));
               if (signOut == true) _signOut();
             },
           ),

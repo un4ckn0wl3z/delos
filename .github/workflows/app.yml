@@ -10,6 +10,10 @@ on:
         description: Release tag to attach the APKs to
         type: string
         required: false
+      version:
+        description: App version (X.Y.Z)
+        type: string
+        required: false
 permissions:
   contents: write
 jobs:
@@ -45,9 +49,16 @@ jobs:
             echo "::warning::ANDROID_DEBUG_KEYSTORE_B64 secret not set — APK is signed with a throwaway key (updates will need uninstall)"
           fi
       - name: Build APK
+        working-directory: app
         run: |
+          VERSION="${{ inputs.version }}"
+          [ -n "$VERSION" ] || VERSION="$(tr -d ' \n' < ../VERSION)-ci"
+          IFS=. read -r MA MI PA <<< "${VERSION%%-*}"
+          CODE=$(( MA * 10000 + MI * 100 + PA ))   # monotonic Android versionCode
+          echo "version=$VERSION versionCode=$CODE"
           flutter pub get
-          flutter build apk --release --split-per-abi
+          flutter build apk --release --split-per-abi \
+            --build-name="${VERSION%%-*}" --build-number="$CODE" --dart-define=APP_VERSION="$VERSION"
           mkdir -p ../dist
           for abi in arm64-v8a armeabi-v7a x86_64; do
             cp build/app/outputs/flutter-apk/app-$abi-release.apk ../dist/streammkv-android-$abi.apk
@@ -62,4 +73,4 @@ jobs:
         working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ inputs.tag }}" dist/*.apk --clobber
+        run: gh release upload "${{ inputs.tag }}" dist/*.apk --clobber -R "$GITHUB_REPOSITORY"
