@@ -165,7 +165,19 @@ class LibraryRepo {
     return libs!;
   }
 
+  /// Every music library merged into one (the Music side of the app).
+  static final allMusic = LibraryInfo('_all', 'Music', 'music', 0);
+
   Future<LibData> lib(LibraryInfo info, {bool force = false}) async {
+    if (info.id == '_all') {
+      final items = <Item>[];
+      for (final l in (await libraries()).where((l) => l.type == 'music')) {
+        try {
+          items.addAll((await lib(l, force: force)).items);
+        } catch (_) {}
+      }
+      return LibData(info, items, {}, {});
+    }
     if (!force && _data[info.id] != null) return _data[info.id]!;
     LibData d;
     if (info.id == '_legacy') {

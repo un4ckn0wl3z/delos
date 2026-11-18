@@ -31,8 +31,40 @@ if 'android.intent.action.VIEW' not in m:
     </queries>
 </manifest>""", 1)
 
+# audio_service: background music (foreground service + media notification / lock screen)
+if 'xmlns:tools' not in m:
+    m = m.replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android"',
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools"', 1)
+for perm in ("WAKE_LOCK", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PLAYBACK"):
+    if f"android.permission.{perm}\"" not in m:
+        m = re.sub(r"(<manifest[^>]*>)", rf'\1\n    <uses-permission android:name="android.permission.{perm}"/>', m, count=1)
+if "com.ryanheise.audioservice.AudioService" not in m:
+    m = m.replace("</application>", """        <service android:name="com.ryanheise.audioservice.AudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true" tools:ignore="Instantiatable">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService"/>
+            </intent-filter>
+        </service>
+        <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true" tools:ignore="Instantiatable">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON"/>
+            </intent-filter>
+        </receiver>
+    </application>""", 1)
+
 manifest.write_text(m)
 print("patched", manifest)
+
+# audio_service needs its activity subclass to hand media sessions to the engine
+for act in root.glob("android/app/src/main/**/MainActivity.kt"):
+    k = act.read_text()
+    if "AudioServiceActivity" not in k:
+        k = k.replace("import io.flutter.embedding.android.FlutterActivity", "import com.ryanheise.audioservice.AudioServiceActivity")
+        k = re.sub(r":\s*FlutterActivity\(\)", ": AudioServiceActivity()", k)
+        act.write_text(k)
+        print("patched", act)
 
 # flutter create adds a counter-app widget test that doesn't match this app
 test = root / "test/widget_test.dart"

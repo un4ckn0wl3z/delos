@@ -38,9 +38,11 @@ class Api {
     };
     http.Response r;
     try {
-      final f = method == 'GET'
-          ? _client.get(uri, headers: headers)
-          : _client.post(uri, headers: headers, body: jsonEncode(body));
+      final f = switch (method) {
+        'GET' => _client.get(uri, headers: headers),
+        'DELETE' => _client.delete(uri, headers: headers),
+        _ => _client.post(uri, headers: headers, body: jsonEncode(body)),
+      };
       r = await f.timeout(const Duration(seconds: 45));
     } on TimeoutException {
       throw ApiException(0, 'Server did not respond (timeout)');
@@ -118,6 +120,24 @@ class Api {
       });
     } catch (_) {/* best effort */}
   }
+
+  // ---------------------------------------------------------------- downloads (downloader role)
+
+  /// {"jobs": [...], "torrent": {"ok", "version"|"error"}, "libraries": [{id,name,type}]}
+  Future<Map> downloads() async => await _req('GET', 'downloads') as Map;
+
+  Future<List<String>> downloadDirs(String lib) async {
+    final r = await _req('GET', 'downloads/dirs', q: {'lib': lib}) as Map;
+    return List<String>.from(r['dirs'] as List? ?? const []);
+  }
+
+  Future<void> addDownload(String source, String lib, String subdir) =>
+      _req('POST', 'downloads', body: {'source': source, 'lib': lib, 'subdir': subdir});
+
+  Future<void> retryDownload(String id) => _req('POST', 'downloads/${Uri.encodeComponent(id)}/retry', body: const {});
+
+  Future<void> deleteDownload(String id, {bool files = false}) =>
+      _req('DELETE', 'downloads/${Uri.encodeComponent(id)}', q: files ? {'files': '1'} : null);
 
   /// pos 0 = drop it from "Continue watching" (track choices are kept).
   Future<void> clearProgress(String path) => _req('POST', 'progress', body: {'path': path, 'pos': 0});

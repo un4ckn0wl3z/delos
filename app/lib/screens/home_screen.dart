@@ -4,9 +4,11 @@ import '../api.dart';
 import '../audio.dart';
 import '../item_menu.dart';
 import '../library.dart';
+import '../media_session.dart';
 import '../update.dart';
 import '../util.dart';
 import '../widgets.dart';
+import 'downloads.dart';
 import 'login_screen.dart';
 import 'movies.dart';
 import 'music.dart';
@@ -22,6 +24,9 @@ class AppCtx {
   final AudioController audio;
   /// May fix metadata matches (admin or editor role).
   bool editor = false;
+  bool admin = false;
+  /// May add downloads (admin or downloader role).
+  bool downloader = false;
 }
 
 /// Plays a video item; for episodes, offers the next one when it ends.
@@ -57,7 +62,11 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final AppCtx app = AppCtx(widget.api);
   List<LibraryInfo> libs = [];
-  int sel = 0; // 0 = home
+  List<LibraryInfo> get videoLibs => libs.where((l) => l.type != 'music').toList();
+  /// 0 = Videos, 1 = Music, 2 = Downloads — separate sides with their own menus
+  static int section = 0;
+  int _lastMedia = 0;
+  int sel = 0; // Videos: 0 = home, i + 1 = videoLibs[i]
   String? error;
   bool loading = true;
   int reload = 0;
@@ -67,7 +76,14 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _load();
-    widget.api.me().then((m) => app.editor = m['editor'] == true || m['admin'] == true).catchError((_) => false);
+    widget.api.me().then((m) {
+      app.admin = m['admin'] == true;
+      app.editor = m['editor'] == true || app.admin;
+      app.downloader = m['downloader'] == true || app.admin;
+      if (!app.downloader && section == 2) section = 0;
+      if (mounted) setState(() {});
+    }).catchError((_) {});
+    MusicSession.attach(app.audio);
     if (!_updateChecked) {
       _updateChecked = true;
       WidgetsBinding.instance.addPostFrameCallback((_) => checkForUpdate(context, widget.api.settings));
@@ -84,7 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => loading = libs.isEmpty);
     try {
       libs = await app.repo.libraries(force: force);
-      if (sel > libs.length) sel = 0;
+      if (sel > videoLibs.length) sel = 0;
       error = null;
     } on ApiException catch (e) {
       error = e.message;
@@ -127,11 +143,11 @@ class _HomeScreenState extends State<HomeScreen> {
           selected: sel == 0,
           onTap: () => _select(0, drawer),
         ),
-        for (var i = 0; i < libs.length; i++)
+        for (final (i, l) in videoLibs.indexed)
           ListTile(
-            leading: Icon(_icon(libs[i].type)),
-            title: Text(libs[i].name),
-            trailing: libs[i].count > 0 ? Text('${libs[i].count}', style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))) : null,
+            leading: Icon(_icon(l.type)),
+            title: Text(l.name),
+            trailing: l.count > 0 ? Text('${l.count}', style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))) : null,
             selected: sel == i + 1,
             onTap: () => _select(i + 1, drawer),
           ),
@@ -169,8 +185,15 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     }
-    if (sel == 0) return HomeView(key: ValueKey('home$reload'), app: app, libs: libs, open: (i) => setState(() => sel = i + 1));
-    final lib = libs[sel - 1];
+    if (section == 1) {
+      return libs.any((l) => l.type == 'music')
+          ? MusicView(key: ValueKey('music$reload'), app: app, lib: LibraryRepo.allMusic)
+          : const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('No music library yet — an admin can add one (type Music) in the dashboard.'))));
+    }
+    if (section == 2) return DownloadsView(key: ValueKey('dl$reload'), app: app, preferMusic: _lastMedia == 1);
+    final vl = videoLibs;
+    if (sel == 0 || sel > vl.length) return HomeView(key: ValueKey('home$reload'), app: app, libs: vl, open: (i) => setState(() => sel = i + 1));
+    final lib = vl[sel - 1];
     final key = ValueKey('${lib.id}$reload');
     return switch (lib.type) {
       'movies' => MoviesView(key: key, app: app, lib: lib),
@@ -180,34 +203,87 @@ class _HomeScreenState extends State<HomeScreen> {
     };
   }
 
+  void _go(int i) {
+    if (i == section) return;
+    setState(() {
+      if (section != 2) _lastMedia = section;
+      section = i;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.of(context).size.width >= 900;
-    final title = sel == 0 || sel > libs.length ? 'Home' : libs[sel - 1].name;
+    final vl = videoLibs;
+    final title = switch (section) {
+      1 => 'Music',
+      2 => 'Downloads',
+      _ => sel == 0 || sel > vl.length ? 'Home' : vl[sel - 1].name,
+    };
+    final dests = <(IconData, IconData, String)>[
+      (Icons.movie_outlined, Icons.movie, 'Videos'),
+      (Icons.library_music_outlined, Icons.library_music, 'Music'),
+      if (app.downloader) (Icons.download_outlined, Icons.download, 'Downloads'),
+    ];
+    final idx = section.clamp(0, dests.length - 1);
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
-        automaticallyImplyLeading: !wide,
+        automaticallyImplyLeading: !wide && section == 0,
         actions: [
+          // music keeps playing on the Videos side: a shortcut back to it
+          if (section != 1)
+            ListenableBuilder(
+              listenable: app.audio,
+              builder: (_, __) => app.audio.active
+                  ? IconButton(tooltip: 'Music is playing', icon: const Icon(Icons.graphic_eq), onPressed: () => _go(1))
+                  : const SizedBox.shrink(),
+            ),
           IconButton(tooltip: 'Reload', icon: const Icon(Icons.refresh), onPressed: () {
             app.repo.invalidate();
             _load(force: true);
           }),
+          if (section != 0)
+            IconButton(
+              tooltip: 'Settings',
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: () async {
+                final out = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => SettingsScreen(api: widget.api)));
+                if (out == true) _signOut();
+              },
+            ),
         ],
       ),
-      drawer: wide ? null : Drawer(child: SafeArea(child: _nav(true))),
+      drawer: wide || section != 0 ? null : Drawer(child: SafeArea(child: _nav(true))),
       body: Column(children: [
         Expanded(
           child: wide
               ? Row(children: [
-                  SizedBox(width: 240, child: Material(color: const Color(0xFF11141A), child: _nav(false))),
+                  NavigationRail(
+                    selectedIndex: idx,
+                    labelType: NavigationRailLabelType.all,
+                    onDestinationSelected: _go,
+                    destinations: [for (final d in dests) NavigationRailDestination(icon: Icon(d.$1), selectedIcon: Icon(d.$2), label: Text(d.$3))],
+                  ),
                   const VerticalDivider(width: 1),
+                  if (section == 0) ...[
+                    SizedBox(width: 240, child: Material(color: const Color(0xFF11141A), child: _nav(false))),
+                    const VerticalDivider(width: 1),
+                  ],
                   Expanded(child: _body()),
                 ])
               : _body(),
         ),
-        MiniPlayer(audio: app.audio),
+        // the music player lives on the Music side only
+        if (section == 1) MiniPlayer(audio: app.audio),
       ]),
+      bottomNavigationBar: wide
+          ? null
+          : NavigationBar(
+              selectedIndex: idx,
+              onDestinationSelected: _go,
+              destinations: [for (final d in dests) NavigationDestination(icon: Icon(d.$1), selectedIcon: Icon(d.$2), label: d.$3)],
+            ),
     );
   }
 }

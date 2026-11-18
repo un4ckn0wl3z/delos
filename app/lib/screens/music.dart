@@ -54,7 +54,7 @@ class _MusicViewState extends State<MusicView> {
     final genreNames = genres.keys.where((n) => _match([n])).toList()..sort();
 
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Column(children: [
         SearchField(onChanged: (v) => setState(() => q = v), trailing: [
           const SizedBox(width: 8),
@@ -64,9 +64,10 @@ class _MusicViewState extends State<MusicView> {
             onPressed: () => app.audio.playQueue(d!.items, 0, shuffled: true),
           ),
         ]),
-        const TabBar(isScrollable: true, tabs: [Tab(text: 'Albums'), Tab(text: 'Artists'), Tab(text: 'Genres'), Tab(text: 'Songs')]),
+        const TabBar(isScrollable: true, tabs: [Tab(text: 'Listen now'), Tab(text: 'Albums'), Tab(text: 'Artists'), Tab(text: 'Genres'), Tab(text: 'Songs')]),
         Expanded(
           child: TabBarView(children: [
+            _listenNow(context, albums, artists, genres),
             AlbumGrid(app: app, data: d!, albums: albums.where((a) => _match([a.title, a.artist, '${a.year}'])).toList()),
             CardGrid(aspect: 1, minWidth: 150, children: [
               for (final n in artistNames)
@@ -97,6 +98,77 @@ class _MusicViewState extends State<MusicView> {
         ),
       ]),
     );
+  }
+}
+
+extension on _MusicViewState {
+  Widget _listenNow(BuildContext context, List<Album> albums, Map<String, List<Album>> artists, Map<String, List<Album>> genres) {
+    final app = widget.app;
+    final names = artists.keys.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final gs = genres.keys.where((g) => g != 'Unknown').toList()..sort((a, b) => genres[b]!.length.compareTo(genres[a]!.length));
+    return ListView(padding: const EdgeInsets.only(bottom: 24), children: [
+      ListenableBuilder(
+        listenable: app.audio,
+        builder: (context, _) {
+          final t = app.audio.current;
+          if (t == null) return const SizedBox.shrink();
+          return Card(
+            margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            color: const Color(0xFF2A1622),
+            child: ListTile(
+              leading: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: SizedBox(width: 48, height: 48, child: NetImage(app.api.coverUrl(t.cover), headers: app.api.authHeaders, placeholder: t.album)),
+              ),
+              title: Text(t.title.isNotEmpty ? t.title : t.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text(app.audio.playing ? 'Now playing · ${t.artist}' : 'Paused · ${t.artist}', maxLines: 1, overflow: TextOverflow.ellipsis),
+              trailing: IconButton(icon: Icon(app.audio.playing ? Icons.pause : Icons.play_arrow), onPressed: app.audio.toggle),
+              onTap: () => showModalBottomSheet(context: context, isScrollControlled: true, useSafeArea: true, builder: (_) => NowPlaying(audio: app.audio)),
+            ),
+          );
+        },
+      ),
+      const SectionTitle('Recently added'),
+      HRow(itemWidth: 140, aspect: 1, children: [
+        for (final a in albums.take(18))
+          PosterCard(
+            title: a.title,
+            subtitle: a.artist,
+            image: app.api.coverUrl(a.cover),
+            headers: app.api.authHeaders,
+            aspect: 1,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AlbumScreen(app: app, data: d!, album: a))),
+          ),
+      ]),
+      const SectionTitle('Artists'),
+      HRow(itemWidth: 120, aspect: 1, children: [
+        for (final n in names.take(24))
+          PosterCard(
+            title: n,
+            image: app.api.coverUrl(artists[n]!.first.cover),
+            headers: app.api.authHeaders,
+            aspect: 1,
+            round: true,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ArtistScreen(app: app, data: d!, artist: n))),
+          ),
+      ]),
+      if (gs.isNotEmpty) ...[
+        const SectionTitle('Genres'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final g in gs.take(30))
+              ActionChip(
+                label: Text(g),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => Scaffold(appBar: AppBar(title: Text(g)), body: AlbumGrid(app: app, data: d!, albums: genres[g]!))),
+                ),
+              ),
+          ]),
+        ),
+      ],
+    ]);
   }
 }
 
