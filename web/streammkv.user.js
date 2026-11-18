@@ -256,6 +256,12 @@
     }
 
     async function libData(id, force) {
+      if (id === '_all') { // every music library the user can see, merged
+        const ds = await Promise.all(BR.libs.filter((l) => l.type === 'music').map((l) => libData(l.id, force).catch(() => null)));
+        const items = [], edits = {};
+        ds.forEach((d) => { if (d) { items.push(...d.items); Object.assign(edits, d.edits || {}); } });
+        return { items, edits };
+      }
       if (!BR.data[id] || force) {
         if (id === '_legacy') {
           const files = (await api('list')).files;
@@ -275,11 +281,50 @@
       }
     }
 
+    // Two separate sides: Videos (movies / TV / folders + the video player) and
+    // Music (all music libraries merged + its own player).
+    BR.mode = GM_getValue('mode', 'videos');
+    const canDownload = () => !!(BR.me && (BR.me.admin || BR.me.downloader));
+    function modeOf(h) {
+      if (/^#\/downloads/.test(h)) return BR.mode;
+      if (/^#\/(music|album|artist)(\/|$)/.test(h)) return 'music';
+      const m = h.match(/^#\/lib\/([^/]+)/);
+      if (m && libType(decodeURIComponent(m[1])) === 'music') return 'music';
+      return 'videos';
+    }
     function renderNav() {
       const cur = location.hash || '#/';
-      $('#smkv-nav').innerHTML = `<a href="#/" class="${cur === '#/' ? 'on' : ''}">🏠 Home</a>` +
-        BR.libs.map((l) => `<a href="#/lib/${encodeURIComponent(l.id)}" class="${cur.startsWith('#/lib/' + encodeURIComponent(l.id)) ? 'on' : ''}">
-          ${typeIcon[l.type] || '📁'} ${esc(l.name)}<span class="smkv-n">${l.count || ''}</span></a>`).join('');
+      const music = BR.mode === 'music';
+      const a = (href, label, on, n) => `<a href="${href}" class="${on ? 'on' : ''}">${label}${n ? `<span class="smkv-n">${n}</span>` : ''}</a>`;
+      const musicCount = BR.libs.filter((l) => l.type === 'music').reduce((t, l) => t + (l.count || 0), 0);
+      let html = `<div class="smkv-modes"><a href="#/" class="${music ? '' : 'on'}">🎬 Videos</a><a href="#/music" class="${music ? 'on' : ''}">🎵 Music</a></div>`;
+      if (!music) {
+        html += a('#/', '🏠 Home', cur === '#/') + BR.libs.filter((l) => l.type !== 'music').map((l) =>
+          a(`#/lib/${encodeURIComponent(l.id)}`, `${typeIcon[l.type] || '📁'} ${esc(l.name)}`, cur.startsWith('#/lib/' + encodeURIComponent(l.id)), l.count)).join('');
+      } else {
+        const t = (cur.match(/^#\/music\/?([^/]*)/) || [])[1] || '';
+        html += a('#/music', '🎧 Listen now', cur === '#/music' || cur === '#/music/')
+          + a('#/music/albums', '💿 Albums', t === 'albums' || cur.startsWith('#/album/'))
+          + a('#/music/artists', '🎤 Artists', t === 'artists' || cur.startsWith('#/artist/'))
+          + a('#/music/genres', '🏷 Genres', t === 'genres')
+          + a('#/music/songs', '🎵 Songs', t === 'songs', musicCount)
+          + a('#/music/now', `▶ Now playing${A.cur ? '' : ''}`, t === 'now', A.queue.length || '');
+      }
+      if (canDownload()) html += `<div class="smkv-navsep"></div>` + a('#/downloads', '⬇ Downloads', cur.startsWith('#/downloads'));
+      $('#smkv-nav').innerHTML = html;
+      drawMini();
+    }
+    // music keeps playing while you browse videos: a small pill in the sidebar
+    function drawMini() {
+      const m = $('#smkv-mini');
+      if (!m) return;
+      const show = BR.mode !== 'music' && A.cur;
+      m.hidden = !show;
+      if (show) {
+        m.querySelector('b').textContent = A.cur.title || A.cur.name;
+        m.querySelector('div span').textContent = A.cur.artist || '';
+        m.querySelector('button').textContent = A.el.paused ? '▶' : '❚❚';
+      }
     }
 
     // ------------------------------------------------------------ browse: router
@@ -297,11 +342,21 @@
     };
 
     async function route() {
+      BR.mode = modeOf(location.hash || '#/');
+      GM_setValue('mode', BR.mode);
+      document.body.classList.toggle('smkv-music-mode', BR.mode === 'music');
+      document.body.classList.toggle('smkv-video-mode', BR.mode !== 'music');
       renderNav();
       const parts = (location.hash.replace(/^#\/?/, '') || '').split('/').map(decodeURIComponent);
       view.innerHTML = '<div class="smkv-dim">Loading…</div>';
       try {
         if (!parts[0]) return await homeView();
+        if (parts[0] === 'music') {
+          if (!parts[1]) return await musicHome();
+          if (parts[1] === 'now') return nowView();
+          return await musicView('_all', parts[1], parts[2]);
+        }
+        if (parts[0] === 'downloads') return await downloadsView();
         if (parts[0] === 'lib') {
           const t = libType(parts[1]);
           if (t === 'movies') return await moviesView(parts[1], parts[2] || '');
@@ -347,7 +402,7 @@
       setToolbar('', null);
       toolbar.querySelector('#smkv-q').style.display = 'none';
       const videoLibs = BR.libs.filter((l) => l.type !== 'music');
-      const all = await Promise.all(BR.libs.map((l) => libData(l.id).then((d) => ({ l, d })).catch(() => null)));
+      const all = await Promise.all(videoLibs.map((l) => libData(l.id).then((d) => ({ l, d })).catch(() => null)));
       let html = '';
       const cont = [];
       for (const x of all.filter(Boolean)) {
@@ -685,10 +740,11 @@
       return [...m.values()];
     }
 
+    const mbase = (lib) => lib === '_all' ? '#/music' : '#/lib/' + encodeURIComponent(lib);
     async function musicView(lib, tab, arg) {
       const d = await libData(lib);
       const tabs = { albums: 'Albums', artists: 'Artists', genres: 'Genres', songs: 'Songs' };
-      setToolbar(`<div class="smkv-tabs inline">${Object.entries(tabs).map(([k, v]) => `<a href="#/lib/${encodeURIComponent(lib)}/${k}" class="${k === tab ? 'on' : ''}">${v}</a>`).join('')}</div>
+      setToolbar(`<div class="smkv-tabs inline">${Object.entries(tabs).map(([k, v]) => `<a href="${mbase(lib)}/${k}" class="${k === tab ? 'on' : ''}">${v}</a>`).join('')}</div>
         <button id="smkv-shuffle" title="Shuffle everything">🔀 Shuffle all</button>`, draw);
       $('#smkv-shuffle').onclick = () => playQueue(shuffle([...d.items]), 0);
       const albums = albumsOf(d.items);
@@ -710,7 +766,7 @@
         } else if (tab === 'genres') {
           const g = new Map();
           for (const a of albums) for (const x of (a.genres.size ? a.genres : ['Unknown'])) g.set(x, (g.get(x) || 0) + 1);
-          view.innerHTML = `<div class="smkv-chips big">${[...g.entries()].filter(([n]) => matchQ(n)).sort().map(([n, c]) => `<a href="#/lib/${encodeURIComponent(lib)}/genres/${encodeURIComponent(n)}">${esc(n)} <small>${c}</small></a>`).join('')}</div>`;
+          view.innerHTML = `<div class="smkv-chips big">${[...g.entries()].filter(([n]) => matchQ(n)).sort().map(([n, c]) => `<a href="${mbase(lib)}/genres/${encodeURIComponent(n)}">${esc(n)} <small>${c}</small></a>`).join('')}</div>`;
         } else {
           const list = d.items.filter((t) => matchQ(t.title, t.artist, t.album)).sort((a, b) => (a.artist || '').localeCompare(b.artist || '') || (a.album || '').localeCompare(b.album || '') || trackSort(a, b));
           view.innerHTML = trackTable(list, true, lib);
@@ -730,7 +786,7 @@
       root.querySelectorAll('.smkv-tedit').forEach((b) => b.onclick = (ev) => {
         ev.stopPropagation();
         const t = list[+b.dataset.i];
-        editDialog({ lib: lib || t.path.split('/')[0], title: t.title || t.name, keys: [t.path],
+        editDialog({ lib: lib && lib !== '_all' ? lib : t.path.split('/')[0], title: t.title || t.name, keys: [t.path],
           fields: { title: t.title || '', artist: t.artist || '', album: t.album || '', albumArtist: t.albumArtist || '', track: t.track || '', disc: t.disc || '', year: t.year || '', genres: (t.genres || []).join(', ') } });
       });
     }
@@ -738,7 +794,7 @@
     async function albumView(lib, key) {
       const d = await libData(lib);
       const a = albumsOf(d.items).find((x) => x.key === key);
-      setToolbar(`<a class="smkv-back" href="#/lib/${encodeURIComponent(lib)}/albums">← Albums</a>`, draw);
+      setToolbar(`<a class="smkv-back" href="${mbase(lib)}/albums">← Albums</a>`, draw);
       if (!a) { view.innerHTML = '<div class="smkv-dim">Album not found</div>'; return; }
       a.tracks.sort(trackSort);
       function draw() {
@@ -747,12 +803,12 @@
             <div class="smkv-poster sq big">${a.cover ? `<img src="${esc(coverUrl(a.cover))}">` : `<span>${esc(a.album)}</span>`}</div>
             <div><div class="smkv-dim2">ALBUM</div><h2>${esc(a.album)}</h2>
               <div class="smkv-facts"><a href="#/artist/${encodeURIComponent(lib)}/${encodeURIComponent(a.artist)}">${esc(a.artist)}</a>${a.year ? ' · ' + a.year : ''} · ${a.tracks.length} songs · ${fmtTime(total)}</div>
-              <div class="smkv-chips">${[...a.genres].map((g) => `<a href="#/lib/${encodeURIComponent(lib)}/genres/${encodeURIComponent(g)}">${esc(g)}</a>`).join('')}</div>
+              <div class="smkv-chips">${[...a.genres].map((g) => `<a href="${mbase(lib)}/genres/${encodeURIComponent(g)}">${esc(g)}</a>`).join('')}</div>
               <button class="smkv-primary" id="smkv-playall">▶ Play</button> <button id="smkv-shufall">🔀 Shuffle</button>
               ${canEdit() ? '<button id="smkv-aedit">✎ Edit album</button>' : ''}</div></div>
           ${trackTable(a.tracks.filter((t) => matchQ(t.title, t.artist)), false, lib)}`;
         const ae = $('#smkv-aedit');
-        if (ae) ae.onclick = () => editDialog({ lib, title: a.album, keys: a.tracks.map((t) => t.path),
+        if (ae) ae.onclick = () => editDialog({ lib: lib !== '_all' ? lib : a.tracks[0].path.split('/')[0], title: a.album, keys: a.tracks.map((t) => t.path),
           fields: { album: a.album, albumArtist: a.artist, year: a.year || '', genres: [...a.genres].join(', '), cover: '' } });
         bindTracks(view, a.tracks.filter((t) => matchQ(t.title, t.artist)), lib);
         $('#smkv-playall').onclick = () => playQueue(a.tracks, 0);
@@ -765,7 +821,7 @@
       const d = await libData(lib);
       const albums = albumsOf(d.items).filter((a) => a.artist === name).sort((a, b) => (b.year || 0) - (a.year || 0));
       const songs = d.items.filter((t) => t.artist === name || t.albumArtist === name).sort((a, b) => (a.album || '').localeCompare(b.album || '') || trackSort(a, b));
-      setToolbar(`<a class="smkv-back" href="#/lib/${encodeURIComponent(lib)}/artists">← Artists</a>`, draw);
+      setToolbar(`<a class="smkv-back" href="${mbase(lib)}/artists">← Artists</a>`, draw);
       function draw() {
         view.innerHTML = `<div class="smkv-albumhead"><div class="smkv-poster sq big round">${albums[0]?.cover ? `<img src="${esc(coverUrl(albums[0].cover))}">` : `<span>${esc(name)}</span>`}</div>
             <div><div class="smkv-dim2">ARTIST</div><h2>${esc(name)}</h2><div class="smkv-facts">${albums.length} albums · ${songs.length} songs</div>
@@ -778,6 +834,170 @@
         $('#smkv-shufall').onclick = () => playQueue(shuffle([...songs]), 0);
       }
       draw();
+    }
+
+    // ------------------------------------------------------------ music: listen now
+    async function musicHome() {
+      setToolbar('<button id="smkv-shuffle" title="Shuffle every song">🔀 Shuffle all</button>', null);
+      toolbar.querySelector('#smkv-q').style.display = 'none';
+      if (!BR.libs.some((l) => l.type === 'music')) {
+        view.innerHTML = '<div class="smkv-dim">No music library yet — an admin can add one (type <b>Music</b>) in the dashboard.</div>';
+        $('#smkv-shuffle').hidden = true;
+        return;
+      }
+      const d = await libData('_all');
+      $('#smkv-shuffle').onclick = () => { playQueue(shuffle([...d.items]), 0); location.hash = '#/music/now'; };
+      const albums = albumsOf(d.items).sort((a, b) => b.added - a.added);
+      const artists = new Map();
+      for (const a of albums) if (!artists.has(a.artist)) artists.set(a.artist, a);
+      const genres = new Map();
+      for (const a of albums) for (const g of a.genres) genres.set(g, (genres.get(g) || 0) + 1);
+      let html = '';
+      if (A.cur) {
+        const img = coverUrl(A.cur.cover);
+        html += `<a class="smkv-npbanner" href="#/music/now"><div class="smkv-poster sq">${img ? `<img src="${esc(img)}">` : '<span>♪</span>'}</div>
+          <div><div class="smkv-dim2">${A.el.paused ? 'PAUSED' : 'NOW PLAYING'}</div><b>${esc(A.cur.title || A.cur.name)}</b><div class="smkv-dim2">${esc(A.cur.artist || '')}</div></div></a>`;
+      }
+      html += `<h3 class="smkv-h">Recently added · <a href="#/music/albums">all albums</a></h3><div class="smkv-row">${albums.slice(0, 18).map((a) =>
+        posterCard({ key: 'a:' + a.key, title: a.album, sub: a.artist, img: coverUrl(a.cover), square: true })).join('')}</div>`;
+      html += `<h3 class="smkv-h">Artists · <a href="#/music/artists">all</a></h3><div class="smkv-row smkv-artists">${[...artists.values()].slice(0, 18).map((a) =>
+        posterCard({ key: 'r:' + a.artist, title: a.artist, img: coverUrl(a.cover), square: true })).join('')}</div>`;
+      if (genres.size) html += `<h3 class="smkv-h">Genres</h3><div class="smkv-chips big">${[...genres.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([n, c]) =>
+        `<a href="#/music/genres/${encodeURIComponent(n)}">${esc(n)} <small>${c}</small></a>`).join('')}</div>`;
+      view.innerHTML = html;
+      view.querySelectorAll('.smkv-artists .smkv-poster').forEach((p) => p.classList.add('round'));
+      bindCards(view, (k) => {
+        const id = k.slice(2);
+        location.hash = k[0] === 'a' ? `#/album/_all/${encodeURIComponent(id)}` : `#/artist/_all/${encodeURIComponent(id)}`;
+      });
+    }
+
+    // ------------------------------------------------------------ music: now playing
+    function nowView() {
+      setToolbar('', null);
+      toolbar.querySelector('#smkv-q').style.display = 'none';
+      if (!A.cur) { view.innerHTML = '<div class="smkv-dim">Nothing is playing — pick an album, an artist or a song.</div>'; return; }
+      view.innerHTML = `<div class="smkv-now">
+          <div class="smkv-poster sq big" id="smkv-np-cover"></div>
+          <div class="smkv-now-info"><div class="smkv-dim2" id="smkv-np-state">NOW PLAYING</div><h2 id="smkv-np-title"></h2><div class="smkv-facts" id="smkv-np-sub"></div>
+            <input id="smkv-np-seek" type="range" min="0" max="0" step="0.1" value="0">
+            <div class="smkv-np-times"><span id="smkv-np-t">0:00</span><span id="smkv-np-d">0:00</span></div>
+            <div class="smkv-np-btns"><button id="smkv-np-shuf" title="Shuffle what's left">🔀</button><button id="smkv-np-prev" title="Previous">⏮</button>
+              <button id="smkv-np-pp" class="big" title="Play/Pause">▶</button><button id="smkv-np-next" title="Next">⏭</button><button id="smkv-np-rep"></button></div>
+          </div></div>
+        <h3 class="smkv-h">Up next <button id="smkv-np-clear" title="Remove the songs after this one">Clear upcoming</button></h3><div id="smkv-np-queue"></div>`;
+      $('#smkv-np-pp').onclick = aToggle;
+      $('#smkv-np-prev').onclick = aPrev;
+      $('#smkv-np-next').onclick = () => aNext(true);
+      $('#smkv-np-rep').onclick = () => { $('#smkv-arep').click(); drawNow(); };
+      $('#smkv-np-shuf').onclick = () => { A.queue = A.queue.slice(0, A.idx + 1).concat(shuffle(A.queue.slice(A.idx + 1))); drawNow(); toast('Shuffled'); };
+      $('#smkv-np-clear').onclick = () => { A.queue = A.queue.slice(0, A.idx + 1); drawNow(); renderNav(); };
+      const sk = $('#smkv-np-seek');
+      sk.addEventListener('input', () => { A.dragging = true; $('#smkv-np-t').textContent = fmtTime(+sk.value); });
+      sk.addEventListener('change', () => { A.dragging = false; aSeek(+sk.value); });
+      drawNow();
+    }
+    function drawNow() {
+      const title = $('#smkv-np-title');
+      if (!title || !A.cur) return;
+      const t = A.cur, img = coverUrl(t.cover);
+      $('#smkv-np-cover').innerHTML = img ? `<img src="${esc(img)}">` : '<span>♪</span>';
+      title.textContent = t.title || t.name;
+      const artist = t.artist || t.albumArtist;
+      $('#smkv-np-sub').innerHTML = [artist ? `<a href="#/artist/_all/${encodeURIComponent(t.albumArtist || artist)}">${esc(artist)}</a>` : '',
+        t.album ? `<a href="#/album/_all/${encodeURIComponent(albumKey(t))}">${esc(t.album)}</a>` : '', t.year || ''].filter(Boolean).join(' · ');
+      $('#smkv-np-state').textContent = A.el.paused ? 'PAUSED' : 'NOW PLAYING';
+      $('#smkv-np-pp').textContent = A.el.paused ? '▶' : '❚❚';
+      const rb = $('#smkv-np-rep');
+      rb.textContent = A.repeat === 'one' ? '🔂' : '🔁'; rb.classList.toggle('on', A.repeat !== 'off'); rb.title = 'Repeat: ' + A.repeat;
+      const q = $('#smkv-np-queue');
+      q.innerHTML = A.queue.length ? trackTable(A.queue, true) : '';
+      q.querySelectorAll('.smkv-tracks tr').forEach((tr, i) => {
+        tr.classList.toggle('on', i === A.idx);
+        tr.classList.toggle('played', i < A.idx);
+        tr.onclick = () => { A.idx = i; loadTrack(0); };
+      });
+      const on = q.querySelector('tr.on');
+      if (on && !drawNow.scrolled) { on.scrollIntoView({ block: 'nearest' }); drawNow.scrolled = true; }
+    }
+
+    // ------------------------------------------------------------ downloads
+    async function downloadsView() {
+      setToolbar('', null);
+      toolbar.querySelector('#smkv-q').style.display = 'none';
+      if (!canDownload()) { view.innerHTML = '<div class="smkv-dim">Ask an admin for the downloader role.</div>'; return; }
+      let d = await api('downloads');
+      const libs = [...d.libraries].sort((a, b) => ((a.type === 'music') === (BR.mode === 'music') ? 0 : 1) - ((b.type === 'music') === (BR.mode === 'music') ? 0 : 1));
+      view.innerHTML = `<h2 class="smkv-pageh">Downloads</h2>
+        <form id="smkv-dlf" class="smkv-dlform">
+          <input name="source" placeholder="https://… link or magnet:?xt=…" autocomplete="off">
+          <label class="smkv-file" title="Upload a .torrent file"><input type="file" name="file" accept=".torrent,application/x-bittorrent"><span>📎 .torrent</span></label>
+          <select name="lib">${libs.map((l) => `<option value="${esc(l.id)}">${typeIcon[l.type] || '📁'} ${esc(l.name)}</option>`).join('')}</select>
+          <input name="subdir" list="smkv-dldirs" placeholder="folder (optional)" autocomplete="off"><datalist id="smkv-dldirs"></datalist>
+          <button class="smkv-primary">⬇ Download</button>
+        </form>
+        <div class="smkv-dim2" id="smkv-dlrt"></div>
+        <div id="smkv-dllist"></div>`;
+      const f = $('#smkv-dlf');
+      const loadDirs = async () => {
+        try { const r = await api('downloads/dirs', { lib: f.lib.value }); $('#smkv-dldirs').innerHTML = r.dirs.map((x) => `<option value="${esc(x)}">`).join(''); } catch (_) {}
+      };
+      f.lib.onchange = loadDirs; loadDirs();
+      f.file.onchange = () => { f.querySelector('.smkv-file span').textContent = f.file.files[0] ? '📎 ' + f.file.files[0].name : '📎 .torrent'; };
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        try {
+          let r;
+          if (f.file.files[0]) {
+            const fd = new FormData(); fd.append('file', f.file.files[0]); fd.append('lib', f.lib.value); fd.append('subdir', f.subdir.value);
+            r = await fetch(new URL('api/downloads/torrent', BASE), { method: 'POST', body: fd, credentials: 'same-origin' });
+          } else {
+            if (!f.source.value.trim()) return toast('Paste a link or choose a .torrent file');
+            r = await fetch(new URL('api/downloads', BASE), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ source: f.source.value.trim(), lib: f.lib.value, subdir: f.subdir.value }) });
+          }
+          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+          f.source.value = ''; f.file.value = ''; f.file.onchange();
+          toast('Download added'); refresh();
+        } catch (x) { toast(x.message, 5000); }
+      };
+      const state = { queued: 'Queued', downloading: 'Downloading', done: 'Done', failed: 'Failed', canceled: 'Canceled' };
+      function draw() {
+        const t = d.torrent || {};
+        $('#smkv-dlrt').innerHTML = t.ok ? `Torrents go to rtorrent ${esc(t.version || '')}` : `⚠ Torrents unavailable: ${esc(t.error || '')} — http(s) links still work`;
+        const names = Object.fromEntries(d.libraries.map((l) => [l.id, l.name]));
+        $('#smkv-dllist').innerHTML = d.jobs.length ? d.jobs.map((j) => {
+          const pct = j.size > 0 ? Math.min(100, j.done / j.size * 100) : 0;
+          const mine = BR.me.admin || j.user === BR.me.user;
+          return `<div class="smkv-dl ${esc(j.state)}" data-id="${esc(j.id)}">
+            <div class="smkv-dlh"><b>${esc(j.name || j.source)}</b><span class="smkv-dim2">${j.kind} → ${esc(names[j.lib] || j.lib)}${j.subdir ? ' / ' + esc(j.subdir) : ''} · ${esc(j.user)}</span></div>
+            <div class="smkv-pbar big"><i style="width:${pct.toFixed(1)}%"></i></div>
+            <div class="smkv-dlf2"><span class="smkv-dim2">${j.state === 'done' && j.seeding ? 'Seeding' : state[j.state] || j.state}${j.size > 0 ? ` · ${fmtSize(j.done)} / ${fmtSize(j.size)}` : ''}${j.rate > 0 ? ` · ${fmtSize(j.rate)}/s` : ''}${j.error ? ` · <span class="smkv-err">${esc(j.error)}</span>` : ''}</span>
+              ${mine ? `${j.kind === 'http' && (j.state === 'failed' || j.state === 'canceled') ? '<button data-a="retry">Retry</button>' : ''}<button data-a="rm">${j.state === 'queued' || j.state === 'downloading' ? 'Cancel' : 'Remove'}</button>` : ''}</div></div>`;
+        }).join('') : '<div class="smkv-dim">No downloads yet.</div>';
+        $('#smkv-dllist').querySelectorAll('button[data-a]').forEach((b) => b.onclick = async () => {
+          const j = d.jobs.find((x) => x.id === b.closest('.smkv-dl').dataset.id);
+          try {
+            if (b.dataset.a === 'retry') {
+              await apiPost(`downloads/${encodeURIComponent(j.id)}/retry`, {});
+            } else {
+              const files = confirm(`Also delete ${j.state === 'done' ? 'the downloaded files' : 'what was downloaded so far'}?\n\nOK = delete files · Cancel = keep them`);
+              const r = await fetch(new URL(`api/downloads/${encodeURIComponent(j.id)}${files ? '?files=1' : ''}`, BASE), { method: 'DELETE', credentials: 'same-origin' });
+              if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+            }
+            refresh();
+          } catch (x) { toast(x.message, 5000); }
+        });
+      }
+      let timer = null;
+      async function refresh() {
+        clearTimeout(timer);
+        if (!location.hash.startsWith('#/downloads')) return;
+        try { d = await api('downloads'); draw(); } catch (_) {}
+        if (d.jobs.some((j) => j.state === 'queued' || j.state === 'downloading' || j.seeding)) timer = setTimeout(refresh, 3000);
+      }
+      draw();
+      if (d.jobs.some((j) => j.state === 'queued' || j.state === 'downloading')) timer = setTimeout(refresh, 3000);
     }
 
     // ------------------------------------------------------------ plain folders
@@ -870,6 +1090,8 @@
       }
       document.querySelectorAll('.smkv-tracks tr').forEach((tr) => tr.classList.remove('on'));
       document.title = `♪ ${t.title || t.name} — StreamMKV`;
+      drawNow.scrolled = false;
+      drawNow(); drawMini();
     }
     const aTime = () => A.offset + (A.el.currentTime || 0);
     const aDur = () => A.cur?.duration || (isFinite(A.el.duration) ? A.el.duration : 0);
@@ -889,13 +1111,15 @@
     }
     function aToggle() { if (!A.cur) return; A.el.paused ? A.el.play().catch(() => {}) : A.el.pause(); }
     A.el.addEventListener('ended', () => aNext(false));
-    A.el.addEventListener('play', () => { $('#smkv-app-pp').textContent = '❚❚'; });
-    A.el.addEventListener('pause', () => { $('#smkv-app-pp').textContent = '▶'; });
+    A.el.addEventListener('play', () => { $('#smkv-app-pp').textContent = '❚❚'; drawMini(); drawNow(); });
+    A.el.addEventListener('pause', () => { $('#smkv-app-pp').textContent = '▶'; drawMini(); drawNow(); });
     A.el.addEventListener('timeupdate', () => {
       const t = aTime(), dd = aDur();
       const s = $('#smkv-aseek');
       if (!A.dragging) { s.max = String(dd || 0); s.value = String(t); s.style.setProperty('--p', (dd ? t / dd * 100 : 0) + '%'); }
       $('#smkv-atime').textContent = `${fmtTime(t)} / ${fmtTime(dd)}`;
+      const ns = $('#smkv-np-seek');
+      if (ns && !A.dragging) { ns.max = String(dd || 0); ns.value = String(t); ns.style.setProperty('--p', (dd ? t / dd * 100 : 0) + '%'); $('#smkv-np-t').textContent = fmtTime(t); $('#smkv-np-d').textContent = fmtTime(dd); }
     });
     A.el.addEventListener('error', () => {
       if (!A.cur || !A.el.getAttribute('src')) return;
@@ -916,8 +1140,13 @@
     function drawRepeat() { const b = $('#smkv-arep'); b.textContent = repeatIcon[A.repeat]; b.classList.toggle('on', A.repeat !== 'off'); b.title = 'Repeat: ' + A.repeat; }
     $('#smkv-arep').onclick = () => { A.repeat = { off: 'all', all: 'one', one: 'off' }[A.repeat]; GM_setValue('repeat', A.repeat); drawRepeat(); };
     drawRepeat();
-    $('#smkv-aclose').onclick = () => { A.el.pause(); A.el.removeAttribute('src'); A.cur = null; $('#smkv-abar').classList.remove('show'); document.body.classList.remove('smkv-audio-on'); };
-    $('#smkv-aqueue').onclick = () => {
+    $('#smkv-aclose').onclick = () => { A.el.pause(); A.el.removeAttribute('src'); A.cur = null; A.queue = []; $('#smkv-abar').classList.remove('show'); document.body.classList.remove('smkv-audio-on'); drawMini(); if (location.hash.startsWith('#/music/now')) route(); };
+    // the bar opens the full player; the sidebar pill (videos side) jumps back to music
+    $('#smkv-acover').onclick = () => (location.hash = '#/music/now');
+    $('.smkv-ainfo').onclick = () => (location.hash = '#/music/now');
+    $('#smkv-mini').onclick = (e) => { if (e.target.tagName === 'BUTTON') { e.stopPropagation(); aToggle(); } else location.hash = '#/music/now'; };
+    $('#smkv-aqueue').onclick = () => { location.hash = '#/music/now'; };
+    $('#smkv-aqueue').ondblclick = () => {
       detailModal(`<h2>Queue</h2>${trackTable(A.queue, true)}`, (root, close) => {
         root.querySelectorAll('.smkv-tracks tr').forEach((tr, i) => { tr.classList.toggle('on', i === A.idx); tr.onclick = () => { A.idx = +tr.dataset.i; loadTrack(0); close(); }; });
       });
@@ -1336,6 +1565,7 @@
       <button id="smkv-logout" title="Log out">⏻</button>
     </header>
     <nav id="smkv-nav"></nav>
+    <div id="smkv-mini" hidden title="Music is playing — open the music player"><span class="smkv-mini-i">🎵</span><div><b></b><span></span></div><button title="Play/Pause">❚❚</button></div>
   </aside>
   <main id="smkv-browse">
     <div id="smkv-toolbar"></div>
@@ -1419,6 +1649,47 @@ button.smkv-primary,#smkv-detail .smkv-play{background:#2b6fd6!important;border-
 #smkv-nav a{color:#c9cfd8;padding:8px 10px;border-radius:7px;display:flex;gap:6px;align-items:center}
 #smkv-nav a:hover{background:#181c24}
 #smkv-nav a.on{background:#1b2533;color:#fff}
+.smkv-modes{display:flex;gap:4px;background:#0c0f14;border:1px solid #1f242d;border-radius:9px;padding:3px;margin:2px 0 10px}
+#smkv-nav .smkv-modes a{flex:1;justify-content:center;padding:7px 6px;border-radius:6px;font-weight:600}
+#smkv-nav .smkv-modes a.on{background:#2b6fd6;color:#fff}
+body.smkv-music-mode #smkv-nav .smkv-modes a.on{background:#c2417a}
+body.smkv-music-mode #smkv-nav a.on:not(.smkv-modes a){background:#2c1b26}
+.smkv-navsep{height:1px;background:#1f242d;margin:8px 4px}
+#smkv-mini{margin:auto 10px 10px;display:flex;align-items:center;gap:8px;background:#1a1420;border:1px solid #3a2333;border-radius:10px;padding:8px 10px;cursor:pointer}
+#smkv-mini[hidden]{display:none}
+#smkv-mini div{flex:1;min-width:0;display:flex;flex-direction:column}
+#smkv-mini b,#smkv-mini div span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12.5px}
+#smkv-mini div span{color:#8b95a5;font-size:11.5px}
+#smkv-mini button{background:#fff!important;color:#000!important;border-radius:50%!important;width:28px;height:28px;padding:0!important;font-size:11px}
+body.smkv-video-mode #smkv-abar{display:none!important}
+body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
+#smkv-acover,.smkv-ainfo{cursor:pointer}
+.smkv-npbanner{display:flex;gap:14px;align-items:center;background:linear-gradient(90deg,#2a1622,#151920);border:1px solid #3a2333;border-radius:12px;padding:12px;margin:14px 0;color:#e6e9ee;max-width:560px}
+.smkv-npbanner .smkv-poster{width:72px;flex:none}
+.smkv-now{display:flex;gap:28px;align-items:center;margin:22px 0 10px;flex-wrap:wrap}
+.smkv-now .smkv-poster.big{width:min(300px,70vw);flex:none;box-shadow:0 18px 50px rgba(0,0,0,.55)}
+.smkv-now-info{flex:1;min-width:260px;max-width:620px}
+.smkv-now-info h2{font-size:28px;margin:4px 0}
+#smkv-np-seek{width:100%;margin-top:18px}
+.smkv-np-times{display:flex;justify-content:space-between;color:#8b95a5;font-size:12px}
+.smkv-np-btns{display:flex;gap:14px;align-items:center;margin-top:10px}
+.smkv-np-btns button{background:transparent!important;border:none!important;font-size:22px!important;color:#c9cfd8!important}
+.smkv-np-btns button.on{color:#ff7eb6!important}
+.smkv-np-btns button.big{background:#fff!important;color:#000!important;border-radius:50%!important;width:56px;height:56px;font-size:20px!important}
+.smkv-tracks tr.played td{opacity:.55}
+.smkv-pageh{margin:18px 0 12px}
+.smkv-dlform{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.smkv-dlform input[name=source]{flex:1;min-width:260px}
+.smkv-dlform input,.smkv-dlform select{background:#151920;color:#e6e9ee;border:1px solid #2a313c;border-radius:6px;padding:7px 9px;font:inherit}
+.smkv-file{position:relative;overflow:hidden;background:#1c212a;border:1px solid #2a313c;border-radius:6px;padding:6px 10px;cursor:pointer;white-space:nowrap;max-width:200px;text-overflow:ellipsis}
+.smkv-file input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.smkv-dl{background:#141820;border:1px solid #20262f;border-radius:10px;padding:10px 12px;margin:8px 0}
+.smkv-dlh{display:flex;flex-direction:column;gap:2px;word-break:break-all}
+.smkv-pbar.big{position:relative;height:6px;border-radius:3px;margin:8px 0 6px;background:#252b35}
+.smkv-pbar.big i{display:block;height:100%;border-radius:3px;background:#4a9eff}
+.smkv-dl.done .smkv-pbar.big i{background:#3ecf8e}.smkv-dl.failed .smkv-pbar.big i{background:#ff6b6b}
+.smkv-dlf2{display:flex;align-items:center;gap:8px}.smkv-dlf2 span{flex:1}
+.smkv-err{color:#ff7b7b}
 .smkv-n{margin-left:auto;color:#5f6876;font-size:12px}
 #smkv-browse{overflow:auto;min-width:0}
 #smkv-toolbar{position:sticky;top:0;z-index:2;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 22px;background:rgba(13,15,19,.94);backdrop-filter:blur(6px);border-bottom:1px solid #191d24}
