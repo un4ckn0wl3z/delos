@@ -28,7 +28,7 @@ StreamMKV supports several users. Each user has their own watch progress, resume
 - **App:** when it starts, it checks the latest release and offers the APK built for your phone's CPU. *Settings → Check for app updates* runs the check by hand. Android does not let sideloaded apps install updates silently, so you still have to tap Install.
 - **Userscript:** Tampermonkey updates it from GitHub through `@updateURL`.
 
-## Apps: Android, iOS, Windows, Linux
+## Apps: Android, iOS, Windows, Linux, macOS
 
 The app is written in Flutter with [media_kit](https://github.com/media-kit/media-kit) (libmpv) and is the same on every platform. Download it from [Releases](https://github.com/un4ckn0wl3z/streammkv/releases/latest).
 
@@ -38,8 +38,9 @@ The app is written in Flutter with [media_kit](https://github.com/media-kit/medi
 | iOS / iPadOS | `streammkv-ios.ipa` (unsigned) | Install with [SideStore](https://sidestore.io) or [AltStore](https://altstore.io) using a free Apple ID. See below. |
 | Windows 10/11 | `streammkv-windows-x64.zip` | Unzip and run `StreamMKV.exe`. |
 | Linux x64 | `streammkv-linux-x64.tar.gz` | Install libmpv first (`sudo apt install libmpv2`), then unpack and run `StreamMKV/streammkv`. A `.desktop` file is included. |
+| macOS 11+ (Intel & Apple Silicon) | `streammkv-macos.zip` | Unzip and move `StreamMKV.app` to Applications. The app is not notarized, so run `xattr -dr com.apple.quarantine /Applications/StreamMKV.app` once, or allow it under System Settings → Privacy & Security → Open Anyway. |
 
-On Windows and Linux: press **F** or double-click the middle of the video for fullscreen. Other keys: space play/pause, ←/→ ±10s, J/L ±30s, ↑/↓ volume, A cycles audio, C cycles subtitles, Z/X adjust subtitle delay, Esc leaves fullscreen.
+On Windows, Linux and macOS: press **F** or double-click the middle of the video for fullscreen. Other keys: space play/pause, ←/→ ±10s, J/L ±30s, ↑/↓ volume, A cycles audio, C cycles subtitles, Z/X adjust subtitle delay, Esc leaves fullscreen.
 
 ### iOS with SideStore / AltStore (free Apple ID)
 
