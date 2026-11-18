@@ -78,9 +78,10 @@ func (s *Server) handleOwnPassword(w http.ResponseWriter, r *http.Request) {
 
 type adminUser struct {
 	UserView
-	Watched    int `json:"watched"`
-	InProgress int `json:"inProgress"`
-	Streams    int `json:"streams"`
+	Watched    int    `json:"watched"`
+	InProgress int    `json:"inProgress"`
+	Streams    int    `json:"streams"`
+	Usage      *usage `json:"usage,omitempty"` // personal libraries
 }
 
 func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +92,12 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	out := []adminUser{}
 	for _, u := range s.users.List() {
 		total, inProg := s.progress.Count(u.Name)
-		out = append(out, adminUser{UserView: u, Watched: total, InProgress: inProg, Streams: conns[u.Name]})
+		au := adminUser{UserView: u, Watched: total, InProgress: inProg, Streams: conns[u.Name]}
+		if len(s.libs.Owned(u.Name)) > 0 || u.MaxItems > 0 || u.MaxBytes > 0 {
+			us := s.usageOf(u.Name, false)
+			au.Usage = &us
+		}
+		out = append(out, au)
 	}
 	writeJSON(w, 200, map[string]any{"users": out, "me": userOf(r)})
 }

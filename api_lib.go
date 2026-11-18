@@ -38,10 +38,13 @@ type libInfo struct {
 	Path     string   `json:"path,omitempty"`    // admins only
 	Exclude  []string `json:"exclude,omitempty"` // admins only
 	Scanning bool     `json:"scanning,omitempty"`
+	Owner    string   `json:"owner,omitempty"` // personal library of this user
+	Shared   bool     `json:"shared,omitempty"`
+	Size     int64    `json:"size,omitempty"`
 }
 
 func (s *Server) libInfo(l Library, admin bool) libInfo {
-	li := libInfo{ID: l.ID, Name: l.Name, Type: l.Type, Count: s.index.Count(l.ID), Scanned: s.index.Scanned(l.ID)}
+	li := libInfo{ID: l.ID, Name: l.Name, Type: l.Type, Count: s.index.Count(l.ID), Scanned: s.index.Scanned(l.ID), Owner: l.Owner, Shared: l.Shared}
 	if admin {
 		li.Path = l.Path
 		li.Exclude = l.Exclude

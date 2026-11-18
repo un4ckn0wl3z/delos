@@ -270,6 +270,8 @@ type ServerSettings struct {
 	// RTorrent: rtorrent XML-RPC endpoint — SCGI socket path, host:port, or
 	// http(s)://user:pass@host/RPC2 (ruTorrent). Empty = auto-detect.
 	RTorrent string `json:"rtorrent,omitempty"`
+	// UserLibRoot: where personal libraries are created (<root>/<user>/<name>).
+	UserLibRoot string `json:"userLibRoot,omitempty"`
 }
 
 type SettingsStore struct {
@@ -342,10 +344,11 @@ func (s *Server) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 // POST /api/admin/settings — partial update: {"autoUpdate"?, "tmdbKey"?, "tmdbLang"?}
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		AutoUpdate *bool   `json:"autoUpdate"`
-		TMDBKey    *string `json:"tmdbKey"`
-		TMDBLang   *string `json:"tmdbLang"`
-		RTorrent   *string `json:"rtorrent"`
+		AutoUpdate  *bool   `json:"autoUpdate"`
+		TMDBKey     *string `json:"tmdbKey"`
+		TMDBLang    *string `json:"tmdbLang"`
+		RTorrent    *string `json:"rtorrent"`
+		UserLibRoot *string `json:"userLibRoot"`
 	}
 	if !decodeJSON(w, r, &b) {
 		return
@@ -366,6 +369,22 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if b.RTorrent != nil {
 		cur.RTorrent = strings.TrimSpace(*b.RTorrent)
 	}
+	if b.UserLibRoot != nil {
+		v := strings.TrimSpace(*b.UserLibRoot)
+		if v != "" {
+			abs, err := filepath.Abs(expandHome(v))
+			if err != nil {
+				httpErr(w, 400, "invalid folder")
+				return
+			}
+			if err := os.MkdirAll(abs, 0o755); err != nil {
+				httpErr(w, 400, "cannot create "+abs+": "+err.Error())
+				return
+			}
+			v = abs
+		}
+		cur.UserLibRoot = v
+	}
 	if err := s.settings.Set(cur); err != nil {
 		httpErr(w, 500, err.Error())
 		return
@@ -378,7 +397,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) adminSettings() map[string]any {
 	cur := s.settings.Get()
-	return map[string]any{"autoUpdate": cur.AutoUpdate, "tmdbKeySet": cur.TMDBKey != "", "tmdbLang": cur.TMDBLang, "rtorrent": cur.RTorrent, "update": s.updater.Status()}
+	return map[string]any{"autoUpdate": cur.AutoUpdate, "tmdbKeySet": cur.TMDBKey != "", "tmdbLang": cur.TMDBLang, "rtorrent": cur.RTorrent, "userLibRoot": s.userLibRoot(), "update": s.updater.Status()}
 }
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {

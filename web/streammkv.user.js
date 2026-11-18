@@ -300,7 +300,7 @@
       let html = `<div class="smkv-modes"><a href="#/" class="${music ? '' : 'on'}">🎬 Videos</a><a href="#/music" class="${music ? 'on' : ''}">🎵 Music</a></div>`;
       if (!music) {
         html += a('#/', '🏠 Home', cur === '#/') + BR.libs.filter((l) => l.type !== 'music').map((l) =>
-          a(`#/lib/${encodeURIComponent(l.id)}`, `${typeIcon[l.type] || '📁'} ${esc(l.name)}`, cur.startsWith('#/lib/' + encodeURIComponent(l.id)), l.count)).join('');
+          a(`#/lib/${encodeURIComponent(l.id)}`, `${typeIcon[l.type] || '📁'} ${esc(l.name)}${l.owner ? `<small class="smkv-own">${esc(ownerTag(l).slice(3))}</small>` : ''}`, cur.startsWith('#/lib/' + encodeURIComponent(l.id)), l.count)).join('');
       } else {
         const t = (cur.match(/^#\/music\/?([^/]*)/) || [])[1] || '';
         html += a('#/music', '🎧 Listen now', cur === '#/music' || cur === '#/music/')
@@ -436,7 +436,7 @@
         } else {
           cards = items.slice(0, 16).map((it) => posterCard({ key: 'f:' + it.path, title: it.name, sub: it.dir || '', img: '' })).join('');
         }
-        if (cards) html += `<h3 class="smkv-h">Recently added · <a href="#/lib/${encodeURIComponent(x.l.id)}">${esc(x.l.name)}</a></h3><div class="smkv-row">${cards}</div>`;
+        if (cards) html += `<h3 class="smkv-h">Recently added · <a href="#/lib/${encodeURIComponent(x.l.id)}">${esc(x.l.name)}</a>${x.l.owner ? `<small class="smkv-own">${x.l.owner === BR.me.user ? 'your library' : 'from ' + esc(x.l.owner)}</small>` : ''}</h3><div class="smkv-row">${cards}</div>`;
       }
       view.innerHTML = html || `<div class="smkv-dim">${videoLibs.length ? 'Nothing here yet.' : 'No libraries yet — an admin can add them in the dashboard.'}</div>`;
       bindCards(view, (k) => {
@@ -526,13 +526,17 @@
         <div class="smkv-files">${items.map((it) => `<div class="smkv-file" data-p="${esc(it.path)}">
           <button class="smkv-play">${it.pos ? '▶ Resume ' + fmtTime(it.pos) : '▶ Play'}</button>
           ${it.pos ? '<button class="smkv-restart" title="Start from the beginning">↺</button>' : ''}
-          <span>${esc(it.name)}<br><small>${fmtSize(it.size)}${it.dir ? ' · ' + esc(it.dir) : ''}</small></span></div>`).join('')}</div>
+          <span>${esc(it.name)}<br><small>${fmtSize(it.size)}${it.dir ? ' · ' + esc(it.dir) : ''}</small></span>
+          ${canDelete(lib) ? '<button class="smkv-del" title="Delete this file from the server">🗑</button>' : ''}</div>`).join('')}</div>
+        ${libOf(lib).owner ? `<div class="smkv-dim2" style="margin-top:8px">📦 From ${libOf(lib).owner === BR.me.user ? 'your' : esc(libOf(lib).owner) + "'s"} library “${esc(libOf(lib).name)}”</div>` : ''}
         ${canEdit() && lib !== '_legacy' ? `<div class="smkv-admin-row">${m && m.id > 0 ? `TMDB #${m.id}` : m ? 'Edited manually' : 'Not matched'} · <a href="#" class="smkv-fix">✎ Edit / fix match…</a></div>` : ''}`,
         (root, close) => {
           root.querySelectorAll('.smkv-file').forEach((row) => {
             row.querySelector('.smkv-play').onclick = () => { close(); playVideo(row.dataset.p); };
             const r = row.querySelector('.smkv-restart');
             if (r) r.onclick = () => { close(); playVideo(row.dataset.p, { fromStart: true }); };
+            const del = row.querySelector('.smkv-del');
+            if (del) del.onclick = async () => { if (await deleteFiles([row.dataset.p], `“${t}” (${row.querySelector('span').firstChild.textContent})`)) close(); };
           });
           const fix = root.querySelector('.smkv-fix');
           if (fix) fix.onclick = (e) => {
@@ -546,6 +550,21 @@
 
     // ------------------------------------------------------------ metadata editing (admins & editors)
     const canEdit = () => !!(BR.me && (BR.me.admin || BR.me.editor));
+    const libOf = (id) => BR.libs.find((l) => l.id === id) || {};
+    // only your own personal libraries (admins: everything)
+    const canDelete = (lib) => !!(BR.me && lib !== '_legacy' && (BR.me.admin || (libOf(lib).owner && libOf(lib).owner === BR.me.user)));
+    const ownerTag = (l) => !l.owner ? '' : l.owner === (BR.me && BR.me.user) ? ' · mine' : ' · ' + l.owner;
+    async function deleteFiles(paths, label) {
+      if (!confirm(`Delete ${label} from the server?\n\nThe file${paths.length > 1 ? 's are' : ' is'} removed from disk — this cannot be undone.`)) return false;
+      try {
+        const r = await fetch(new URL('api/files/delete', BASE), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paths }) });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+        toast('Deleted', 2500);
+        const lib = paths[0].split('/')[0];
+        setTimeout(async () => { await libData(lib, true).catch(() => {}); await loadLibs(); route(); }, 1500);
+        return true;
+      } catch (e) { toast(e.message, 5000); return false; }
+    }
     const FIELD_LABELS = {
       title: 'Title', year: 'Year', overview: 'Plot / overview', genres: 'Genres (comma separated)', poster: 'Poster image URL',
       backdrop: 'Backdrop image URL', director: 'Director', showTitle: 'Show title (moves the episode)', season: 'Season', episode: 'Episode',
@@ -701,7 +720,7 @@
           <div class="smkv-eps">${eps.filter((e) => e.season === season && matchQ(e.episodeTitle, e.name, e.episodeOverview)).map((e) => `
             <div class="smkv-ep" data-p="${esc(e.path)}">
               <div class="smkv-still">${e.still ? `<img loading="lazy" src="${esc(e.still)}">` : '<span>▶</span>'}${progressBar(e)}</div>
-              <div style="flex:1"><b>${e.episode ? 'E' + e.episode + ' · ' : ''}${esc(e.episodeTitle || e.name)}</b>${canEdit() ? `<button class="smkv-epedit" data-p="${esc(e.path)}" title="Edit episode">✎</button>` : ''}
+              <div style="flex:1"><b>${e.episode ? 'E' + e.episode + ' · ' : ''}${esc(e.episodeTitle || e.name)}</b>${canEdit() ? `<button class="smkv-epedit" data-p="${esc(e.path)}" title="Edit episode">✎</button>` : ''}${canDelete(lib) ? `<button class="smkv-epedit smkv-epdel" data-p="${esc(e.path)}" title="Delete this episode file">🗑</button>` : ''}
                 <div class="smkv-dim2">${[e.duration ? fmtTime(e.duration) : '', e.pos ? 'watched to ' + fmtTime(e.pos) : ''].filter(Boolean).join(' · ')}</div>
                 ${e.episodeOverview ? `<p>${esc(e.episodeOverview)}</p>` : ''}</div>
             </div>`).join('')}</div>`;
@@ -715,7 +734,12 @@
           editDialog({ lib, title: sh.title, search: 'tv', query: eps[0]?.title || sh.title, year: sh.year, target: { show: key }, keys: ['show:' + key],
             fields: { title: sh.title || '', year: sh.year || '', genres: (sh.genres || []).join(', '), overview: sh.overview || '', poster: sh.poster || '', backdrop: sh.backdrop || '' } });
         };
-        view.querySelectorAll('.smkv-epedit').forEach((b) => b.onclick = (ev) => {
+        view.querySelectorAll('.smkv-epdel').forEach((b) => b.onclick = (ev) => {
+          ev.stopPropagation();
+          const e = eps.find((x) => x.path === b.dataset.p);
+          deleteFiles([e.path], `S${e.season}E${e.episode} (${e.name})`);
+        });
+        view.querySelectorAll('.smkv-epedit:not(.smkv-epdel)').forEach((b) => b.onclick = (ev) => {
           ev.stopPropagation();
           const e = eps.find((x) => x.path === b.dataset.p);
           editDialog({ lib, title: e.name, keys: [e.path], fields: { showTitle: e.title || sh.title, season: e.season, episode: e.episode, episodeTitle: e.episodeTitle || '', episodeOverview: e.episodeOverview || '', still: e.still || '' } });
@@ -932,12 +956,20 @@
         <form id="smkv-dlf" class="smkv-dlform">
           <input name="source" placeholder="https://… link or magnet:?xt=…" autocomplete="off">
           <label class="smkv-file" title="Upload a .torrent file"><input type="file" name="file" accept=".torrent,application/x-bittorrent"><span>📎 .torrent</span></label>
-          <select name="lib">${libs.map((l) => `<option value="${esc(l.id)}">${typeIcon[l.type] || '📁'} ${esc(l.name)}</option>`).join('')}</select>
+          <select name="lib">${libs.map((l) => `<option value="${esc(l.id)}">${typeIcon[l.type] || '📁'} ${esc(l.name)}${esc(ownerTag(l))}</option>`).join('')}</select>
           <input name="subdir" list="smkv-dldirs" placeholder="folder (optional)" autocomplete="off"><datalist id="smkv-dldirs"></datalist>
           <button class="smkv-primary">⬇ Download</button>
         </form>
         <div class="smkv-dim2" id="smkv-dlrt"></div>
-        <div id="smkv-dllist"></div>`;
+        <div id="smkv-dllist"></div>
+        <h3 class="smkv-h">My libraries <span class="smkv-dim2" id="smkv-myuse"></span></h3>
+        <div id="smkv-mylibs"></div>
+        <form id="smkv-mynew" class="smkv-dlform">
+          <input name="name" placeholder="New library name" autocomplete="off" style="flex:1;min-width:180px">
+          <select name="type"><option value="movies">🎬 Movies</option><option value="tv">📺 TV series</option><option value="music">🎵 Music</option><option value="videos">📁 Other videos</option></select>
+          <label class="smkv-check"><input type="checkbox" name="shared"> Share with everyone</label>
+          <button>＋ Create</button>
+        </form>`;
       const f = $('#smkv-dlf');
       const loadDirs = async () => {
         try { const r = await api('downloads/dirs', { lib: f.lib.value }); $('#smkv-dldirs').innerHTML = r.dirs.map((x) => `<option value="${esc(x)}">`).join(''); } catch (_) {}
@@ -961,6 +993,53 @@
           toast('Download added'); refresh();
         } catch (x) { toast(x.message, 5000); }
       };
+      async function drawMine() {
+        let m;
+        try { m = await api('my/libraries'); } catch (_) { return; }
+        const u = m.usage || {};
+        $('#smkv-myuse').textContent = `· ${u.items || 0}${m.maxItems ? '/' + m.maxItems : ''} items · ${fmtSize(u.bytes || 0)}${m.maxBytes ? ' / ' + fmtSize(m.maxBytes) : ''}`;
+        $('#smkv-mylibs').innerHTML = m.libraries.length ? m.libraries.map((l) => `<div class="smkv-dl" data-id="${esc(l.id)}">
+            <div class="smkv-dlf2"><span><b>${typeIcon[l.type] || '📁'} ${esc(l.name)}</b> <span class="smkv-dim2">${l.count} items · ${fmtSize(l.size || 0)}</span></span>
+              <label class="smkv-check"><input type="checkbox" data-a="share" ${l.shared ? 'checked' : ''}> Shared</label>
+              <a href="#/lib/${encodeURIComponent(l.id)}">Open</a><button data-a="scan">Scan</button><button data-a="del">Delete…</button></div></div>`).join('')
+          : '<div class="smkv-dim2">Create a library to download into your own space. Private libraries are only visible to you; shared ones are visible to everyone, labelled with your name.</div>';
+        $('#smkv-mylibs').querySelectorAll('[data-a]').forEach((el) => {
+          const id = el.closest('.smkv-dl').dataset.id, l = m.libraries.find((x) => x.id === id);
+          const call = async (method, path, body) => {
+            const r = await fetch(new URL('api/' + path, BASE), { method, credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+            if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+          };
+          const act = async () => {
+            try {
+              if (el.dataset.a === 'share') { await call('PUT', 'my/libraries/' + encodeURIComponent(id), { shared: el.checked }); toast(el.checked ? 'Shared with everyone' : 'Now private'); }
+              else if (el.dataset.a === 'scan') { await call('POST', `my/libraries/${encodeURIComponent(id)}/scan`); toast('Scanning…'); }
+              else {
+                if (!confirm(`Delete the library “${l.name}”?`)) return;
+                const files = confirm(`Also delete its ${l.count} files from the server (${fmtSize(l.size || 0)})?\n\nOK = delete files · Cancel = keep them on disk`);
+                await call('DELETE', `my/libraries/${encodeURIComponent(id)}${files ? '?files=1' : ''}`); toast('Library deleted');
+              }
+              await loadLibs(); drawMine();
+            } catch (x) { toast(x.message, 5000); if (el.dataset.a === 'share') el.checked = !el.checked; }
+          };
+          if (el.tagName === 'INPUT') el.onchange = act; else el.onclick = act;
+        });
+      }
+      $('#smkv-mynew').onsubmit = async (e) => {
+        e.preventDefault();
+        const f = e.target;
+        if (!f.name.value.trim()) return toast('Name the library');
+        try {
+          const r = await fetch(new URL('api/my/libraries', BASE), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: f.name.value.trim(), type: f.type.value, shared: f.shared.checked }) });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || r.statusText);
+          f.reset(); toast('Library created'); await loadLibs();
+          d = await api('downloads');
+          $('#smkv-dlf').lib.innerHTML = d.libraries.map((l) => `<option value="${esc(l.id)}">${typeIcon[l.type] || '📁'} ${esc(l.name)}${esc(ownerTag(l))}</option>`).join('');
+          $('#smkv-dlf').lib.value = j.id; loadDirs(); drawMine();
+        } catch (x) { toast(x.message, 5000); }
+      };
+      drawMine();
       const state = { queued: 'Queued', downloading: 'Downloading', done: 'Done', failed: 'Failed', canceled: 'Canceled' };
       function draw() {
         const t = d.torrent || {};
@@ -1009,11 +1088,12 @@
         let html = '', lastDir = null;
         for (const f of files) {
           if (f.dir !== lastDir) { lastDir = f.dir; html += `<div class="smkv-dir">${esc(f.dir || '/')}</div>`; }
-          html += `<div class="smkv-item" data-path="${esc(f.path)}"><div class="smkv-name">${esc(f.name)}</div>
+          html += `<div class="smkv-item" data-path="${esc(f.path)}"><div class="smkv-name">${esc(f.name)}${canDelete(lib) ? '<button class="smkv-epedit smkv-fdel" title="Delete this file">🗑</button>' : ''}</div>
             <div class="smkv-sub">${fmtSize(f.size)}${f.pos ? ` · <span class="smkv-resume">⏵ ${fmtTime(f.pos)}</span>` : ''}</div></div>`;
         }
         view.innerHTML = html || '<div class="smkv-dim">No files</div>';
         view.querySelectorAll('.smkv-item').forEach((el) => el.onclick = () => playVideo(el.dataset.path));
+        view.querySelectorAll('.smkv-fdel').forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); const p = b.closest('.smkv-item').dataset.path; deleteFiles([p], p.split('/').pop()); });
       }
       draw();
     }
@@ -1690,6 +1770,9 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-dl.done .smkv-pbar.big i{background:#3ecf8e}.smkv-dl.failed .smkv-pbar.big i{background:#ff6b6b}
 .smkv-dlf2{display:flex;align-items:center;gap:8px}.smkv-dlf2 span{flex:1}
 .smkv-err{color:#ff7b7b}
+.smkv-own{margin-left:6px;font-size:10.5px;color:#8b95a5;background:#1c222b;border-radius:8px;padding:1px 6px;font-weight:normal}
+.smkv-file .smkv-del{margin-left:auto;opacity:.6}.smkv-file .smkv-del:hover{opacity:1;color:#ff7b7b}
+.smkv-dlf2 .smkv-check{display:flex;align-items:center;gap:4px;color:#c9cfd8;font-size:13px}
 .smkv-n{margin-left:auto;color:#5f6876;font-size:12px}
 #smkv-browse{overflow:auto;min-width:0}
 #smkv-toolbar{position:sticky;top:0;z-index:2;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 22px;background:rgba(13,15,19,.94);backdrop-filter:blur(6px);border-bottom:1px solid #191d24}

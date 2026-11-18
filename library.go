@@ -43,6 +43,10 @@ type Library struct {
 	// the library root ("Extras/Featurettes"); without one it is a folder-name
 	// pattern matched at any depth ("Sample", "Behind*").
 	Exclude []string `json:"exclude,omitempty"`
+	// Owner: a user's personal library (created by a downloader under the
+	// user-library folder); empty = an admin library. Shared: everyone sees it.
+	Owner  string `json:"owner,omitempty"`
+	Shared bool   `json:"shared,omitempty"`
 }
 
 // cleanExclude normalises the exclude list (trims, drops blanks/dupes, no "..").
@@ -259,6 +263,14 @@ func splitPath(p string) (lib, rel string) {
 func (s *Server) canAccess(r *http.Request, libID string) bool {
 	if isAdmin(r) {
 		return true
+	}
+	if lib, ok := s.libs.Get(libID); ok && lib.Owner != "" {
+		if lib.Owner == userOf(r) {
+			return true // your own library
+		}
+		if !lib.Shared {
+			return false // someone else's private library
+		}
 	}
 	allowed := s.users.Libraries(userOf(r))
 	if allowed == nil {

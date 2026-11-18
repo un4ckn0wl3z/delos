@@ -35,6 +35,9 @@ type User struct {
 	Editor bool `json:"editor,omitempty"`
 	// Downloader may add HTTP/torrent downloads (admins always can).
 	Downloader bool `json:"downloader,omitempty"`
+	// Limits for the user's personal libraries (0 = unlimited).
+	MaxItems int   `json:"maxItems,omitempty"`
+	MaxBytes int64 `json:"maxBytes,omitempty"`
 }
 
 type UserView struct {
@@ -46,6 +49,8 @@ type UserView struct {
 	Libraries  *[]string `json:"libraries"`
 	Editor     bool      `json:"editor"`
 	Downloader bool      `json:"downloader"`
+	MaxItems   int       `json:"maxItems,omitempty"`
+	MaxBytes   int64     `json:"maxBytes,omitempty"`
 }
 
 // UserStore keeps users.json in memory. The file is re-read when it changes on
@@ -201,7 +206,7 @@ func (us *UserStore) List() []UserView {
 	defer us.mu.Unlock()
 	out := make([]UserView, 0, len(us.users))
 	for n, u := range us.users {
-		out = append(out, UserView{Name: n, Admin: u.Admin, Created: u.Created, LastSeen: us.lastSeen[n], Libraries: u.Libraries, Editor: u.Editor, Downloader: u.Downloader})
+		out = append(out, UserView{Name: n, Admin: u.Admin, Created: u.Created, LastSeen: us.lastSeen[n], Libraries: u.Libraries, Editor: u.Editor, Downloader: u.Downloader, MaxItems: u.MaxItems, MaxBytes: u.MaxBytes})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -306,6 +311,30 @@ func (us *UserStore) SetDownloader(name string, on bool) error {
 		return errors.New("no such user")
 	}
 	u.Downloader = on
+	return us.saveLocked()
+}
+
+// Limits returns the personal-library limits (0 = unlimited).
+func (us *UserStore) Limits(name string) (items int, bytes int64) {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	if u, ok := us.users[name]; ok && !u.Admin {
+		return u.MaxItems, u.MaxBytes
+	}
+	return 0, 0
+}
+
+func (us *UserStore) SetLimits(name string, items int, bytes int64) error {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	u, ok := us.users[name]
+	if !ok {
+		return errors.New("no such user")
+	}
+	if items < 0 || bytes < 0 {
+		return errors.New("limits must be positive (0 = unlimited)")
+	}
+	u.MaxItems, u.MaxBytes = items, bytes
 	return us.saveLocked()
 }
 

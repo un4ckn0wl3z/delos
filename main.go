@@ -206,6 +206,7 @@ func main() {
 	s.libraryRoutes(mux)
 	s.editRoutes(mux)
 	s.downloadRoutes(mux)
+	s.personalRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

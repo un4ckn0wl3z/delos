@@ -321,6 +321,11 @@ func (d *Downloads) fetch(ctx context.Context, j *DownloadJob) error {
 		total = have + resp.ContentLength
 	}
 	if total > 0 {
+		if lib, ok := d.s.libs.Get(j.Lib); ok && lib.Owner != "" && !d.s.users.IsAdmin(j.User) {
+			if err := d.s.checkQuota(lib.Owner, lib, total-have); err != nil {
+				return err
+			}
+		}
 		if _, free, ok := diskUsage(dir); ok && uint64(total-have) > free {
 			return fmt.Errorf("not enough disk space (%s needed, %s free)", fmtBytes(total-have), fmtBytes(int64(free)))
 		}
@@ -505,6 +510,22 @@ func (d *Downloads) syncTorrents() {
 			j.Seeding = false
 			continue
 		}
+		if j.Size <= 0 && it.Size > 0 && !it.Complete {
+			// size just became known (magnets): enforce the owner's storage limit
+			if lib, ok := d.s.libs.Get(j.Lib); ok && lib.Owner != "" && !d.s.users.IsAdmin(j.User) {
+				if _, maxBytes := d.s.users.Limits(lib.Owner); maxBytes > 0 {
+					u := d.s.usageOf(lib.Owner, true)
+					if u.Bytes-it.Done+it.Size > maxBytes {
+						rt.Erase(it.Hash)
+						if it.BasePath != "" && strings.HasPrefix(it.BasePath, lib.Path+string(filepath.Separator)) {
+							os.RemoveAll(it.BasePath)
+						}
+						j.State, j.Error, j.Size = JobFailed, fmt.Sprintf("too big for the storage limit (%s, %s used of %s)", fmtBytes(it.Size), fmtBytes(u.Bytes-it.Done), fmtBytes(maxBytes)), it.Size
+						continue
+					}
+				}
+			}
+		}
 		j.Hash, j.Name, j.Size, j.Done, j.Rate, j.Up, j.BasePath = it.Hash, it.Name, it.Size, it.Done, it.DownRate, it.UpRate, it.BasePath
 		j.Seeding = it.Complete && it.Active
 		if it.Message != "" && !it.Complete {
@@ -571,9 +592,15 @@ func (s *Server) handleDownloads(w http.ResponseWriter, r *http.Request) {
 	}
 	s.dl.mu.Unlock()
 	sort.Slice(jobs, func(a, b int) bool { return jobs[a].Created > jobs[b].Created })
-	libs := []map[string]string{}
+	libs := []map[string]any{}
 	for _, l := range s.visibleLibraries(r) {
-		libs = append(libs, map[string]string{"id": l.ID, "name": l.Name, "type": l.Type})
+		if !isAdmin(r) && l.Owner != "" && l.Owner != userOf(r) {
+			continue // others' personal libraries are read-only
+		}
+		if mi, mb := s.users.Limits(userOf(r)); (mi > 0 || mb > 0) && l.Owner != userOf(r) {
+			continue // limited accounts download into their own libraries
+		}
+		libs = append(libs, map[string]any{"id": l.ID, "name": l.Name, "type": l.Type, "owner": l.Owner, "shared": l.Shared})
 	}
 	writeJSON(w, 200, map[string]any{"jobs": jobs, "torrent": s.dl.TorrentStatus(false), "libraries": libs})
 }
@@ -612,6 +639,14 @@ func (s *Server) newJob(r *http.Request, kind, source, lib, subdir, name string)
 	l, ok := s.libs.Get(lib)
 	if !ok || !s.canAccess(r, l.ID) {
 		return nil, errors.New("choose a library")
+	}
+	if !isAdmin(r) && l.Owner != "" && l.Owner != userOf(r) {
+		return nil, errors.New("you can't download into someone else's library")
+	}
+	if !isAdmin(r) {
+		if err := s.checkQuota(userOf(r), l, 0); err != nil {
+			return nil, err
+		}
 	}
 	if _, _, err := s.dl.targetDir(lib, subdir); err != nil {
 		return nil, err
