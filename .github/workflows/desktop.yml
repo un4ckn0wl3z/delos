@@ -55,7 +55,7 @@ jobs:
       - name: Build
         run: |
           flutter pub get
-          dart run flutter_launcher_icons
+          if [ "${{ matrix.platform }}" = windows ]; then dart run flutter_launcher_icons -f icons/windows.yaml; fi
           flutter build ${{ matrix.platform }} --release \
             --build-name="${VERSION%%-*}" --build-number="$CODE" --dart-define=APP_VERSION="$VERSION"
           mkdir -p ../dist

@@ -43,7 +43,7 @@ jobs:
       - name: Build unsigned IPA
         run: |
           flutter pub get
-          dart run flutter_launcher_icons
+          dart run flutter_launcher_icons -f icons/ios.yaml
           flutter build ios --release --no-codesign \
             --build-name="${VERSION%%-*}" --build-number="$CODE" --dart-define=APP_VERSION="$VERSION"
           mkdir -p ../dist/Payload
