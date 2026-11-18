@@ -54,6 +54,8 @@ type DownloadJob struct {
 	Hash     string `json:"hash,omitempty"`
 	BasePath string `json:"-"` // torrent: d.base_path
 	Saved    string `json:"basePath,omitempty"`
+	// Dupes: other copies of the same movie / episode found after it was matched
+	Dupes []string `json:"dupes,omitempty"`
 }
 
 type Downloads struct {
@@ -267,6 +269,7 @@ func (d *Downloads) runHTTP(id string) {
 	})
 	if err == nil {
 		d.s.index.Queue(j.Lib, false)
+		go d.noteDupes(id)
 	}
 }
 
@@ -496,7 +499,7 @@ func (d *Downloads) syncTorrents() {
 			byTag[strings.TrimPrefix(it.Tag, "smkv:")] = it
 		}
 	}
-	var finished []string
+	var finished, finishedIDs []string
 	d.mu.Lock()
 	for id, j := range d.jobs {
 		if j.Kind != "torrent" || j.State == JobCanceled || j.State == JobFailed {
@@ -536,6 +539,7 @@ func (d *Downloads) syncTorrents() {
 		if it.Complete && j.State != JobDone {
 			j.State, j.Finished = JobDone, time.Now().Unix()
 			finished = append(finished, j.Lib)
+			finishedIDs = append(finishedIDs, id)
 			// magnets leave "<HASH>.meta" next to the download
 			if dir, _, err := d.targetDir(j.Lib, j.Subdir); err == nil && it.Hash != "" {
 				os.Remove(filepath.Join(dir, strings.ToUpper(it.Hash)+".meta"))
@@ -548,6 +552,9 @@ func (d *Downloads) syncTorrents() {
 	d.mu.Unlock()
 	for _, lib := range finished {
 		d.s.index.Queue(lib, false)
+	}
+	for _, id := range finishedIDs {
+		go d.noteDupes(id)
 	}
 }
 
@@ -657,7 +664,10 @@ func (s *Server) newJob(r *http.Request, kind, source, lib, subdir, name string)
 
 // POST /api/downloads {"source": url|magnet, "lib", "subdir"?, "name"?}
 func (s *Server) handleDownloadAdd(w http.ResponseWriter, r *http.Request) {
-	var b struct{ Source, Lib, Subdir, Name string }
+	var b struct {
+		Source, Lib, Subdir, Name string
+		Force                     bool // download even if it looks like a duplicate
+	}
 	if !decodeJSON(w, r, &b) {
 		return
 	}
@@ -684,13 +694,57 @@ func (s *Server) handleDownloadAdd(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 400, err.Error())
 		return
 	}
+	lib, _ := s.libs.Get(j.Lib)
 	if kind == "torrent" {
-		j.Name = ""
-		if err := s.dl.addTorrent(j, src); err != nil {
+		var payload any = src
+		var hash, name string
+		if strings.HasPrefix(strings.ToLower(src), "magnet:?") {
+			hash, name = magnetInfo(src)
+		} else {
+			// fetch the .torrent here so its hash can be checked (and rtorrent gets the data)
+			data, err := fetchSmall(src, isAdmin(r), 10<<20)
+			if err != nil {
+				httpErr(w, 502, "couldn't get the .torrent: "+err.Error())
+				return
+			}
+			if hash, name, err = torrentInfo(data); err != nil {
+				httpErr(w, 400, "that link isn't a .torrent file")
+				return
+			}
+			payload = data
+		}
+		if d, hard := s.torrentDup(r, hash); d != nil && (hard || !b.Force) {
+			writeDup(w, d, !hard)
+			return
+		}
+		if !b.Force {
+			if d := s.titleDup(r, lib, name); d != nil {
+				writeDup(w, d, true)
+				return
+			}
+		}
+		j.Name, j.Hash = "", hash
+		if err := s.dl.addTorrent(j, payload); err != nil {
 			httpErr(w, 502, err.Error())
 			return
 		}
 		j.State = JobDownloading
+	} else {
+		name := j.Name
+		if name == "" {
+			name, _ = probeName(src, isAdmin(r))
+			j.Name = name
+		}
+		if !b.Force {
+			if d := s.fileDup(r, lib, j.Subdir, src, name); d != nil {
+				writeDup(w, d, true)
+				return
+			}
+			if d := s.titleDup(r, lib, name); d != nil {
+				writeDup(w, d, true)
+				return
+			}
+		}
 	}
 	s.dl.mu.Lock()
 	s.dl.jobs[j.ID] = j
@@ -725,6 +779,24 @@ func (s *Server) handleDownloadTorrentFile(w http.ResponseWriter, r *http.Reques
 		httpErr(w, 400, err.Error())
 		return
 	}
+	hash, name, err := torrentInfo(data)
+	if err != nil {
+		httpErr(w, 400, "that is not a valid .torrent file")
+		return
+	}
+	force := r.FormValue("force") == "1" || r.FormValue("force") == "true"
+	if d, hard := s.torrentDup(r, hash); d != nil && (hard || !force) {
+		writeDup(w, d, !hard)
+		return
+	}
+	if !force {
+		lib, _ := s.libs.Get(j.Lib)
+		if d := s.titleDup(r, lib, name); d != nil {
+			writeDup(w, d, true)
+			return
+		}
+	}
+	j.Hash = hash
 	if err := s.dl.addTorrent(j, data); err != nil {
 		httpErr(w, 502, err.Error())
 		return

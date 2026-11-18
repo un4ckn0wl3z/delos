@@ -210,7 +210,7 @@
     });
     if (r.status === 401 && !opts.noLogin) { showLogin(); throw new Error('unauthorized'); }
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || r.statusText);
+    if (!r.ok) { const e = new Error(j.error || r.statusText); e.status = r.status; e.data = j; throw e; }
     return j;
   }
 
@@ -597,7 +597,8 @@
     if (key !== dlLibsKey) {
       dlLibsKey = key;
       const cur = f.lib.value;
-      f.lib.innerHTML = d.libraries.map((l) => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('');
+      const libs = [...d.libraries].sort((a, b) => (a.owner ? 1 : 0) - (b.owner ? 1 : 0));
+      f.lib.innerHTML = libs.map((l) => `<option value="${esc(l.id)}">${esc(l.name)}${l.owner ? ` (👤 ${esc(l.owner)})` : ''}</option>`).join('');
       if (cur) f.lib.value = cur;
       loadDirs();
     }
@@ -612,7 +613,8 @@
       const st = j.state === 'done' && j.seeding ? 'Seeding' : dlState[j.state] || j.state;
       return `<tr data-j="${esc(j.id)}">
         <td><b class="file">${esc(j.name || j.source)}</b><span class="badge ${j.kind === 'torrent' ? 't-tv' : 't-movies'}">${j.kind}</span>
-          <div class="dim" style="font-size:12px">${esc(j.user)} · ${ago(j.created)}${j.error ? ` · <span style="color:#ff6b6b">${esc(j.error)}</span>` : ''}</div></td>
+          <div class="dim" style="font-size:12px">${esc(j.user)} · ${ago(j.created)}${j.error ? ` · <span style="color:#ff6b6b">${esc(j.error)}</span>` : ''}</div>
+          ${j.dupes && j.dupes.length ? `<div style="font-size:12px;color:#f5a623" title="${esc(j.dupes.join('\n'))}">⚠ Also in the library: ${esc(j.dupes.slice(0, 2).join(' · '))}${j.dupes.length > 2 ? ` +${j.dupes.length - 2}` : ''}</div>` : ''}</td>
         <td class="h-m dim file">${esc(libName[j.lib] || j.lib)}${j.subdir ? ' / ' + esc(j.subdir) : ''}</td>
         <td style="min-width:150px"><div style="height:6px;background:rgba(128,128,128,.25);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(1)}%;background:${j.state === 'failed' ? '#ff6b6b' : j.state === 'done' ? '#3ecf8e' : '#4a9eff'}"></div></div>
           <div class="dim" style="font-size:12px">${st}${j.size > 0 ? ` · ${size(j.done)} / ${size(j.size)}` : ''}${j.rate > 0 ? ` · ${size(j.rate)}/s` : ''}${j.up > 0 ? ` · ↑ ${size(j.up)}/s` : ''}</div></td>
@@ -650,18 +652,42 @@
         };
       });
   }
+  // a duplicate answers 409 (may download anyway) or 422 (can't, e.g. already in rtorrent)
+  function confirmDuplicate(err) {
+    return new Promise((res) => {
+      const d = err.data || {}, items = (d.duplicate && d.duplicate.items) || [];
+      modal(`<h3>${d.canForce ? 'Already have it?' : 'Already downloaded'}</h3><div>${esc(err.message)}</div>
+        ${items.length ? `<ul class="dim" style="font-size:12.5px;margin:8px 0 0;padding-left:18px">${items.slice(0, 8).map((i) => `<li>${esc(i.libName)} · ${esc(i.name)}</li>`).join('')}</ul>` : ''}
+        <div class="row"><button data-close>${d.canForce ? 'Cancel' : 'OK'}</button>${d.canForce ? '<button class="primary" id="ok">Download anyway</button>' : ''}</div>`,
+        (b, close) => {
+          const ok = b.querySelector('#ok');
+          if (ok) ok.onclick = () => { close(); res(true); };
+          b.querySelectorAll('[data-close]').forEach((x) => x.addEventListener('click', () => res(false)));
+        });
+    });
+  }
+  async function submitDownload(f, force) {
+    const file = f.file.files[0];
+    if (file) {
+      const fd = new FormData(); fd.append('file', file); fd.append('lib', f.lib.value); fd.append('subdir', f.subdir.value);
+      if (force) fd.append('force', '1');
+      const r = await fetch(BASE + 'api/downloads/torrent', { method: 'POST', body: fd, credentials: 'same-origin' });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { const e = new Error(j.error || r.statusText); e.status = r.status; e.data = j; throw e; }
+    } else {
+      await api('downloads', { method: 'POST', body: { source: f.source.value.trim(), lib: f.lib.value, subdir: f.subdir.value, force } });
+    }
+  }
   $('#dl-form').onsubmit = async (e) => {
     e.preventDefault();
-    const f = e.target, file = f.file.files[0];
+    const f = e.target;
+    if (!f.file.files[0] && !f.source.value.trim()) return toast('Paste a link or choose a .torrent file');
     try {
-      if (file) {
-        const fd = new FormData(); fd.append('file', file); fd.append('lib', f.lib.value); fd.append('subdir', f.subdir.value);
-        const r = await fetch(BASE + 'api/downloads/torrent', { method: 'POST', body: fd, credentials: 'same-origin' });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j.error || r.statusText);
-      } else {
-        if (!f.source.value.trim()) return toast('Paste a link or choose a .torrent file');
-        await api('downloads', { method: 'POST', body: { source: f.source.value.trim(), lib: f.lib.value, subdir: f.subdir.value } });
+      try { await submitDownload(f, false); }
+      catch (x) {
+        if (x.status !== 409 && x.status !== 422) throw x;
+        if (!(await confirmDuplicate(x))) return;
+        await submitDownload(f, true);
       }
       f.source.value = ''; f.file.value = ''; toast('Download added'); loadDownloads();
     } catch (x) { toast(x.message); }

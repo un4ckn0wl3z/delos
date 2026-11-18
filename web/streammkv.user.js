@@ -979,17 +979,27 @@
       };
       f.lib.onchange = loadDirs; loadDirs();
       f.file.onchange = () => { f.querySelector('.smkv-file span').textContent = f.file.files[0] ? '📎 ' + f.file.files[0].name : '📎 .torrent'; };
+      const send = (force) => {
+        if (f.file.files[0]) {
+          const fd = new FormData(); fd.append('file', f.file.files[0]); fd.append('lib', f.lib.value); fd.append('subdir', f.subdir.value);
+          if (force) fd.append('force', '1');
+          return fetch(new URL('api/downloads/torrent', BASE), { method: 'POST', body: fd, credentials: 'same-origin' });
+        }
+        return fetch(new URL('api/downloads', BASE), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: f.source.value.trim(), lib: f.lib.value, subdir: f.subdir.value, force }) });
+      };
       f.onsubmit = async (e) => {
         e.preventDefault();
+        if (!f.file.files[0] && !f.source.value.trim()) return toast('Paste a link or choose a .torrent file');
         try {
-          let r;
-          if (f.file.files[0]) {
-            const fd = new FormData(); fd.append('file', f.file.files[0]); fd.append('lib', f.lib.value); fd.append('subdir', f.subdir.value);
-            r = await fetch(new URL('api/downloads/torrent', BASE), { method: 'POST', body: fd, credentials: 'same-origin' });
-          } else {
-            if (!f.source.value.trim()) return toast('Paste a link or choose a .torrent file');
-            r = await fetch(new URL('api/downloads', BASE), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ source: f.source.value.trim(), lib: f.lib.value, subdir: f.subdir.value }) });
+          let r = await send(false);
+          if (r.status === 409 || r.status === 422) {
+            // looks like a duplicate: 409 = may download anyway, 422 = can't (already in rtorrent)
+            const j = await r.json().catch(() => ({}));
+            const items = ((j.duplicate && j.duplicate.items) || []).slice(0, 6).map((i) => `• ${i.libName} · ${i.name}`).join('\n');
+            if (!j.canForce) { toast(j.error || 'Already downloaded', 6000); return; }
+            if (!confirm(`${j.error}${items ? '\n\n' + items : ''}\n\nDownload anyway?`)) return;
+            r = await send(true);
           }
           if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
           f.source.value = ''; f.file.value = ''; f.file.onchange();
@@ -1054,7 +1064,7 @@
           return `<div class="smkv-dl ${esc(j.state)}" data-id="${esc(j.id)}">
             <div class="smkv-dlh"><b>${esc(j.name || j.source)}</b><span class="smkv-dim2">${j.kind} → ${esc(names[j.lib] || j.lib)}${j.subdir ? ' / ' + esc(j.subdir) : ''} · ${esc(j.user)}</span></div>
             <div class="smkv-pbar big"><i style="width:${pct.toFixed(1)}%"></i></div>
-            <div class="smkv-dlf2"><span class="smkv-dim2">${j.state === 'done' && j.seeding ? 'Seeding' : state[j.state] || j.state}${j.size > 0 ? ` · ${fmtSize(j.done)} / ${fmtSize(j.size)}` : ''}${j.rate > 0 ? ` · ${fmtSize(j.rate)}/s` : ''}${j.error ? ` · <span class="smkv-err">${esc(j.error)}</span>` : ''}</span>
+            <div class="smkv-dlf2"><span class="smkv-dim2">${j.state === 'done' && j.seeding ? 'Seeding' : state[j.state] || j.state}${j.size > 0 ? ` · ${fmtSize(j.done)} / ${fmtSize(j.size)}` : ''}${j.rate > 0 ? ` · ${fmtSize(j.rate)}/s` : ''}${j.error ? ` · <span class="smkv-err">${esc(j.error)}</span>` : ''}${j.dupes && j.dupes.length ? `<br><span style="color:#f5a623" title="${esc(j.dupes.join('\n'))}">⚠ Also in the library: ${esc(j.dupes.slice(0, 2).join(' · '))}${j.dupes.length > 2 ? ` +${j.dupes.length - 2}` : ''}</span>` : ''}</span>
               ${mine ? `${j.kind === 'http' && (j.state === 'failed' || j.state === 'canceled') ? '<button data-a="retry">Retry</button>' : ''}<button data-a="rm">${j.state === 'queued' || j.state === 'downloading' ? 'Cancel' : 'Remove'}</button>` : ''}</div></div>`;
         }).join('') : '<div class="smkv-dim">No downloads yet.</div>';
         $('#smkv-dllist').querySelectorAll('button[data-a]').forEach((b) => b.onclick = async () => {

@@ -132,16 +132,18 @@ class Api {
     return List<String>.from(r['dirs'] as List? ?? const []);
   }
 
-  Future<void> addDownload(String source, String lib, String subdir) =>
-      _req('POST', 'downloads', body: {'source': source, 'lib': lib, 'subdir': subdir});
+  /// 409 = looks like a duplicate (retry with force), 422 = can't (already in rtorrent).
+  Future<void> addDownload(String source, String lib, String subdir, {bool force = false}) =>
+      _req('POST', 'downloads', body: {'source': source, 'lib': lib, 'subdir': subdir, 'force': force});
 
   /// Upload a .torrent file (rtorrent downloads it into the library).
-  Future<void> addTorrentFile(String fileName, List<int> bytes, String lib, String subdir) async {
+  Future<void> addTorrentFile(String fileName, List<int> bytes, String lib, String subdir, {bool force = false}) async {
     await ensureSession();
     final req = http.MultipartRequest('POST', _u('downloads/torrent'))
       ..headers.addAll(authHeaders)
       ..fields['lib'] = lib
       ..fields['subdir'] = subdir
+      ..fields['force'] = force ? '1' : '0'
       ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: fileName));
     final res = await http.Response.fromStream(await _client.send(req));
     if (res.statusCode != 200) {

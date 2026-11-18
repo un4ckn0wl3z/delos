@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -105,5 +106,27 @@ func TestCleanSubdir(t *testing.T) {
 	}
 	if sanitizeFileName("../.hidden/evil:name?.mkv") != "_.hidden_evil_name_.mkv" {
 		t.Errorf("sanitizeFileName = %q", sanitizeFileName("../.hidden/evil:name?.mkv"))
+	}
+}
+
+func TestTorrentIdentity(t *testing.T) {
+	data, err := os.ReadFile("/home/claude/rtt/test.torrent")
+	if err != nil {
+		t.Skip("no test torrent")
+	}
+	h, n, err := torrentInfo(data)
+	if err != nil || h != "D350D1DBFD81EADD82E3DED2CEB76783DBCF1510" || n != "Test Movie (2024).mkv" {
+		t.Fatalf("torrentInfo = %q %q %v", h, n, err)
+	}
+	// same hash as base32
+	b32 := "2NINDW75QHVN3AXD33JM5N3HQPN46FIQ"
+	if h2, _ := magnetInfo("magnet:?xt=urn:btih:" + b32 + "&dn=x"); h2 != h {
+		t.Errorf("magnet base32 = %q", h2)
+	}
+	if h3, dn := magnetInfo("magnet:?xt=urn:btih:d350d1dbfd81eadd82e3ded2ceb76783dbcf1510&dn=Some+Movie"); h3 != h || dn != "Some Movie" {
+		t.Errorf("magnet hex = %q %q", h3, dn)
+	}
+	if _, _, err := torrentInfo([]byte("not a torrent")); err == nil {
+		t.Error("garbage accepted")
 	}
 }

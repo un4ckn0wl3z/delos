@@ -74,16 +74,41 @@ class _DownloadsViewState extends State<DownloadsView> {
     } catch (_) {}
   }
 
+  /// Runs an add; if the server says it's a duplicate, asks and retries with force.
+  Future<void> _withDupCheck(Future<void> Function(bool force) add) async {
+    try {
+      await add(false);
+    } on ApiException catch (e) {
+      if (e.status != 409) rethrow;
+      if (!mounted) return;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Already have it?'),
+          content: Text(e.message),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Download anyway')),
+          ],
+        ),
+      );
+      if (ok != true) throw const _Skipped();
+      await add(true);
+    }
+  }
+
   Future<void> _add() async {
     final src = _src.text.trim();
     if (src.isEmpty || lib == null) return;
     FocusScope.of(context).unfocus();
     setState(() => busy = true);
     try {
-      await widget.app.api.addDownload(src, lib!, _sub.text.trim());
+      await _withDupCheck((force) => widget.app.api.addDownload(src, lib!, _sub.text.trim(), force: force));
       _src.clear();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Download added')));
       await _load();
+    } on _Skipped {
+      // user chose not to download a duplicate
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } finally {
@@ -115,9 +140,11 @@ class _DownloadsViewState extends State<DownloadsView> {
     }
     setState(() => busy = true);
     try {
-      await widget.app.api.addTorrentFile(f.name, bytes, lib!, _sub.text.trim());
+      await _withDupCheck((force) => widget.app.api.addTorrentFile(f.name, bytes, lib!, _sub.text.trim(), force: force));
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added ${f.name}')));
       await _load();
+    } on _Skipped {
+      // not downloading the duplicate
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } finally {
@@ -427,8 +454,19 @@ class _DownloadsViewState extends State<DownloadsView> {
             ].join(' · '),
             style: TextStyle(fontSize: 12, color: state == 'failed' ? Colors.redAccent : const Color(0xFF9AA3B2)),
           ),
+          if ((j['dupes'] as List?)?.isNotEmpty ?? false)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('⚠ Also in the library: ${(j['dupes'] as List).take(2).join(' · ')}${(j['dupes'] as List).length > 2 ? ' +${(j['dupes'] as List).length - 2}' : ''}',
+                  style: const TextStyle(fontSize: 12, color: Color(0xFFF5A623))),
+            ),
         ]),
       ),
     );
   }
+}
+
+/// Thrown when the user declines to download a duplicate.
+class _Skipped implements Exception {
+  const _Skipped();
 }
