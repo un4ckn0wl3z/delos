@@ -158,7 +158,7 @@ func (m *Media) Probe(ctx context.Context, path string, st os.FileInfo) (*ProbeI
 }
 
 func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
-	p, st, err := s.resolve(r.URL.Query().Get("path"))
+	p, st, err := s.resolveFor(r, r.URL.Query().Get("path"))
 	if err != nil {
 		httpErr(w, 404, err.Error())
 		return
@@ -221,7 +221,7 @@ func (m *Media) Keyframe(ctx context.Context, path string, t, start float64) (fl
 }
 
 func (s *Server) handleKeyframe(w http.ResponseWriter, r *http.Request) {
-	p, st, err := s.resolve(r.URL.Query().Get("path"))
+	p, st, err := s.resolveFor(r, r.URL.Query().Get("path"))
 	if err != nil {
 		httpErr(w, 404, err.Error())
 		return
@@ -244,7 +244,7 @@ func (s *Server) handleKeyframe(w http.ResponseWriter, r *http.Request) {
 // Seeking is done by the client re-requesting with ?start=.
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
-	path, st, err := s.resolve(r.URL.Query().Get("path"))
+	path, st, err := s.resolveFor(r, r.URL.Query().Get("path"))
 	if err != nil {
 		httpErr(w, 404, err.Error())
 		return
@@ -417,7 +417,7 @@ func (m *Media) keyLock(k string) *sync.Mutex {
 }
 
 func (s *Server) handleSubtitle(w http.ResponseWriter, r *http.Request) {
-	path, st, err := s.resolve(r.URL.Query().Get("path"))
+	path, st, err := s.resolveFor(r, r.URL.Query().Get("path"))
 	if err != nil {
 		httpErr(w, 404, err.Error())
 		return

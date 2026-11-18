@@ -26,6 +26,7 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/update/check", s.adminOnly(s.handleUpdateCheck))
 	mux.HandleFunc("POST /api/admin/update/install", s.adminOnly(s.handleUpdateInstall))
 	mux.HandleFunc("POST /api/admin/settings", s.adminOnly(s.handleSettings))
+	mux.HandleFunc("GET /api/admin/settings", s.adminOnly(s.handleSettingsGet))
 }
 
 func (s *Server) handleAdminPage(w http.ResponseWriter, r *http.Request) {
@@ -219,7 +220,13 @@ func (s *Server) library() libStats {
 	if time.Since(libCache.at) < time.Minute {
 		return libCache
 	}
-	files, bytes := dirSize(s.cfg.Root, func(n string) bool { return s.cfg.Exts[strings.ToLower(filepath.Ext(n))] })
+	files, bytes := 0, int64(0)
+	for _, l := range s.libs.List() {
+		for _, it := range s.index.Items(l.ID) {
+			files++
+			bytes += it.Size
+		}
+	}
 	_, cache := dirSize(s.cfg.CacheDir, func(n string) bool { return strings.HasSuffix(n, ".vtt") })
 	libCache = libStats{Files: files, Bytes: bytes, Cache: cache, at: time.Now()}
 	return libCache
@@ -243,7 +250,11 @@ func (s *Server) ffmpegVersion() string {
 
 func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
 	lib := s.library()
-	total, free, ok := diskUsage(s.cfg.Root)
+	diskPath := s.cfg.Root
+	if ls := s.libs.List(); len(ls) > 0 {
+		diskPath = ls[0].Path
+	}
+	total, free, ok := diskUsage(diskPath)
 	disk := map[string]any{}
 	if ok {
 		disk = map[string]any{"total": total, "free": free}
@@ -253,8 +264,8 @@ func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"version":    version,
 		"started":    s.started.Unix(),
-		"root":       s.cfg.Root,
-		"exts":       keys(s.cfg.Exts),
+		"libraries":  len(s.libs.List()),
+		"scan":       s.index.Status(),
 		"ffmpeg":     s.ffmpegVersion(),
 		"maxStreams": s.cfg.MaxStreams,
 		"transcodes": len(s.media.sem),

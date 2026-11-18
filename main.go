@@ -11,10 +11,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
-	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -53,6 +51,8 @@ type Server struct {
 	conns    *ConnRegistry
 	settings *SettingsStore
 	updater  *Updater
+	libs     *LibraryStore
+	index    *Indexer
 	started  time.Time
 }
 
@@ -75,7 +75,7 @@ func main() {
 	var cfg Config
 	var exts, secret string
 	var maxStreams int
-	flag.StringVar(&cfg.Root, "root", envOr("STREAMMKV_ROOT", "."), "media root directory")
+	flag.StringVar(&cfg.Root, "root", envOr("STREAMMKV_ROOT", "."), "media root for the first library (later libraries are managed in /admin)")
 	flag.StringVar(&cfg.Listen, "listen", envOr("STREAMMKV_LISTEN", ":8090"), "listen address")
 	flag.StringVar(&cfg.User, "user", envOr("STREAMMKV_USER", ""), "initial admin username (used only when no users exist yet)")
 	flag.StringVar(&cfg.Pass, "pass", envOr("STREAMMKV_PASS", ""), "initial admin password (used only when no users exist yet)")
@@ -86,7 +86,7 @@ func main() {
 	flag.StringVar(&cfg.DataDir, "data", envOr("STREAMMKV_DATA", ""), "data dir for watch progress (default: cache dir)")
 	flag.StringVar(&cfg.TLSCert, "tls-cert", envOr("STREAMMKV_TLS_CERT", ""), "TLS certificate (optional)")
 	flag.StringVar(&cfg.TLSKey, "tls-key", envOr("STREAMMKV_TLS_KEY", ""), "TLS key (optional)")
-	flag.StringVar(&exts, "ext", envOr("STREAMMKV_EXT", ".mkv"), "comma-separated file extensions to list")
+	flag.StringVar(&exts, "ext", envOr("STREAMMKV_EXT", defaultVideoExts), "comma-separated video file extensions")
 	flag.IntVar(&maxStreams, "max-streams", 3, "max concurrent ffmpeg streams")
 	flag.Parse()
 
@@ -167,8 +167,18 @@ func main() {
 			}
 		}
 	}
+	libs, migrated, err := NewLibraryStore(cfg.DataDir, cfg.Root, cfg.Exts)
+	if err != nil {
+		log.Fatal(err)
+	}
 	s := &Server{cfg: cfg, media: NewMedia(&cfg), progress: NewProgressStore(cfg.DataDir, legacy),
-		users: users, conns: NewConnRegistry(), started: time.Now(), settings: NewSettingsStore(cfg.DataDir)}
+		users: users, conns: NewConnRegistry(), started: time.Now(), settings: NewSettingsStore(cfg.DataDir), libs: libs}
+	if migrated {
+		s.progress.PrefixKeys("main/") // paths are now "<library>/<relative path>"
+		log.Printf("created library \"main\" for %s; add more in /admin", cfg.Root)
+	}
+	s.index = NewIndexer(s)
+	go s.index.Loop()
 	s.updater = NewUpdater(s, s.settings)
 	go s.updater.Loop()
 
@@ -191,13 +201,14 @@ func main() {
 	mux.HandleFunc("GET /api/raw", s.auth(s.handleRaw))
 	mux.HandleFunc("GET /api/progress", s.auth(s.handleProgressGet))
 	mux.HandleFunc("POST /api/progress", s.auth(s.handleProgressPost))
+	s.libraryRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
 		Handler:           logRequests(mux),
 		ReadHeaderTimeout: 15 * time.Second,
 	}
-	log.Printf("StreamMKV %s serving %s on %s (exts=%s, %d users)", version, cfg.Root, cfg.Listen, exts, users.Count())
+	log.Printf("StreamMKV %s on %s (%d libraries, %d users)", version, cfg.Listen, len(libs.List()), users.Count())
 	if cfg.TLSCert != "" {
 		log.Fatal(srv.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey))
 	}
@@ -366,63 +377,31 @@ type FileEntry struct {
 	Duration float64 `json:"duration,omitempty"`
 }
 
+// handleList is the v1 flat file list (userscript ≤1.3, app ≤1.3): every video
+// file of every library the user can see. Dir is prefixed with the library name.
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	files := []FileEntry{}
-	filepath.WalkDir(s.cfg.Root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		name := d.Name()
-		if strings.HasPrefix(name, ".") && p != s.cfg.Root {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if d.IsDir() || !s.cfg.Exts[strings.ToLower(filepath.Ext(name))] {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil || !info.Mode().IsRegular() {
-			return nil
-		}
-		rel, _ := filepath.Rel(s.cfg.Root, p)
-		rel = filepath.ToSlash(rel)
-		dir := filepath.ToSlash(filepath.Dir(rel))
-		if dir == "." {
-			dir = ""
-		}
-		files = append(files, FileEntry{Path: rel, Name: name, Dir: dir, Size: info.Size(), MTime: info.ModTime().Unix()})
-		return nil
-	})
 	prog := s.progress.All(userOf(r))
-	for i := range files {
-		if p, ok := prog[files[i].Path]; ok {
-			files[i].Pos, files[i].Duration = p.Pos, p.Duration
+	for _, lib := range s.visibleLibraries(r) {
+		if lib.Type == LibMusic {
+			continue
+		}
+		for _, it := range s.index.Items(lib.ID) {
+			dir := lib.Name
+			if it.Dir != "" {
+				dir += "/" + it.Dir
+			}
+			f := FileEntry{Path: it.Path, Name: it.Name, Dir: dir, Size: it.Size, MTime: it.MTime}
+			if p, ok := prog[it.Path]; ok {
+				f.Pos, f.Duration = p.Pos, p.Duration
+			}
+			files = append(files, f)
 		}
 	}
-	sort.Slice(files, func(i, j int) bool { return strings.ToLower(files[i].Path) < strings.ToLower(files[j].Path) })
+	sort.Slice(files, func(i, j int) bool {
+		return strings.ToLower(files[i].Dir+"/"+files[i].Name) < strings.ToLower(files[j].Dir+"/"+files[j].Name)
+	})
 	writeJSON(w, 200, map[string]any{"files": files})
-}
-
-// resolve maps a client-supplied relative path to an absolute path inside root.
-func (s *Server) resolve(rel string) (string, os.FileInfo, error) {
-	if rel == "" {
-		return "", nil, errors.New("missing path")
-	}
-	p := filepath.Join(s.cfg.Root, filepath.FromSlash(rel))
-	r2, err := filepath.Rel(s.cfg.Root, p)
-	if err != nil || r2 == ".." || strings.HasPrefix(r2, ".."+string(filepath.Separator)) || filepath.IsAbs(r2) {
-		return "", nil, errors.New("invalid path")
-	}
-	if !s.cfg.Exts[strings.ToLower(filepath.Ext(p))] {
-		return "", nil, errors.New("file type not allowed")
-	}
-	st, err := os.Stat(p)
-	if err != nil || !st.Mode().IsRegular() {
-		return "", nil, errors.New("not found")
-	}
-	return p, st, nil
 }
 
 func cacheKey(parts ...string) string {

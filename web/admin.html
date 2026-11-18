@@ -50,6 +50,13 @@
   .update .msg{flex:1;min-width:240px}
   .update.avail{background:#1b2a1f}
   .toggle{display:flex;align-items:center;gap:8px;color:var(--dim);cursor:pointer}
+  select{background:#0b0d11;border:1px solid #2c3440;border-radius:7px;color:#fff;padding:7px 8px;font:inherit}
+  .badge.t-movies{background:#3a2a4a;color:#d6b4ff}.badge.t-tv{background:#1e3352;color:#9cc8ff}
+  .badge.t-music{background:#4a2a35;color:#ffb3c7}.badge.t-videos{background:#2c3440;color:#c9cfd8}
+  .folders{max-height:46vh;overflow:auto;border:1px solid #232a34;border-radius:8px}
+  .folders div{padding:7px 12px;cursor:pointer;border-bottom:1px solid #1d222b}
+  .folders div:hover{background:#1d232d}
+  .checks label{display:flex;gap:8px;align-items:center;padding:4px 0}
   form.add{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px;border-top:1px solid var(--line)}
   #login,#modal{position:fixed;inset:0;display:none;place-items:center;background:rgba(5,6,8,.75);z-index:20}
   #login.show,#modal.show{display:grid}
@@ -87,6 +94,36 @@
   <section>
     <h2>Connections <span class="count" id="n-conn">0</span><span class="sp"></span><span class="dim" style="font-weight:normal;font-size:12px" id="tx"></span></h2>
     <div id="conns"></div>
+  </section>
+
+  <section>
+    <h2>Libraries <span class="count" id="n-libs">0</span><span class="sp"></span><span class="dim" style="font-weight:normal;font-size:12px" id="scan-status"></span></h2>
+    <div id="libs"></div>
+    <form class="add" id="lib-form">
+      <input type="text" name="name" placeholder="name (e.g. Movies)" required autocomplete="off">
+      <select name="type">
+        <option value="movies">Movies (TMDB)</option><option value="tv">TV series (TMDB)</option>
+        <option value="music">Music</option><option value="videos">Other videos</option>
+      </select>
+      <input type="text" name="path" placeholder="/home/you/torrents/movies" required style="flex:1;min-width:220px" autocomplete="off">
+      <button type="button" id="lib-browse">Browse…</button>
+      <button class="primary">Add library</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Metadata</h2>
+    <form class="add" id="meta-form" style="border-top:none">
+      <span class="dim">TMDB API key</span>
+      <input type="password" name="key" placeholder="v3 API key or v4 read token" autocomplete="off" style="flex:1;min-width:240px">
+      <select name="lang">
+        <option value="en-US">English</option><option value="th-TH">ไทย</option><option value="ja-JP">日本語</option>
+        <option value="ko-KR">한국어</option><option value="zh-CN">中文</option><option value="fr-FR">Français</option>
+        <option value="de-DE">Deutsch</option><option value="es-ES">Español</option>
+      </select>
+      <button class="primary">Save</button>
+    </form>
+    <div class="empty" id="meta-note" style="padding-top:0"></div>
   </section>
 
   <section>
@@ -287,6 +324,7 @@
         <td class="h-m dim">${new Date(u.created * 1000).toLocaleDateString()}</td>
         <td><div class="actions">
           <button data-a="history">History</button>
+          ${u.admin ? '' : `<button data-a="libs" title="Which libraries this user can see">Libraries${u.libraries ? ` (${u.libraries.length})` : ''}</button>`}
           <button data-a="password">Reset password</button>
           <button data-a="role">${u.admin ? 'Remove admin' : 'Make admin'}</button>
           <button data-a="revoke" title="Sign this user out on every device">Sign out</button>
@@ -326,6 +364,22 @@
         confirmBox(`Delete ${u.name} and their watch history?`, 'Delete', async () => {
           await api(`admin/users/${n}`, { method: 'DELETE' }); toast('Deleted'); loadUsers();
         });
+      } else if (a === 'libs') {
+        if (!libs.length) await loadLibs();
+        const all = u.libraries == null;
+        modal(`<h3>Libraries · ${esc(u.name)}</h3>
+          <div class="checks"><label><input type="checkbox" id="all" ${all ? 'checked' : ''}> <b>All libraries</b> (including ones added later)</label>
+          <div id="list" style="padding-left:22px">${libs.map((l) => `<label><input type="checkbox" value="${esc(l.id)}" ${all || (u.libraries || []).includes(l.id) ? 'checked' : ''}> ${esc(l.name)} <span class="badge t-${esc(l.type)}">${typeName[l.type]}</span></label>`).join('')}</div></div>
+          <div class="row"><button data-close>Cancel</button><button class="primary" id="ok">Save</button></div>`,
+          (b, close) => {
+            const sync = () => b.querySelectorAll('#list input').forEach((c) => { c.disabled = b.querySelector('#all').checked; });
+            b.querySelector('#all').onchange = sync; sync();
+            b.querySelector('#ok').onclick = async () => {
+              const sel = b.querySelector('#all').checked ? null : [...b.querySelectorAll('#list input:checked')].map((c) => c.value);
+              try { await api(`admin/users/${n}/libraries`, { method: 'POST', body: { libraries: sel } }); close(); toast('Saved'); loadUsers(); }
+              catch (x) { toast(x.message); }
+            };
+          });
       } else if (a === 'history') {
         const h = await api(`admin/users/${n}/progress`);
         modal(`<h3>History · ${esc(u.name)}</h3>${h.items.length ? `<table>${h.items.map((w) => `<tr><td class="file">${esc(base(w.path))}</td>
@@ -349,6 +403,101 @@
     } catch (x) { toast(x.message); }
   };
 
+  // ---------------------------------------------------------- libraries
+  let libs = [];
+  const typeName = { movies: 'Movies', tv: 'TV', music: 'Music', videos: 'Videos' };
+  function renderLibs(d) {
+    libs = d.libraries;
+    $('#n-libs').textContent = libs.length;
+    const st = d.status || {};
+    $('#scan-status').textContent = st.running ? `${st.phase || 'Scanning'}${st.total ? ` ${st.done}/${st.total}` : ''} · ${st.lib}` : (st.lastError ? '⚠ ' + st.lastError : '');
+    $('#libs').innerHTML = libs.length ? `<table><tr><th>Library</th><th class="h-m">Path</th><th>Items</th><th class="h-m">Scanned</th><th></th></tr>${
+      libs.map((l) => `<tr data-l="${esc(l.id)}">
+        <td><b>${esc(l.name)}</b><span class="badge t-${esc(l.type)}">${typeName[l.type] || l.type}</span>${l.scanning ? ' <span class="dim">· scanning…</span>' : ''}</td>
+        <td class="h-m dim file">${esc(l.path)}</td><td>${l.count}</td><td class="h-m dim">${ago(l.scanned)}</td>
+        <td><div class="actions">
+          <button data-a="scan" title="Look for new and removed files">Scan</button>
+          ${l.type === 'movies' || l.type === 'tv' || l.type === 'music' ? '<button data-a="refresh" title="Re-download all metadata">Refresh metadata</button>' : ''}
+          <button data-a="edit">Edit</button>
+          <button class="danger" data-a="delete">Delete</button>
+        </div></td></tr>`).join('')}</table>` : '<div class="empty">No libraries yet — add one below.</div>';
+    $('#libs').querySelectorAll('button[data-a]').forEach((b) => {
+      const l = libs.find((x) => x.id === b.closest('tr').dataset.l);
+      b.onclick = () => libAction(b.dataset.a, l);
+    });
+  }
+  const loadLibs = () => api('admin/libraries').then(renderLibs).catch(() => {});
+
+  async function libAction(a, l) {
+    const id = encodeURIComponent(l.id);
+    try {
+      if (a === 'scan' || a === 'refresh') {
+        await api(`admin/libraries/${id}/scan${a === 'refresh' ? '?refresh=1' : ''}`, { method: 'POST' });
+        toast(a === 'scan' ? 'Scan started' : 'Refreshing metadata…'); setTimeout(loadLibs, 800);
+      } else if (a === 'delete') {
+        confirmBox(`Remove library "${l.name}"? Files on disk are not touched.`, 'Remove', async () => {
+          await api(`admin/libraries/${id}`, { method: 'DELETE' }); toast('Removed'); loadLibs();
+        });
+      } else if (a === 'edit') {
+        modal(`<h3>Edit library</h3>
+          <input type="text" id="n" value="${esc(l.name)}">
+          <select id="t">${Object.entries(typeName).map(([k, v]) => `<option value="${k}" ${k === l.type ? 'selected' : ''}>${v}</option>`).join('')}</select>
+          <div class="row" style="justify-content:stretch"><input type="text" id="p" value="${esc(l.path)}" style="flex:1"><button id="br">Browse…</button></div>
+          <div class="dim" style="font-size:12px">Changing the type or path rescans the library.</div>
+          <div class="err" id="e"></div><div class="row"><button data-close>Cancel</button><button class="primary" id="ok">Save</button></div>`,
+          (b, close) => {
+            b.querySelector('#br').onclick = () => browse(b.querySelector('#p').value, (p) => { modalStack.pop(); libAction('edit', Object.assign({}, l, { name: b.querySelector('#n').value, type: b.querySelector('#t').value, path: p })); });
+            b.querySelector('#ok').onclick = async () => {
+              try {
+                await api(`admin/libraries/${id}`, { method: 'PUT', body: { name: b.querySelector('#n').value, type: b.querySelector('#t').value, path: b.querySelector('#p').value } });
+                close(); toast('Saved'); loadLibs();
+              } catch (x) { b.querySelector('#e').textContent = x.message; }
+            };
+          });
+      }
+    } catch (x) { toast(x.message); }
+  }
+
+  // folder picker (server-side folders)
+  const modalStack = [];
+  async function browse(start, pick) {
+    let d;
+    try { d = await api('admin/browse?path=' + encodeURIComponent(start || '')); } catch (x) { if (start) return browse('', pick); return toast(x.message); }
+    modal(`<h3>Choose a folder</h3><div class="dim file">${esc(d.path)}</div>
+      <div class="folders">${d.path !== d.parent ? '<div data-p="..">⬆ ..</div>' : ''}${d.dirs.map((x) => `<div data-p="${esc(x)}">📁 ${esc(x)}</div>`).join('') || '<div class="dim">(no sub-folders)</div>'}</div>
+      <div class="row"><button data-close>Cancel</button><button class="primary" id="use">Use this folder</button></div>`,
+      (b, close) => {
+        b.querySelectorAll('.folders div[data-p]').forEach((el) => el.onclick = () => browse(el.dataset.p === '..' ? d.parent : (d.path.replace(/\/$/, '') + '/' + el.dataset.p), pick));
+        b.querySelector('#use').onclick = () => { close(); pick(d.path); };
+      });
+  }
+  $('#lib-browse').onclick = () => browse($('#lib-form').path.value, (p) => { $('#lib-form').path.value = p; if (!$('#lib-form').name.value) $('#lib-form').name.value = p.split('/').pop(); });
+  $('#lib-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    try {
+      await api('admin/libraries', { method: 'POST', body: { name: f.name.value.trim(), type: f.type.value, path: f.path.value.trim() } });
+      f.reset(); toast('Library added — scanning'); loadLibs();
+    } catch (x) { toast(x.message); }
+  };
+
+  // metadata settings
+  function renderMeta(st) {
+    const f = $('#meta-form');
+    f.key.placeholder = st.tmdbKeySet ? '•••••••• (saved — type to replace)' : 'v3 API key or v4 read token';
+    f.lang.value = st.tmdbLang || 'en-US';
+    $('#meta-note').innerHTML = st.tmdbKeySet
+      ? 'Movies and TV are matched on <b>TMDB</b>. Music uses tags, cover images in the folder, and MusicBrainz / Cover Art Archive — no key needed.'
+      : 'Add a free TMDB key to get posters, genres, cast and plots for movie/TV libraries: <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org/settings/api</a>. Without it, titles come from file names.';
+  }
+  $('#meta-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target, body = { tmdbLang: f.lang.value };
+    if (f.key.value.trim()) body.tmdbKey = f.key.value.trim();
+    try { renderMeta(await api('admin/settings', { method: 'POST', body })); f.key.value = ''; toast('Saved — refreshing metadata'); setTimeout(loadLibs, 800); }
+    catch (x) { toast(x.message); }
+  };
+
   const loadOverview = () => api('admin/overview').then(renderOverview).catch(() => {});
   const loadUsers = () => api('admin/users').then(renderUsers).catch(() => {});
   const loadUpdate = () => api('admin/update').then(renderUpdate).catch(() => {});
@@ -359,10 +508,10 @@
     $('#ver').textContent = 'v' + me.version;
     if (!me.admin) { $('#self').hidden = false; $('#self-name').textContent = me.user; return; }
     $('#app').hidden = false;
-    await Promise.all([loadOverview(), loadUsers(), loadUpdate()]);
+    await Promise.all([loadOverview(), loadUsers(), loadUpdate(), loadLibs(), api('admin/settings').then(renderMeta).catch(() => {})]);
     clearInterval(timer);
     let n = 0;
-    timer = setInterval(() => { loadOverview(); if (++n % 3 === 0) loadUsers(); if (n % 12 === 0) loadUpdate(); }, 5000);
+    timer = setInterval(() => { loadOverview(); loadLibs(); if (++n % 3 === 0) loadUsers(); if (n % 12 === 0) loadUpdate(); }, 5000);
   }
   boot();
 })();

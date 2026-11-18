@@ -29,6 +29,8 @@ type User struct {
 	Admin   bool   `json:"admin"`
 	Gen     int    `json:"gen"` // bumped on password change / revoke → old tokens die
 	Created int64  `json:"created"`
+	// Libraries the user may see; nil = all, empty = none. Admins always see all.
+	Libraries *[]string `json:"libraries,omitempty"`
 }
 
 type UserView struct {
@@ -36,6 +38,8 @@ type UserView struct {
 	Admin    bool   `json:"admin"`
 	Created  int64  `json:"created"`
 	LastSeen int64  `json:"lastSeen,omitempty"`
+	// nil = all libraries
+	Libraries *[]string `json:"libraries"`
 }
 
 // UserStore keeps users.json in memory. The file is re-read when it changes on
@@ -191,7 +195,7 @@ func (us *UserStore) List() []UserView {
 	defer us.mu.Unlock()
 	out := make([]UserView, 0, len(us.users))
 	for n, u := range us.users {
-		out = append(out, UserView{Name: n, Admin: u.Admin, Created: u.Created, LastSeen: us.lastSeen[n]})
+		out = append(out, UserView{Name: n, Admin: u.Admin, Created: u.Created, LastSeen: us.lastSeen[n], Libraries: u.Libraries})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -254,6 +258,32 @@ func (us *UserStore) SetPassword(name, pw string) (string, error) {
 	u.Hash = hashPassword(pw)
 	u.Gen++
 	return pw, us.saveLocked()
+}
+
+// Libraries returns the library ids a user may see; nil means all.
+func (us *UserStore) Libraries(name string) []string {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	u, ok := us.users[name]
+	if !ok {
+		return []string{}
+	}
+	if u.Libraries == nil {
+		return nil
+	}
+	return append([]string{}, (*u.Libraries)...)
+}
+
+// SetLibraries restricts a user to the given libraries; nil gives access to all.
+func (us *UserStore) SetLibraries(name string, libs *[]string) error {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	u, ok := us.users[name]
+	if !ok {
+		return errors.New("no such user")
+	}
+	u.Libraries = libs
+	return us.saveLocked()
 }
 
 func (us *UserStore) Revoke(name string) error {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -144,6 +145,20 @@ func (ps *ProgressStore) Count(user string) (total, inProgress int) {
 	return
 }
 
+// PrefixKeys rewrites every path key as prefix+key (single-root → library migration).
+func (ps *ProgressStore) PrefixKeys(prefix string) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	for u, m := range ps.users {
+		n := make(map[string]*Progress, len(m))
+		for k, v := range m {
+			n[prefix+k] = v
+		}
+		ps.users[u] = n
+	}
+	ps.dirty = true
+}
+
 func (ps *ProgressStore) Clear(user string) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
@@ -213,7 +228,7 @@ func (s *Server) handleProgressPost(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 400, "bad request")
 		return
 	}
-	if _, _, err := s.resolve(u.Path); err != nil {
+	if _, _, err := s.resolveFor(r, u.Path); err != nil {
 		httpErr(w, 404, err.Error())
 		return
 	}
@@ -221,9 +236,16 @@ func (s *Server) handleProgressPost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
+var mimeTypes = map[string]string{
+	".mkv": "video/x-matroska", ".mp4": "video/mp4", ".m4v": "video/mp4", ".webm": "video/webm",
+	".mov": "video/quicktime", ".avi": "video/x-msvideo", ".ts": "video/mp2t", ".m2ts": "video/mp2t",
+	".mp3": "audio/mpeg", ".flac": "audio/flac", ".m4a": "audio/mp4", ".aac": "audio/aac", ".ogg": "audio/ogg",
+	".oga": "audio/ogg", ".opus": "audio/ogg", ".wav": "audio/wav", ".mka": "audio/x-matroska",
+}
+
 // GET /api/raw?path=  — the original file with HTTP Range support (used by the app's mpv player).
 func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
-	p, st, err := s.resolve(r.URL.Query().Get("path"))
+	p, st, err := s.resolveFor(r, r.URL.Query().Get("path"))
 	if err != nil {
 		httpErr(w, 404, err.Error())
 		return
@@ -235,8 +257,8 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 	defer s.conns.Add(userOf(r), r, r.URL.Query().Get("path"), "direct")()
-	if filepath.Ext(p) == ".mkv" {
-		w.Header().Set("Content-Type", "video/x-matroska")
+	if ct, ok := mimeTypes[strings.ToLower(filepath.Ext(p))]; ok {
+		w.Header().Set("Content-Type", ct)
 	}
 	w.Header().Set("Cache-Control", "private, no-transform")
 	http.ServeContent(w, r, st.Name(), st.ModTime(), f)

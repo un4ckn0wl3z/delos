@@ -264,7 +264,9 @@ func (u *Updater) Loop() {
 // ---------------------------------------------------------------- settings.json
 
 type ServerSettings struct {
-	AutoUpdate bool `json:"autoUpdate"`
+	AutoUpdate bool   `json:"autoUpdate"`
+	TMDBKey    string `json:"tmdbKey,omitempty"`
+	TMDBLang   string `json:"tmdbLang,omitempty"` // e.g. en-US, th-TH
 }
 
 type SettingsStore struct {
@@ -334,14 +336,44 @@ func (s *Server) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// POST /api/admin/settings — partial update: {"autoUpdate"?, "tmdbKey"?, "tmdbLang"?}
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
-	var b ServerSettings
+	var b struct {
+		AutoUpdate *bool   `json:"autoUpdate"`
+		TMDBKey    *string `json:"tmdbKey"`
+		TMDBLang   *string `json:"tmdbLang"`
+	}
 	if !decodeJSON(w, r, &b) {
 		return
 	}
-	if err := s.settings.Set(b); err != nil {
+	cur := s.settings.Get()
+	metaChanged := false
+	if b.AutoUpdate != nil {
+		cur.AutoUpdate = *b.AutoUpdate
+	}
+	if b.TMDBKey != nil && strings.TrimSpace(*b.TMDBKey) != cur.TMDBKey {
+		cur.TMDBKey = strings.TrimSpace(*b.TMDBKey)
+		metaChanged = true
+	}
+	if b.TMDBLang != nil && *b.TMDBLang != cur.TMDBLang {
+		cur.TMDBLang = *b.TMDBLang
+		metaChanged = true
+	}
+	if err := s.settings.Set(cur); err != nil {
 		httpErr(w, 500, err.Error())
 		return
 	}
-	writeJSON(w, 200, s.updater.Status())
+	if metaChanged {
+		go s.index.RefreshAllMetadata(b.TMDBLang != nil)
+	}
+	writeJSON(w, 200, s.adminSettings())
+}
+
+func (s *Server) adminSettings() map[string]any {
+	cur := s.settings.Get()
+	return map[string]any{"autoUpdate": cur.AutoUpdate, "tmdbKeySet": cur.TMDBKey != "", "tmdbLang": cur.TMDBLang, "update": s.updater.Status()}
+}
+
+func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, s.adminSettings())
 }
