@@ -33,6 +33,8 @@ type User struct {
 	Libraries *[]string `json:"libraries,omitempty"`
 	// Editor may correct metadata (admins always can).
 	Editor bool `json:"editor,omitempty"`
+	// Downloader may add HTTP/torrent downloads (admins always can).
+	Downloader bool `json:"downloader,omitempty"`
 }
 
 type UserView struct {
@@ -41,8 +43,9 @@ type UserView struct {
 	Created  int64  `json:"created"`
 	LastSeen int64  `json:"lastSeen,omitempty"`
 	// nil = all libraries
-	Libraries *[]string `json:"libraries"`
-	Editor    bool      `json:"editor"`
+	Libraries  *[]string `json:"libraries"`
+	Editor     bool      `json:"editor"`
+	Downloader bool      `json:"downloader"`
 }
 
 // UserStore keeps users.json in memory. The file is re-read when it changes on
@@ -198,7 +201,7 @@ func (us *UserStore) List() []UserView {
 	defer us.mu.Unlock()
 	out := make([]UserView, 0, len(us.users))
 	for n, u := range us.users {
-		out = append(out, UserView{Name: n, Admin: u.Admin, Created: u.Created, LastSeen: us.lastSeen[n], Libraries: u.Libraries, Editor: u.Editor})
+		out = append(out, UserView{Name: n, Admin: u.Admin, Created: u.Created, LastSeen: us.lastSeen[n], Libraries: u.Libraries, Editor: u.Editor, Downloader: u.Downloader})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -263,6 +266,13 @@ func (us *UserStore) SetPassword(name, pw string) (string, error) {
 	return pw, us.saveLocked()
 }
 
+func (us *UserStore) IsAdmin(name string) bool {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	u, ok := us.users[name]
+	return ok && u.Admin
+}
+
 func (us *UserStore) IsEditor(name string) bool {
 	us.mu.Lock()
 	defer us.mu.Unlock()
@@ -278,6 +288,24 @@ func (us *UserStore) SetEditor(name string, editor bool) error {
 		return errors.New("no such user")
 	}
 	u.Editor = editor
+	return us.saveLocked()
+}
+
+func (us *UserStore) IsDownloader(name string) bool {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	u, ok := us.users[name]
+	return ok && (u.Downloader || u.Admin)
+}
+
+func (us *UserStore) SetDownloader(name string, on bool) error {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	u, ok := us.users[name]
+	if !ok {
+		return errors.New("no such user")
+	}
+	u.Downloader = on
 	return us.saveLocked()
 }
 

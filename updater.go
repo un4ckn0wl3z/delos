@@ -267,6 +267,9 @@ type ServerSettings struct {
 	AutoUpdate bool   `json:"autoUpdate"`
 	TMDBKey    string `json:"tmdbKey,omitempty"`
 	TMDBLang   string `json:"tmdbLang,omitempty"` // e.g. en-US, th-TH
+	// RTorrent: rtorrent XML-RPC endpoint — SCGI socket path, host:port, or
+	// http(s)://user:pass@host/RPC2 (ruTorrent). Empty = auto-detect.
+	RTorrent string `json:"rtorrent,omitempty"`
 }
 
 type SettingsStore struct {
@@ -342,6 +345,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		AutoUpdate *bool   `json:"autoUpdate"`
 		TMDBKey    *string `json:"tmdbKey"`
 		TMDBLang   *string `json:"tmdbLang"`
+		RTorrent   *string `json:"rtorrent"`
 	}
 	if !decodeJSON(w, r, &b) {
 		return
@@ -359,6 +363,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		cur.TMDBLang = *b.TMDBLang
 		metaChanged = true
 	}
+	if b.RTorrent != nil {
+		cur.RTorrent = strings.TrimSpace(*b.RTorrent)
+	}
 	if err := s.settings.Set(cur); err != nil {
 		httpErr(w, 500, err.Error())
 		return
@@ -371,7 +378,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) adminSettings() map[string]any {
 	cur := s.settings.Get()
-	return map[string]any{"autoUpdate": cur.AutoUpdate, "tmdbKeySet": cur.TMDBKey != "", "tmdbLang": cur.TMDBLang, "update": s.updater.Status()}
+	return map[string]any{"autoUpdate": cur.AutoUpdate, "tmdbKeySet": cur.TMDBKey != "", "tmdbLang": cur.TMDBLang, "rtorrent": cur.RTorrent, "update": s.updater.Status()}
 }
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {

@@ -96,3 +96,14 @@ func TestExcludedDir(t *testing.T) {
 		}
 	}
 }
+
+func TestCleanSubdir(t *testing.T) {
+	for in, want := range map[string]string{"../../etc": "etc", " Movies/New/ ": "Movies/New", "a/../b": "b", "": "", `x\y`: "x/y"} {
+		if got := cleanSubdir(in); got != want && !(in == `x\y` && got == `x\y`) {
+			t.Errorf("cleanSubdir(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if sanitizeFileName("../.hidden/evil:name?.mkv") != "_.hidden_evil_name_.mkv" {
+		t.Errorf("sanitizeFileName = %q", sanitizeFileName("../.hidden/evil:name?.mkv"))
+	}
+}

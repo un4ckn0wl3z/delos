@@ -112,6 +112,25 @@
   </section>
 
   <section>
+    <h2>Downloads <span class="count" id="n-dl">0</span><span class="sp"></span><span class="dim" style="font-weight:normal;font-size:12px" id="rt-status"></span></h2>
+    <form class="add" id="dl-form" style="border-top:none;flex-wrap:wrap">
+      <input type="text" name="source" placeholder="https://… link or magnet:?xt=… (or pick a .torrent file →)" autocomplete="off" style="flex:1;min-width:260px">
+      <label class="dim" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="file" name="file" accept=".torrent,application/x-bittorrent" style="max-width:170px"></label>
+      <select name="lib"></select>
+      <input type="text" name="subdir" list="dl-dirs" placeholder="folder (optional)" style="width:180px">
+      <datalist id="dl-dirs"></datalist>
+      <button class="primary">Download</button>
+    </form>
+    <div id="dl-list"></div>
+    <form class="add" id="rt-form" style="font-size:13px">
+      <span class="dim">rtorrent</span>
+      <input type="text" name="ep" placeholder="auto-detect · /path/to/rpc.socket · 127.0.0.1:5000 · https://user:pass@host/RPC2" autocomplete="off" style="flex:1;min-width:240px">
+      <button type="button" id="rt-test">Test</button>
+      <button class="primary">Save</button>
+    </form>
+  </section>
+
+  <section>
     <h2>Metadata</h2>
     <form class="add" id="meta-form" style="border-top:none">
       <span class="dim">TMDB API key</span>
@@ -319,7 +338,7 @@
     $('#n-users').textContent = d.users.length;
     $('#users').innerHTML = `<table><tr><th>User</th><th class="h-m">Last seen</th><th class="h-m">Watching</th><th class="h-m">Created</th><th></th></tr>${
       d.users.map((u) => `<tr data-u="${esc(u.name)}">
-        <td><b>${esc(u.name)}</b>${u.admin ? '<span class="badge">admin</span>' : ''}${!u.admin && u.editor ? '<span class="badge t-tv">editor</span>' : ''}${u.name === d.me ? '<span class="badge you">you</span>' : ''}
+        <td><b>${esc(u.name)}</b>${u.admin ? '<span class="badge">admin</span>' : ''}${!u.admin && u.editor ? '<span class="badge t-tv">editor</span>' : ''}${!u.admin && u.downloader ? '<span class="badge t-music">downloader</span>' : ''}${u.name === d.me ? '<span class="badge you">you</span>' : ''}
           ${u.streams ? `<span class="dim"> · ${u.streams} stream${u.streams > 1 ? 's' : ''}</span>` : ''}</td>
         <td class="h-m dim">${ago(u.lastSeen)}</td>
         <td class="h-m dim">${u.inProgress} in progress · ${u.watched} total</td>
@@ -329,6 +348,7 @@
           ${u.admin ? '' : `<button data-a="libs" title="Which libraries this user can see">Libraries${u.libraries ? ` (${u.libraries.length})` : ''}</button>`}
           <button data-a="password">Reset password</button>
           ${u.admin ? '' : `<button data-a="editor" title="Editors can fix wrong movie / show / music info">${u.editor ? 'Remove editor' : 'Make editor'}</button>`}
+          ${u.admin ? '' : `<button data-a="downloader" title="Downloaders can add HTTP and torrent downloads into libraries they can see">${u.downloader ? 'Remove downloader' : 'Make downloader'}</button>`}
           <button data-a="role">${u.admin ? 'Remove admin' : 'Make admin'}</button>
           <button data-a="revoke" title="Sign this user out on every device">Sign out</button>
           ${u.name === d.me ? '' : '<button class="danger" data-a="delete">Delete</button>'}
@@ -355,6 +375,9 @@
               r.password ? showPassword('Password reset', u.name, r.password) : toast('Password changed');
             } catch (x) { b.querySelector('#e').textContent = x.message; }
           });
+      } else if (a === 'downloader') {
+        await api(`admin/users/${n}/downloader`, { method: 'POST', body: { downloader: !u.downloader } });
+        toast(u.downloader ? 'Downloader removed' : 'Can now add downloads'); loadUsers();
       } else if (a === 'editor') {
         await api(`admin/users/${n}/editor`, { method: 'POST', body: { editor: !u.editor } });
         toast(u.editor ? 'Editor removed' : 'Can now edit metadata'); loadUsers();
@@ -543,6 +566,98 @@
     }
   };
 
+  // ---------------------------------------------------------- downloads
+  let dlTimer = null, dlLibsKey = '';
+  const dlState = { queued: 'Queued', downloading: 'Downloading', done: 'Done', failed: 'Failed', canceled: 'Canceled' };
+  function renderDownloads(d) {
+    const f = $('#dl-form'), key = d.libraries.map((l) => l.id).join();
+    if (key !== dlLibsKey) {
+      dlLibsKey = key;
+      const cur = f.lib.value;
+      f.lib.innerHTML = d.libraries.map((l) => `<option value="${esc(l.id)}">${esc(l.name)}</option>`).join('');
+      if (cur) f.lib.value = cur;
+      loadDirs();
+    }
+    const t = d.torrent || {};
+    $('#rt-status').innerHTML = t.ok ? `✅ rtorrent ${esc(t.version)}${t.auto ? ' (auto-detected)' : ''}` : `⚠ torrents unavailable: ${esc(t.error || 'rtorrent not reachable')}`;
+    if (!$('#rt-form').ep.matches(':focus') && !$('#rt-form').ep.dataset.touched) $('#rt-form').ep.value = t.auto ? '' : (t.endpoint || '');
+    $('#rt-form').ep.placeholder = t.auto && t.endpoint ? `auto: ${t.endpoint}` : 'auto-detect · /path/to/rpc.socket · 127.0.0.1:5000 · https://user:pass@host/RPC2';
+    $('#n-dl').textContent = d.jobs.length;
+    const libName = Object.fromEntries(d.libraries.map((l) => [l.id, l.name]));
+    $('#dl-list').innerHTML = d.jobs.length ? `<table><tr><th>Name</th><th class="h-m">To</th><th>Progress</th><th></th></tr>${d.jobs.map((j) => {
+      const pct = j.size > 0 ? Math.min(100, (j.done / j.size) * 100) : 0;
+      const st = j.state === 'done' && j.seeding ? 'Seeding' : dlState[j.state] || j.state;
+      return `<tr data-j="${esc(j.id)}">
+        <td><b class="file">${esc(j.name || j.source)}</b><span class="badge ${j.kind === 'torrent' ? 't-tv' : 't-movies'}">${j.kind}</span>
+          <div class="dim" style="font-size:12px">${esc(j.user)} · ${ago(j.created)}${j.error ? ` · <span style="color:#ff6b6b">${esc(j.error)}</span>` : ''}</div></td>
+        <td class="h-m dim file">${esc(libName[j.lib] || j.lib)}${j.subdir ? ' / ' + esc(j.subdir) : ''}</td>
+        <td style="min-width:150px"><div style="height:6px;background:rgba(128,128,128,.25);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(1)}%;background:${j.state === 'failed' ? '#ff6b6b' : j.state === 'done' ? '#3ecf8e' : '#4a9eff'}"></div></div>
+          <div class="dim" style="font-size:12px">${st}${j.size > 0 ? ` · ${size(j.done)} / ${size(j.size)}` : ''}${j.rate > 0 ? ` · ${size(j.rate)}/s` : ''}${j.up > 0 ? ` · ↑ ${size(j.up)}/s` : ''}</div></td>
+        <td><div class="actions">
+          ${j.kind === 'http' && (j.state === 'failed' || j.state === 'canceled') ? '<button data-a="retry">Retry</button>' : ''}
+          <button data-a="remove">${j.state === 'queued' || j.state === 'downloading' ? 'Cancel' : 'Remove'}</button>
+        </div></td></tr>`;
+    }).join('')}</table>` : '<div class="empty">No downloads yet.</div>';
+    $('#dl-list').querySelectorAll('button[data-a]').forEach((b) => {
+      const j = d.jobs.find((x) => x.id === b.closest('tr').dataset.j);
+      b.onclick = () => dlAction(b.dataset.a, j);
+    });
+    clearTimeout(dlTimer);
+    if (d.jobs.some((j) => j.state === 'queued' || j.state === 'downloading' || j.seeding)) dlTimer = setTimeout(loadDownloads, 3000);
+  }
+  const loadDownloads = () => api('downloads').then(renderDownloads).catch(() => {});
+  async function loadDirs() {
+    const lib = $('#dl-form').lib.value;
+    if (!lib) return;
+    try { const d = await api('downloads/dirs?lib=' + encodeURIComponent(lib)); $('#dl-dirs').innerHTML = d.dirs.map((x) => `<option value="${esc(x)}">`).join(''); } catch (_) {}
+  }
+  $('#dl-form').lib.onchange = loadDirs;
+  function dlAction(a, j) {
+    const id = encodeURIComponent(j.id);
+    if (a === 'retry') return api(`downloads/${id}/retry`, { method: 'POST' }).then(loadDownloads).catch((x) => toast(x.message));
+    const running = j.state === 'queued' || j.state === 'downloading';
+    modal(`<h3>${running ? 'Cancel' : 'Remove'} download</h3><div class="file">${esc(j.name || j.source)}</div>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="del"> Also delete ${running ? 'what was downloaded so far' : 'the downloaded files'}</label>
+      ${j.kind === 'torrent' ? '<div class="dim" style="font-size:12px">The torrent is removed from rtorrent (it stops seeding).</div>' : ''}
+      <div class="row"><button data-close>Keep</button><button class="danger" id="ok">${running ? 'Cancel download' : 'Remove'}</button></div>`,
+      (b, close) => {
+        b.querySelector('#ok').onclick = async () => {
+          try { await api(`downloads/${id}${b.querySelector('#del').checked ? '?files=1' : ''}`, { method: 'DELETE' }); close(); loadDownloads(); }
+          catch (x) { toast(x.message); }
+        };
+      });
+  }
+  $('#dl-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target, file = f.file.files[0];
+    try {
+      if (file) {
+        const fd = new FormData(); fd.append('file', file); fd.append('lib', f.lib.value); fd.append('subdir', f.subdir.value);
+        const r = await fetch(BASE + 'api/downloads/torrent', { method: 'POST', body: fd, credentials: 'same-origin' });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || r.statusText);
+      } else {
+        if (!f.source.value.trim()) return toast('Paste a link or choose a .torrent file');
+        await api('downloads', { method: 'POST', body: { source: f.source.value.trim(), lib: f.lib.value, subdir: f.subdir.value } });
+      }
+      f.source.value = ''; f.file.value = ''; toast('Download added'); loadDownloads();
+    } catch (x) { toast(x.message); }
+  };
+  $('#rt-form').ep.oninput = (e) => { e.target.dataset.touched = '1'; };
+  $('#rt-test').onclick = async () => {
+    try {
+      const r = await api('admin/rtorrent/test', { method: 'POST', body: { endpoint: $('#rt-form').ep.value.trim() } });
+      toast(r.ok ? `✅ rtorrent ${r.version} at ${r.endpoint}` : `❌ ${r.error}`);
+    } catch (x) { toast(x.message); }
+  };
+  $('#rt-form').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api('admin/settings', { method: 'POST', body: { rtorrent: e.target.ep.value.trim() } });
+      delete e.target.ep.dataset.touched; toast('Saved'); loadDownloads();
+    } catch (x) { toast(x.message); }
+  };
+
   const loadOverview = () => api('admin/overview').then(renderOverview).catch(() => {});
   const loadUsers = () => api('admin/users').then(renderUsers).catch(() => {});
   const loadUpdate = () => api('admin/update').then(renderUpdate).catch(() => {});
@@ -553,7 +668,7 @@
     $('#ver').textContent = 'v' + me.version;
     if (!me.admin) { $('#self').hidden = false; $('#self-name').textContent = me.user; return; }
     $('#app').hidden = false;
-    await Promise.all([loadOverview(), loadUsers(), loadUpdate(), loadLibs(), api('admin/settings').then(renderMeta).catch(() => {})]);
+    await Promise.all([loadOverview(), loadUsers(), loadUpdate(), loadLibs(), loadDownloads(), api('admin/settings').then(renderMeta).catch(() => {})]);
     clearInterval(timer);
     let n = 0;
     timer = setInterval(() => { loadOverview(); loadLibs(); if (++n % 3 === 0) loadUsers(); if (n % 12 === 0) loadUpdate(); }, 5000);
