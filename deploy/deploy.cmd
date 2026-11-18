@@ -26,7 +26,7 @@ call :ask SSH_HOST "Seedbox host"
 call :ask SSH_USER "SSH username"
 call :ask SSH_PORT "SSH port"
 if not defined MEDIA_ROOT set "MEDIA_ROOT=/home/%SSH_USER%/torrents"
-call :ask MEDIA_ROOT "Folder with your .mkv files (on the seedbox)"
+call :ask MEDIA_ROOT "Folder with your videos — mkv, mp4, … (on the seedbox)"
 call :ask APP_PORT "StreamMKV port (blank = random free port, or keep the current one)"
 
 if not defined SSH_HOST goto :missing

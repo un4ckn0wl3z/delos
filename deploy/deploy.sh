@@ -24,7 +24,7 @@ ask SSH_HOST "Seedbox host"
 ask SSH_USER "SSH username"
 ask SSH_PORT "SSH port"
 [ -n "$MEDIA_ROOT" ] || MEDIA_ROOT="/home/$SSH_USER/torrents"
-ask MEDIA_ROOT "Folder with your .mkv files (on the seedbox)"
+ask MEDIA_ROOT "Folder with your videos — mkv, mp4, … (on the seedbox)"
 ask APP_PORT "StreamMKV port (blank = random free port, or keep the current one)"
 
 [ -n "$SSH_HOST" ] && [ -n "$SSH_USER" ] || { echo "Host and username are required." >&2; exit 1; }

@@ -42,6 +42,25 @@ Use **/admin → Downloads** to paste a link, then pick a library and an optiona
 - **On your own VPS:** install rtorrent (`apt install rtorrent`), add `network.scgi.open_local = ~/.rtorrent.sock` to `~/.rtorrent.rc` and keep it running (tmux or systemd). HTTP downloads work without rtorrent.
 - **Who can add downloads:** admins, plus users given **Make downloader** in Users. Downloaders only see libraries they have access to, and only they or an admin can cancel or remove their downloads. They can't download from private or loopback addresses.
 
+## Personal libraries & limits
+
+Users with the **downloader** role can create **their own libraries** under Downloads → *My libraries*. They give it a name and a type (Movies / TV / Music / Other videos), and choose whether to **share it with everyone**.
+
+- **Where the files go:** the server creates the folder at `<personal libraries folder>/<user>/<library>`. This is set in **/admin → Downloads** and defaults to `~/streammkv-libraries`. Users can't point a library at any other path.
+- **Who sees what:**
+  - A **private** library is visible only to its owner and admins.
+  - A **shared** one is visible to everyone and labelled with the owner, e.g. "from bob".
+  - Accounts that an admin limited to specific libraries only see the ones ticked for them.
+- **Deleting:** owners can delete files in their own libraries (🗑 in the userscript, long-press → *Delete from server* in the app). The movie's folder (nfo, posters, subs) and the matching rtorrent download are removed too. Admins can delete anywhere. Nobody can delete from someone else's library.
+- **Limits:** set under **/admin → Users → Limits**, as max items and/or max GB across the user's personal libraries. Downloads that would go over the limit are refused, including magnets once their size is known. A user with a limit can only download into their own libraries. Usage shows in the dashboard and on the user's Downloads page.
+
+## People & chat
+
+- **Who's online:** see who is online and **what they're watching or listening to**, e.g. "▶ Children of Men · 45:12". You can press ▶ to open the same title, if you have access to its library. Anyone can switch on *Hide what I'm watching*; others will still see that they are online.
+- **Chats:** 1-to-1 chats and **group chats**. Any member can rename a group or add people; only the group's creator (or an admin) can remove people, and anyone can leave. Unread counts and new-message notifications update live (Server-Sent Events, `GET /api/events`). Admins can't read other people's chats.
+- **Send to a friend:** share a movie, episode or song into a chat as a card your friend can tap to play. If they can't open that library, you get a warning.
+- **Where:** the people list and 💬 drawer in the userscript sidebar, and the **Chat** tab in the app. Notifications appear only while the app or page is open.
+
 ## Users & admin dashboard
 
 StreamMKV supports several users. Each user has their own watch progress, resume positions and track choices. Admins choose which libraries each user can see.
