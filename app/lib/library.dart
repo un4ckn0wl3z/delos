@@ -7,10 +7,14 @@ String _s(dynamic v) => v == null ? '' : '$v';
 List<String> _l(dynamic v) => v is List ? v.map((e) => '$e').toList() : const [];
 
 class LibraryInfo {
-  LibraryInfo(this.id, this.name, this.type, this.count);
+  LibraryInfo(this.id, this.name, this.type, this.count, {this.owner = '', this.shared = false});
   final String id, name, type;
   final int count;
-  factory LibraryInfo.fromJson(Map j) => LibraryInfo(_s(j['id']), _s(j['name']), _s(j['type']), _i(j['count']));
+  /// Personal library of this user ('' = an admin library).
+  final String owner;
+  final bool shared;
+  factory LibraryInfo.fromJson(Map j) =>
+      LibraryInfo(_s(j['id']), _s(j['name']), _s(j['type']), _i(j['count']), owner: _s(j['owner']), shared: j['shared'] == true);
 }
 
 class Person {

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'api.dart';
 import 'library.dart';
 import 'screens/home_screen.dart';
+import 'util.dart';
 import 'widgets.dart';
 
 /// Long-press / right-click menu for a movie, a show, an episode or a plain video.
@@ -27,6 +28,9 @@ Future<void> showItemMenu(
   }
   final inProgress = items.where((i) => i.pos > 0).toList();
   final canIdentify = app.editor && (type == 'movies' || (type == 'tv' && showKey != null && showKey.isNotEmpty));
+  // only files in your own personal library (admins: anywhere). Merged views ('_all') check per file.
+  bool ownsLib(String id) => app.admin || app.myLibs.contains(id);
+  final deletable = items.where((i) => ownsLib(i.path.split('/').first)).toList();
 
   final action = await showModalBottomSheet<String>(
     context: context,
@@ -56,6 +60,13 @@ Future<void> showItemMenu(
             subtitle: inProgress.length > 1 ? Text('${inProgress.length} files') : null,
             onTap: () => Navigator.pop(ctx, 'clear'),
           ),
+        if (deletable.isNotEmpty)
+          ListTile(
+            leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+            title: Text(deletable.length > 1 ? 'Delete ${deletable.length} files…' : 'Delete from server…'),
+            subtitle: Text(fmtSize(deletable.fold<int>(0, (s, i) => s + i.size))),
+            onTap: () => Navigator.pop(ctx, 'delete'),
+          ),
         if (canIdentify)
           ListTile(
             leading: const Icon(Icons.manage_search),
@@ -80,6 +91,29 @@ Future<void> showItemMenu(
         app.repo.setPos(it.path, 0);
       }
       messenger.showSnackBar(const SnackBar(content: Text('Removed from Continue watching')));
+    case 'delete':
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Delete from server?'),
+          content: Text('${deletable.length > 1 ? '${deletable.length} files' : deletable.first.name} '
+              '(${fmtSize(deletable.fold<int>(0, (s, i) => s + i.size))}) will be removed from disk. This cannot be undone.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(style: FilledButton.styleFrom(backgroundColor: Colors.redAccent), onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      try {
+        await app.api.deleteFiles([for (final i in deletable) i.path]);
+      } on ApiException catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text(e.message)));
+        return;
+      }
+      messenger.showSnackBar(const SnackBar(content: Text('Deleted')));
+      await Future.delayed(const Duration(milliseconds: 1500));
+      app.repo.invalidate();
     case 'identify':
       final m = type == 'tv' ? d.shows[showKey] : d.movieOf(items.first);
       final ok = await Navigator.of(context).push<bool>(MaterialPageRoute(

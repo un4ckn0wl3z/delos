@@ -18,7 +18,7 @@ class DownloadsView extends StatefulWidget {
 class _DownloadsViewState extends State<DownloadsView> {
   final _src = TextEditingController();
   final _sub = TextEditingController();
-  Map? d;
+  Map? d, my;
   String? error, lib;
   List<String> dirs = [];
   bool busy = false;
@@ -45,9 +45,11 @@ class _DownloadsViewState extends State<DownloadsView> {
     _timer?.cancel();
     try {
       final r = await widget.app.api.downloads();
+      final m = await widget.app.api.myLibraries().catchError((_) => <String, dynamic>{});
       if (!mounted) return;
       setState(() {
         d = r;
+        my = m;
         error = null;
         if (lib == null && _libs.isNotEmpty) {
           final pref = _libs.where((l) => (l['type'] == 'music') == widget.preferMusic);
@@ -145,7 +147,13 @@ class _DownloadsViewState extends State<DownloadsView> {
               value: lib,
               isExpanded: true,
               decoration: const InputDecoration(labelText: 'Library', border: OutlineInputBorder(), isDense: true),
-              items: [for (final l in _libs) DropdownMenuItem(value: '${l['id']}', child: Text('${l['name']}', overflow: TextOverflow.ellipsis))],
+              items: [
+                for (final l in _libs)
+                  DropdownMenuItem(
+                    value: '${l['id']}',
+                    child: Text('${l['name']}${'${l['owner'] ?? ''}'.isEmpty ? '' : l['owner'] == me.api.settings.username ? ' · mine' : ' · ${l['owner']}'}', overflow: TextOverflow.ellipsis),
+                  ),
+              ],
               onChanged: (v) {
                 setState(() => lib = v);
                 _loadDirs();
@@ -184,8 +192,152 @@ class _DownloadsViewState extends State<DownloadsView> {
         const Divider(height: 28),
         if (_jobs.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Center(child: Text('No downloads yet'))),
         for (final j in _jobs) _job(j, names, me),
+        const Divider(height: 28),
+        ..._myLibraries(),
       ]),
     );
+  }
+
+  // ---------------------------------------------------------------- my libraries
+  List<Widget> _myLibraries() {
+    final m = my;
+    if (m == null || m['libraries'] == null) return const [];
+    final libs = List<Map>.from(m['libraries'] as List);
+    final u = Map.from(m['usage'] as Map? ?? const {});
+    final maxItems = (m['maxItems'] as num? ?? 0).toInt(), maxBytes = (m['maxBytes'] as num? ?? 0).toInt();
+    final api = widget.app.api;
+    Future<void> run(Future<void> Function() f, String ok) async {
+      try {
+        await f();
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ok)));
+        widget.app.repo.invalidate();
+        await _load();
+      } on ApiException catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+
+    return [
+      Row(children: [
+        Text('My libraries', style: Theme.of(context).textTheme.titleMedium),
+        const Spacer(),
+        TextButton.icon(icon: const Icon(Icons.add), label: const Text('New'), onPressed: () => _createLibrary(run)),
+      ]),
+      Text(
+        '${u['items'] ?? 0}${maxItems > 0 ? ' / $maxItems' : ''} items · ${fmtSize((u['bytes'] as num? ?? 0).toInt())}${maxBytes > 0 ? ' / ${fmtSize(maxBytes)}' : ''}',
+        style: const TextStyle(fontSize: 12, color: Color(0xFF8B95A5)),
+      ),
+      if (maxBytes > 0 || maxItems > 0)
+        Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 4),
+          child: LinearProgressIndicator(
+            minHeight: 4,
+            value: [
+              if (maxItems > 0) (u['items'] as num? ?? 0) / maxItems,
+              if (maxBytes > 0) (u['bytes'] as num? ?? 0) / maxBytes,
+            ].reduce((a, b) => a > b ? a : b).toDouble().clamp(0.0, 1.0),
+          ),
+        ),
+      if (libs.isEmpty)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: Text('Create a library to download into your own space. Private ones are only visible to you; shared ones are visible to everyone, labelled with your name.',
+              style: TextStyle(color: Color(0xFF9AA3B2))),
+        ),
+      for (final l in libs)
+        Card(
+          margin: const EdgeInsets.only(top: 8),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+            child: Row(children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${l['name']}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                  Text('${{'movies': 'Movies', 'tv': 'TV series', 'music': 'Music'}[l['type']] ?? 'Videos'} · ${l['count']} items · ${fmtSize((l['size'] as num? ?? 0).toInt())}',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF8B95A5))),
+                ]),
+              ),
+              const Text('Shared', style: TextStyle(fontSize: 12)),
+              Switch(
+                value: l['shared'] == true,
+                onChanged: (v) => run(() => api.shareMyLibrary('${l['id']}', v), v ? 'Shared with everyone' : 'Now private'),
+              ),
+              IconButton(
+                tooltip: 'Delete library',
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () async {
+                  var files = false;
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => StatefulBuilder(
+                      builder: (ctx, set) => AlertDialog(
+                        title: Text('Delete “${l['name']}”?'),
+                        content: CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: files,
+                          onChanged: (v) => set(() => files = v ?? false),
+                          title: Text('Also delete its ${l['count']} files (${fmtSize((l['size'] as num? ?? 0).toInt())}) from the server'),
+                        ),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+                        ],
+                      ),
+                    ),
+                  );
+                  if (ok == true) run(() => api.deleteMyLibrary('${l['id']}', files: files), 'Library deleted');
+                },
+              ),
+            ]),
+          ),
+        ),
+    ];
+  }
+
+  Future<void> _createLibrary(Future<void> Function(Future<void> Function(), String) run) async {
+    final name = TextEditingController();
+    var type = 'movies';
+    var shared = false;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => AlertDialog(
+          title: const Text('New library'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(controller: name, autofocus: true, decoration: const InputDecoration(labelText: 'Name')),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: type,
+              decoration: const InputDecoration(labelText: 'Type'),
+              items: const [
+                DropdownMenuItem(value: 'movies', child: Text('Movies')),
+                DropdownMenuItem(value: 'tv', child: Text('TV series')),
+                DropdownMenuItem(value: 'music', child: Text('Music')),
+                DropdownMenuItem(value: 'videos', child: Text('Other videos')),
+              ],
+              onChanged: (v) => set(() => type = v ?? 'movies'),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: shared,
+              onChanged: (v) => set(() => shared = v),
+              title: const Text('Share with everyone'),
+              subtitle: const Text('Others see it, labelled with your name'),
+            ),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Create')),
+          ],
+        ),
+      ),
+    );
+    final n = name.text.trim();
+    name.dispose();
+    if (ok == true && n.isNotEmpty) {
+      lib = null; // pick the new library once the list reloads
+      await run(() => widget.app.api.createMyLibrary(n, type, shared), 'Library created');
+    }
   }
 
   Widget _job(Map j, Map<String, String> names, AppCtx me) {

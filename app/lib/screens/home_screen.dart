@@ -27,6 +27,8 @@ class AppCtx {
   bool admin = false;
   /// May add downloads (admin or downloader role).
   bool downloader = false;
+  /// Ids of this user's own personal libraries (deletable).
+  Set<String> myLibs = {};
 }
 
 /// Plays a video item; for episodes, offers the next one when it ends.
@@ -100,6 +102,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => loading = libs.isEmpty);
     try {
       libs = await app.repo.libraries(force: force);
+      app.myLibs = {for (final l in libs) if (l.owner.isNotEmpty && l.owner == widget.api.settings.username) l.id};
       if (sel > videoLibs.length) sel = 0;
       error = null;
     } on ApiException catch (e) {
@@ -147,6 +150,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ListTile(
             leading: Icon(_icon(l.type)),
             title: Text(l.name),
+            subtitle: l.owner.isEmpty ? null : Text(l.owner == app.api.settings.username ? 'my library' : 'from ${l.owner}', style: const TextStyle(fontSize: 11.5)),
             trailing: l.count > 0 ? Text('${l.count}', style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))) : null,
             selected: sel == i + 1,
             onTap: () => _select(i + 1, drawer),
@@ -188,7 +192,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (section == 1) {
       return libs.any((l) => l.type == 'music')
           ? MusicView(key: ValueKey('music$reload'), app: app, lib: LibraryRepo.allMusic)
-          : const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('No music library yet — an admin can add one (type Music) in the dashboard.'))));
+          : const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('No music library yet — an admin can add one (type Music) in the dashboard.')));
     }
     if (section == 2) return DownloadsView(key: ValueKey('dl$reload'), app: app, preferMusic: _lastMedia == 1);
     final vl = videoLibs;

@@ -41,6 +41,7 @@ class Api {
       final f = switch (method) {
         'GET' => _client.get(uri, headers: headers),
         'DELETE' => _client.delete(uri, headers: headers),
+        'PUT' => _client.put(uri, headers: headers, body: jsonEncode(body)),
         _ => _client.post(uri, headers: headers, body: jsonEncode(body)),
       };
       r = await f.timeout(const Duration(seconds: 45));
@@ -138,6 +139,22 @@ class Api {
 
   Future<void> deleteDownload(String id, {bool files = false}) =>
       _req('DELETE', 'downloads/${Uri.encodeComponent(id)}', q: files ? {'files': '1'} : null);
+
+  // ---------------------------------------------------------------- personal libraries
+
+  /// {"libraries": [...], "usage": {items, bytes}, "maxItems", "maxBytes"}
+  Future<Map> myLibraries() async => await _req('GET', 'my/libraries') as Map;
+
+  Future<void> createMyLibrary(String name, String type, bool shared) =>
+      _req('POST', 'my/libraries', body: {'name': name, 'type': type, 'shared': shared});
+
+  Future<void> shareMyLibrary(String id, bool shared) => _req('PUT', 'my/libraries/${Uri.encodeComponent(id)}', body: {'shared': shared});
+
+  Future<void> deleteMyLibrary(String id, {bool files = false}) =>
+      _req('DELETE', 'my/libraries/${Uri.encodeComponent(id)}', q: files ? {'files': '1'} : null);
+
+  /// Delete media files (own personal libraries; admins anywhere).
+  Future<void> deleteFiles(List<String> paths) => _req('POST', 'files/delete', body: {'paths': paths});
 
   /// pos 0 = drop it from "Continue watching" (track choices are kept).
   Future<void> clearProgress(String path) => _req('POST', 'progress', body: {'path': path, 'pos': 0});
