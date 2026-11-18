@@ -101,7 +101,9 @@ Future<void> checkForUpdate(BuildContext context, Settings settings, {bool manua
           Text(
               Platform.isIOS
                   ? 'Update it in SideStore / AltStore (My Apps → refresh sources), or download the IPA and open it with SideStore.'
-                  : Platform.isWindows || Platform.isLinux || Platform.isMacOS
+                  : Platform.isMacOS
+                  ? 'Download the new build, quit StreamMKV and replace StreamMKV.app in Applications.'
+                  : Platform.isWindows || Platform.isLinux
                   ? 'Download the new build, close StreamMKV and replace the old folder with the new one.'
                   : 'The APK downloads in your browser — open it to install. If Android says "App not installed", uninstall the old version first (your progress is kept on the server).',
               style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))),

@@ -24,6 +24,8 @@ jobs:
             platform: windows
           - os: ubuntu-latest
             platform: linux
+          - os: macos-latest
+            platform: macos
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -52,10 +54,13 @@ jobs:
           flutter --version
           flutter create --org dev.un4ckn0wl3z --project-name streammkv --platforms ${{ matrix.platform }} .
           python3 tool/patch_desktop.py || python tool/patch_desktop.py
+          if [ "${{ matrix.platform }}" = macos ]; then python3 tool/patch_macos.py; fi
       - name: Build
         run: |
           flutter pub get
-          if [ "${{ matrix.platform }}" = windows ]; then dart run flutter_launcher_icons -f icons/windows.yaml; fi
+          case "${{ matrix.platform }}" in
+            windows|macos) dart run flutter_launcher_icons -f icons/${{ matrix.platform }}.yaml ;;
+          esac
           flutter build ${{ matrix.platform }} --release \
             --build-name="${VERSION%%-*}" --build-number="$CODE" --dart-define=APP_VERSION="$VERSION"
           mkdir -p ../dist
@@ -87,6 +92,14 @@ jobs:
           DESK
           sed -i 's/^ *//' ../dist/StreamMKV/streammkv.desktop
           (cd ../dist && tar czf streammkv-linux-x64.tar.gz StreamMKV && rm -rf StreamMKV && ls -la)
+      - name: Package (macOS)
+        if: matrix.platform == 'macos'
+        run: |
+          APP=build/macos/Build/Products/Release/StreamMKV.app
+          codesign --force --deep --sign - "$APP"   # ad-hoc signature (required on Apple Silicon)
+          lipo -info "$APP/Contents/MacOS/StreamMKV" || true
+          ditto -c -k --sequesterRsrc --keepParent "$APP" ../dist/streammkv-macos.zip
+          ls -la ../dist
       - uses: actions/upload-artifact@v4
         with:
           name: streammkv-${{ matrix.platform }}
