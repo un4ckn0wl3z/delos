@@ -38,6 +38,8 @@ type User struct {
 	// Limits for the user's personal libraries (0 = unlimited).
 	MaxItems int   `json:"maxItems,omitempty"`
 	MaxBytes int64 `json:"maxBytes,omitempty"`
+	// HideActivity: others see you online, but not what you're playing.
+	HideActivity bool `json:"hideActivity,omitempty"`
 }
 
 type UserView struct {
@@ -314,6 +316,24 @@ func (us *UserStore) SetDownloader(name string, on bool) error {
 	return us.saveLocked()
 }
 
+func (us *UserStore) HidesActivity(name string) bool {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	u, ok := us.users[name]
+	return ok && u.HideActivity
+}
+
+func (us *UserStore) SetHideActivity(name string, on bool) error {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	u, ok := us.users[name]
+	if !ok {
+		return errors.New("no such user")
+	}
+	u.HideActivity = on
+	return us.saveLocked()
+}
+
 // Limits returns the personal-library limits (0 = unlimited).
 func (us *UserStore) Limits(name string) (items int, bytes int64) {
 	us.mu.Lock()
@@ -498,4 +518,11 @@ data dir: $STREAMMKV_DATA (`+dataDir+`)`)
 	default:
 		usage()
 	}
+}
+
+func (us *UserStore) Exists(name string) bool {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	_, ok := us.users[name]
+	return ok
 }

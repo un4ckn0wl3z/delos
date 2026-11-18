@@ -54,6 +54,7 @@ type Server struct {
 	libs     *LibraryStore
 	index    *Indexer
 	dl       *Downloads
+	chat     *Chat
 	started  time.Time
 }
 
@@ -180,6 +181,7 @@ func main() {
 	}
 	s.index = NewIndexer(s)
 	s.dl = NewDownloads(s)
+	s.chat = NewChat(s)
 	go s.index.Loop()
 	s.updater = NewUpdater(s, s.settings)
 	go s.updater.Loop()
@@ -207,6 +209,7 @@ func main() {
 	s.editRoutes(mux)
 	s.downloadRoutes(mux)
 	s.personalRoutes(mux)
+	s.chatRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

@@ -261,18 +261,23 @@ func splitPath(p string) (lib, rel string) {
 
 // canAccess reports whether the request's user may see the library.
 func (s *Server) canAccess(r *http.Request, libID string) bool {
-	if isAdmin(r) {
+	return s.userCanAccess(userOf(r), isAdmin(r), libID)
+}
+
+// userCanAccess: may this user see the library (and its files)?
+func (s *Server) userCanAccess(user string, admin bool, libID string) bool {
+	if admin {
 		return true
 	}
 	if lib, ok := s.libs.Get(libID); ok && lib.Owner != "" {
-		if lib.Owner == userOf(r) {
+		if lib.Owner == user {
 			return true // your own library
 		}
 		if !lib.Shared {
 			return false // someone else's private library
 		}
 	}
-	allowed := s.users.Libraries(userOf(r))
+	allowed := s.users.Libraries(user)
 	if allowed == nil {
 		return true
 	}
