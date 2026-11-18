@@ -121,9 +121,11 @@
         <option value="ko-KR">한국어</option><option value="zh-CN">中文</option><option value="fr-FR">Français</option>
         <option value="de-DE">Deutsch</option><option value="es-ES">Español</option>
       </select>
+      <button type="button" id="meta-test-btn" title="Check the key, network access and library matching">Test</button>
       <button class="primary">Save</button>
     </form>
     <div class="empty" id="meta-note" style="padding-top:0"></div>
+    <div id="meta-test" style="padding:0 16px 12px;font-size:13px;line-height:1.7"></div>
   </section>
 
   <section>
@@ -418,7 +420,7 @@
     $('#libs').innerHTML = libs.length ? `<table><tr><th>Library</th><th class="h-m">Path</th><th>Items</th><th class="h-m">Scanned</th><th></th></tr>${
       libs.map((l) => `<tr data-l="${esc(l.id)}">
         <td><b>${esc(l.name)}</b><span class="badge t-${esc(l.type)}">${typeName[l.type] || l.type}</span>${l.scanning ? ' <span class="dim">· scanning…</span>' : ''}</td>
-        <td class="h-m dim file">${esc(l.path)}</td><td>${l.count}</td><td class="h-m dim">${ago(l.scanned)}</td>
+        <td class="h-m dim file">${esc(l.path)}${l.exclude && l.exclude.length ? `<br><span title="${esc(l.exclude.join('\n'))}">${l.exclude.length} folder${l.exclude.length > 1 ? 's' : ''} excluded</span>` : ''}</td><td>${l.count}</td><td class="h-m dim">${ago(l.scanned)}</td>
         <td><div class="actions">
           <button data-a="scan" title="Look for new and removed files">Scan</button>
           ${l.type === 'movies' || l.type === 'tv' || l.type === 'music' ? '<button data-a="refresh" title="Re-download all metadata">Refresh metadata</button>' : ''}
@@ -448,12 +450,26 @@
           <select id="t">${Object.entries(typeName).map(([k, v]) => `<option value="${k}" ${k === l.type ? 'selected' : ''}>${v}</option>`).join('')}</select>
           <div class="row" style="justify-content:stretch"><input type="text" id="p" value="${esc(l.path)}" style="flex:1"><button id="br">Browse…</button></div>
           <div class="dim" style="font-size:12px">Changing the type or path rescans the library.</div>
+          <div style="margin-top:6px"><b style="font-size:13px">Exclude folders</b> <span class="dim" style="font-size:12px">— one per line, not listed or playable</span></div>
+          <textarea id="x" rows="4" spellcheck="false" placeholder="Sample&#10;Extras/Featurettes&#10;Behind*" style="width:100%;box-sizing:border-box;font:13px ui-monospace,monospace;background:transparent;color:inherit;border:1px solid rgba(128,128,128,.35);border-radius:6px;padding:8px;resize:vertical">${esc((l.exclude || []).join('\n'))}</textarea>
+          <div class="row" style="justify-content:space-between;align-items:center"><span class="dim" style="font-size:12px"><code>Extras/Featurettes</code> = that folder · <code>Sample</code>, <code>Behind*</code> = any folder with that name</span><button id="xb">Add folder…</button></div>
           <div class="err" id="e"></div><div class="row"><button data-close>Cancel</button><button class="primary" id="ok">Save</button></div>`,
           (b, close) => {
-            b.querySelector('#br').onclick = () => browse(b.querySelector('#p').value, (p) => { modalStack.pop(); libAction('edit', Object.assign({}, l, { name: b.querySelector('#n').value, type: b.querySelector('#t').value, path: p })); });
+            const cur = () => Object.assign({}, l, { name: b.querySelector('#n').value, type: b.querySelector('#t').value, path: b.querySelector('#p').value,
+              exclude: b.querySelector('#x').value.split('\n').map((s) => s.trim()).filter(Boolean) });
+            b.querySelector('#br').onclick = () => browse(b.querySelector('#p').value, (p) => { modalStack.pop(); libAction('edit', Object.assign(cur(), { path: p })); });
+            b.querySelector('#xb').onclick = () => {
+              const c = cur(), root = c.path.replace(/\/+$/, '');
+              browse(root, (p) => {
+                const rel = p.startsWith(root + '/') ? p.slice(root.length + 1) : '';
+                if (!rel) { toast('Pick a folder inside the library'); return libAction('edit', c); }
+                libAction('edit', Object.assign(c, { exclude: [...c.exclude.filter((e) => e !== rel), rel] }));
+              });
+            };
             b.querySelector('#ok').onclick = async () => {
               try {
-                await api(`admin/libraries/${id}`, { method: 'PUT', body: { name: b.querySelector('#n').value, type: b.querySelector('#t').value, path: b.querySelector('#p').value } });
+                const c = cur();
+                await api(`admin/libraries/${id}`, { method: 'PUT', body: { name: c.name, type: c.type, path: c.path, exclude: c.exclude } });
                 close(); toast('Saved'); loadLibs();
               } catch (x) { b.querySelector('#e').textContent = x.message; }
             };
@@ -500,6 +516,31 @@
     if (f.key.value.trim()) body.tmdbKey = f.key.value.trim();
     try { renderMeta(await api('admin/settings', { method: 'POST', body })); f.key.value = ''; toast('Saved — refreshing metadata'); setTimeout(loadLibs, 800); }
     catch (x) { toast(x.message); }
+  };
+
+  $('#meta-test-btn').onclick = async () => {
+    const f = $('#meta-form'), out = $('#meta-test'), body = { tmdbLang: f.lang.value };
+    if (f.key.value.trim()) body.tmdbKey = f.key.value.trim();
+    out.innerHTML = '<span class="dim">Testing…</span>';
+    let r;
+    try { r = await api('admin/metadata/test', { method: 'POST', body }); } catch (x) { out.textContent = '❌ ' + x.message; return; }
+    const line = (name, c) => `<div>${c.ok ? '✅' : '❌'} <b>${name}</b> — ${esc(c.ok ? c.detail : c.error)} <span class="dim">· ${c.ms} ms</span></div>`;
+    const typeLabel = { movies: 'Movies', tv: 'TV', music: 'Music', videos: 'Other videos' };
+    out.innerHTML = line('TMDB (from the server)', r.tmdb)
+      + (r.tmdb.image ? '<div id="mt-img">⏳ <b>Posters (from this browser)</b></div>' : '')
+      + line('MusicBrainz (from the server)', r.musicbrainz)
+      + (r.libraries.length ? `<table style="margin-top:8px"><tr><th>Library</th><th>Type</th><th>With artwork</th><th>Notes</th></tr>${r.libraries.map((l) => `<tr>
+          <td><b>${esc(l.name)}</b></td><td>${typeLabel[l.type] || esc(l.type)}</td>
+          <td>${l.type === 'videos' ? '—' : `${l.matched}/${l.items}`}</td>
+          <td>${l.warning ? `⚠ ${esc(l.warning)}` : ''}${l.unmatched && l.unmatched.length ? `<div class="dim">Not matched (${l.missing}): ${l.unmatched.map(esc).join(' · ')}${l.missing > l.unmatched.length ? ' …' : ''}</div>` : ''}${!l.warning && !(l.unmatched || []).length ? '✅' : ''}</td></tr>`).join('')}</table>` : '')
+      + (r.scan && r.scan.lastError ? `<div>⚠ Last scan error: ${esc(r.scan.lastError)}</div>` : '');
+    if (r.tmdb.image) {
+      const img = new Image();
+      img.style.cssText = 'height:54px;vertical-align:middle;border-radius:3px;margin-left:6px';
+      img.onload = () => { $('#mt-img').innerHTML = '✅ <b>Posters (from this browser)</b> — image.tmdb.org loads '; $('#mt-img').append(img); };
+      img.onerror = () => { $('#mt-img').innerHTML = '❌ <b>Posters (from this browser)</b> — this device cannot load image.tmdb.org (blocked network / DNS?)'; };
+      img.src = r.tmdb.image;
+    }
   };
 
   const loadOverview = () => api('admin/overview').then(renderOverview).catch(() => {});

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../audio.dart';
+import '../item_menu.dart';
 import '../library.dart';
 import '../update.dart';
 import '../util.dart';
@@ -19,10 +20,12 @@ class AppCtx {
   final Api api;
   final LibraryRepo repo;
   final AudioController audio;
+  /// May fix metadata matches (admin or editor role).
+  bool editor = false;
 }
 
 /// Plays a video item; for episodes, offers the next one when it ends.
-Future<void> openVideo(BuildContext context, AppCtx app, LibData d, Item it) async {
+Future<void> openVideo(BuildContext context, AppCtx app, LibData d, Item it, {bool startOver = false}) async {
   app.audio.pause();
   FocusManager.instance.primaryFocus?.unfocus(); // a search field's keyboard would squeeze the player
   Item? next;
@@ -36,6 +39,7 @@ Future<void> openVideo(BuildContext context, AppCtx app, LibData d, Item it) asy
     builder: (_) => PlayerScreen(
       api: app.api,
       file: file,
+      startOver: startOver,
       nextLabel: next == null ? null : 'S${next.season}E${next.episode}${next.episodeTitle.isNotEmpty ? ' · ${next.episodeTitle}' : ''}',
       onProgress: (pos) => app.repo.setPos(it.path, pos),
       onPlayNext: next == null ? null : () => openVideo(context, app, d, next!),
@@ -63,6 +67,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _load();
+    widget.api.me().then((m) => app.editor = m['editor'] == true || m['admin'] == true).catchError((_) => false);
     if (!_updateChecked) {
       _updateChecked = true;
       WidgetsBinding.instance.addPostFrameCallback((_) => checkForUpdate(context, widget.api.settings));
@@ -243,6 +248,10 @@ class _HomeViewState extends State<HomeView> {
     }
   }
 
+  void _refresh() {
+    if (mounted) _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (loading) return const Center(child: CircularProgressIndicator());
@@ -270,6 +279,8 @@ class _HomeViewState extends State<HomeView> {
               await openVideo(context, app, d, it);
               if (mounted) setState(() {});
             },
+            onLongPress: () => showItemMenu(context, app, d,
+                title: d.labelOf(it), items: [it], play: it, showKey: d.info.type == 'tv' ? it.show : null, onChanged: _refresh),
           ),
       ]));
     }
@@ -291,6 +302,7 @@ class _HomeViewState extends State<HomeView> {
             subtitle: '${m?.year ?? it.year}',
             image: m?.poster ?? '',
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MovieScreen(app: app, data: d, groupKey: it.movieId != 0 ? '${it.movieId}' : it.path))),
+            onLongPress: () => showItemMenu(context, app, d, title: m?.title ?? it.title, items: [it], play: it, onChanged: _refresh),
           ));
         } else if (type == 'tv') {
           if (!seen.add(it.show)) continue;
@@ -300,6 +312,10 @@ class _HomeViewState extends State<HomeView> {
             subtitle: 'New episodes',
             image: s?.poster ?? '',
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ShowScreen(app: app, data: d, show: it.show))),
+            onLongPress: () {
+              final eps = d.items.where((e) => e.show == it.show).toList();
+              showItemMenu(context, app, d, title: s?.title ?? it.title, items: eps, play: nextUp(eps), showKey: it.show, onChanged: _refresh);
+            },
           ));
         } else if (type == 'music') {
           if (!seen.add(it.albumKey)) continue;
@@ -315,7 +331,13 @@ class _HomeViewState extends State<HomeView> {
           ));
         } else {
           aspect = 16 / 9;
-          cards.add(PosterCard(title: it.name, subtitle: it.dir, aspect: 16 / 9, onTap: () => openVideo(context, app, d, it)));
+          cards.add(PosterCard(
+            title: it.name,
+            subtitle: it.dir,
+            aspect: 16 / 9,
+            onTap: () => openVideo(context, app, d, it),
+            onLongPress: () => showItemMenu(context, app, d, title: it.name, items: [it], play: it, onChanged: _refresh),
+          ));
         }
       }
       if (cards.isEmpty) continue;
@@ -384,6 +406,9 @@ class _VideosViewState extends State<VideosView> {
           await openVideo(context, widget.app, d!, f);
           if (mounted) setState(() {});
         },
+        onLongPress: () => showItemMenu(context, widget.app, d!, title: f.name, items: [f], play: f, onChanged: () {
+          if (mounted) setState(() {});
+        }),
       ));
     }
     return ListView(padding: const EdgeInsets.only(bottom: 24), children: rows);

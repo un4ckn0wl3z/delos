@@ -1,0 +1,243 @@
+import 'package:flutter/material.dart';
+
+import 'api.dart';
+import 'library.dart';
+import 'screens/home_screen.dart';
+import 'widgets.dart';
+
+/// Long-press / right-click menu for a movie, a show, an episode or a plain video.
+///
+/// [items] are all the files the entry stands for (a movie's versions, a show's
+/// episodes); [play] is what Play / Start over opens. Identify needs the editor
+/// role and a movie or TV library.
+Future<void> showItemMenu(
+  BuildContext context,
+  AppCtx app,
+  LibData d, {
+  required String title,
+  required List<Item> items,
+  Item? play,
+  String? showKey,
+  VoidCallback? onChanged,
+}) async {
+  final type = d.info.type;
+  if (type == 'movies' && items.length == 1 && items.first.movieId != 0) {
+    // a single version from Home → cover every version of that movie
+    items = d.items.where((i) => i.movieId == items.first.movieId).toList();
+  }
+  final inProgress = items.where((i) => i.pos > 0).toList();
+  final canIdentify = app.editor && (type == 'movies' || (type == 'tv' && showKey != null && showKey.isNotEmpty));
+
+  final action = await showModalBottomSheet<String>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) => SafeArea(
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          child: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(ctx).textTheme.titleMedium),
+        ),
+        if (play != null)
+          ListTile(
+            leading: const Icon(Icons.play_arrow),
+            title: Text(play.pos > 0 ? 'Resume from ${fmtDur(play.pos)}' : 'Play'),
+            onTap: () => Navigator.pop(ctx, 'play'),
+          ),
+        if (play != null && play.pos > 0)
+          ListTile(
+            leading: const Icon(Icons.replay),
+            title: const Text('Start over'),
+            onTap: () => Navigator.pop(ctx, 'restart'),
+          ),
+        if (inProgress.isNotEmpty)
+          ListTile(
+            leading: const Icon(Icons.playlist_remove),
+            title: const Text('Remove from Continue watching'),
+            subtitle: inProgress.length > 1 ? Text('${inProgress.length} files') : null,
+            onTap: () => Navigator.pop(ctx, 'clear'),
+          ),
+        if (canIdentify)
+          ListTile(
+            leading: const Icon(Icons.manage_search),
+            title: const Text('Identify…'),
+            subtitle: Text(type == 'tv' ? 'Fix the TMDB match for this show' : 'Fix the TMDB match for this movie'),
+            onTap: () => Navigator.pop(ctx, 'identify'),
+          ),
+        const SizedBox(height: 8),
+      ]),
+    ),
+  );
+  if (action == null || !context.mounted) return;
+  final messenger = ScaffoldMessenger.of(context);
+  switch (action) {
+    case 'play':
+      await openVideo(context, app, d, play!);
+    case 'restart':
+      await openVideo(context, app, d, play!, startOver: true);
+    case 'clear':
+      for (final it in inProgress) {
+        await app.api.clearProgress(it.path);
+        app.repo.setPos(it.path, 0);
+      }
+      messenger.showSnackBar(const SnackBar(content: Text('Removed from Continue watching')));
+    case 'identify':
+      final m = type == 'tv' ? d.shows[showKey] : d.movieOf(items.first);
+      final ok = await Navigator.of(context).push<bool>(MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => IdentifyScreen(
+          app: app,
+          lib: d.info,
+          query: m?.title ?? (items.first.title.isNotEmpty ? items.first.title : items.first.name),
+          year: m?.year ?? items.first.year,
+          paths: type == 'movies' ? items.map((i) => i.path).toList() : const [],
+          show: type == 'tv' ? showKey : null,
+        ),
+      ));
+      if (ok != true) return;
+      messenger.showSnackBar(const SnackBar(content: Text('Matched — updating metadata…')));
+      // the server re-scrapes in the background; give it a moment, then reload
+      await Future.delayed(const Duration(seconds: 3));
+      app.repo.invalidate();
+  }
+  onChanged?.call();
+}
+
+class IdentifyScreen extends StatefulWidget {
+  const IdentifyScreen({super.key, required this.app, required this.lib, required this.query, required this.year, required this.paths, this.show});
+  final AppCtx app;
+  final LibraryInfo lib;
+  final String query;
+  final int year;
+  final List<String> paths;
+  final String? show;
+  @override
+  State<IdentifyScreen> createState() => _IdentifyScreenState();
+}
+
+class _IdentifyScreenState extends State<IdentifyScreen> {
+  late final _q = TextEditingController(text: widget.query);
+  late final _y = TextEditingController(text: widget.year > 0 ? '${widget.year}' : '');
+  List<Map>? results;
+  String? error;
+  bool busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _search();
+  }
+
+  @override
+  void dispose() {
+    _q.dispose();
+    _y.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search() async {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    try {
+      final r = await widget.app.api.metaSearch(widget.lib.id, _q.text.trim(), int.tryParse(_y.text.trim()) ?? 0);
+      if (mounted) setState(() => results = r);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => error = e.message);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _match(int id) async {
+    setState(() => busy = true);
+    try {
+      if (widget.show != null) {
+        await widget.app.api.metaMatch(widget.lib.id, show: widget.show, tmdbId: id);
+      } else {
+        for (final p in widget.paths) {
+          await widget.app.api.metaMatch(widget.lib.id, path: p, tmdbId: id);
+        }
+      }
+      if (mounted) Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() => busy = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final asId = int.tryParse(_q.text.trim());
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.show != null ? 'Identify show' : 'Identify movie'),
+        actions: [
+          TextButton(
+            onPressed: busy ? null : () => _match(0),
+            child: const Text('Re-detect'),
+          ),
+        ],
+      ),
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _q,
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) => _search(),
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(labelText: 'Title or TMDB ID', isDense: true, border: OutlineInputBorder()),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 80,
+              child: TextField(
+                controller: _y,
+                keyboardType: TextInputType.number,
+                onSubmitted: (_) => _search(),
+                decoration: const InputDecoration(labelText: 'Year', isDense: true, border: OutlineInputBorder()),
+              ),
+            ),
+            IconButton(icon: const Icon(Icons.search), onPressed: busy ? null : _search),
+          ]),
+        ),
+        if (busy) const LinearProgressIndicator(minHeight: 2),
+        Expanded(
+          child: ListView(children: [
+            if (asId != null && asId > 0)
+              ListTile(
+                leading: const Icon(Icons.tag),
+                title: Text('Use TMDB ID $asId'),
+                onTap: busy ? null : () => _match(asId),
+              ),
+            if (error != null) Padding(padding: const EdgeInsets.all(16), child: Text(error!, style: const TextStyle(color: Colors.redAccent))),
+            if (results != null && results!.isEmpty && error == null)
+              const Padding(padding: EdgeInsets.all(16), child: Text('No results — try a shorter title or clear the year.')),
+            for (final r in results ?? const <Map>[])
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: SizedBox(width: 46, height: 69, child: NetImage('${r['poster'] ?? ''}', placeholder: '${r['title'] ?? '?'}')),
+                ),
+                title: Text('${r['title']}${(r['year'] ?? 0) != 0 ? ' (${r['year']})' : ''}'),
+                subtitle: Text(
+                  [if ((r['originalTitle'] ?? '').toString().isNotEmpty) r['originalTitle'], r['overview'] ?? ''].join(' — '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: busy ? null : () => _match(r['id'] as int),
+              ),
+          ]),
+        ),
+      ]),
+    );
+  }
+}

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../item_menu.dart';
 import '../library.dart';
 import '../widgets.dart';
 import 'home_screen.dart';
@@ -69,6 +70,8 @@ class _ShowsViewState extends State<ShowsView> {
                         await Navigator.push(context, MaterialPageRoute(builder: (_) => ShowScreen(app: widget.app, data: d!, show: k)));
                         if (mounted) setState(() {});
                       },
+                      onLongPress: () => showItemMenu(context, widget.app, d!,
+                          title: d!.shows[k]?.title ?? shows[k]!.first.title, items: shows[k]!, play: nextUp(shows[k]!), showKey: k, onChanged: () => _load(force: true)),
                     ),
                 ]),
               ),
@@ -105,6 +108,16 @@ class ShowScreen extends StatefulWidget {
 class _ShowScreenState extends State<ShowScreen> {
   int? season;
 
+  Future<void> _reload() async {
+    final fresh = await widget.app.repo.lib(widget.data.info);
+    if (!mounted) return;
+    if (identical(fresh, widget.data)) {
+      setState(() {});
+    } else {
+      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => ShowScreen(app: widget.app, data: fresh, show: widget.show)));
+    }
+  }
+
   Future<void> _play(Item it) async {
     await openVideo(context, widget.app, widget.data, it);
     if (mounted) setState(() {});
@@ -124,6 +137,12 @@ class _ShowScreenState extends State<ShowScreen> {
           expandedHeight: (m?.backdrop ?? '').isNotEmpty ? 220 : 0,
           pinned: true,
           title: Text(title),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.more_vert),
+              onPressed: () => showItemMenu(context, widget.app, widget.data, title: title, items: eps, play: next, showKey: widget.show, onChanged: _reload),
+            ),
+          ],
           flexibleSpace: (m?.backdrop ?? '').isNotEmpty
               ? FlexibleSpaceBar(
                   background: Stack(fit: StackFit.expand, children: [
@@ -173,6 +192,10 @@ class _ShowScreenState extends State<ShowScreen> {
           for (final e in eps.where((e) => e.season == season))
             InkWell(
               onTap: () => _play(e),
+              onLongPress: () => showItemMenu(context, widget.app, widget.data,
+                  title: 'S${e.season}E${e.episode}${e.episodeTitle.isNotEmpty ? ' · ${e.episodeTitle}' : ''}', items: [e], play: e, showKey: widget.show, onChanged: _reload),
+              onSecondaryTap: () => showItemMenu(context, widget.app, widget.data,
+                  title: 'S${e.season}E${e.episode}${e.episodeTitle.isNotEmpty ? ' · ${e.episodeTitle}' : ''}', items: [e], play: e, showKey: widget.show, onChanged: _reload),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

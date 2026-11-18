@@ -119,6 +119,19 @@ class Api {
     } catch (_) {/* best effort */}
   }
 
+  /// pos 0 = drop it from "Continue watching" (track choices are kept).
+  Future<void> clearProgress(String path) => _req('POST', 'progress', body: {'path': path, 'pos': 0});
+
+  /// TMDB candidates for a movie/TV library (editor role).
+  Future<List<Map>> metaSearch(String lib, String q, int year) async {
+    final r = await _req('GET', 'meta/search', q: {'lib': lib, 'q': q, if (year > 0) 'year': '$year'}) as Map;
+    return List<Map>.from(r['results'] as List? ?? const []);
+  }
+
+  /// Pin a TMDB id (0 = detect automatically again) for a movie file or a show.
+  Future<void> metaMatch(String lib, {String? path, String? show, required int tmdbId}) =>
+      _req('POST', 'meta/match', body: {'lib': lib, if (path != null) 'path': path, if (show != null) 'show': show, 'tmdbId': tmdbId});
+
   Future<String> subtitle(String path, int index) async =>
       await _req('GET', 'subtitle', q: {'path': path, 'sub': '$index'}) as String;
 

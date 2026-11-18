@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../api.dart';
 import '../settings.dart';
@@ -36,6 +37,8 @@ class _LoginScreenState extends State<LoginScreen> {
     final api = Api(s);
     try {
       await api.login();
+      // let the system password manager offer to save the login (Google, Samsung Pass, iCloud…)
+      TextInput.finishAutofillContext();
       if (!mounted) return;
       Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => HomeScreen(api: api)));
     } catch (e) {
@@ -66,6 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       controller: _server,
                       keyboardType: TextInputType.url,
                       autocorrect: false,
+                      autofillHints: const [AutofillHints.url],
                       decoration: const InputDecoration(
                         labelText: 'Server URL',
                         hintText: 'http://seedbox.example.com:8090/',

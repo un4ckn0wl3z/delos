@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -38,6 +39,55 @@ type Library struct {
 	Type    string `json:"type"`
 	Path    string `json:"path"`
 	Created int64  `json:"created"`
+	// Exclude: folders to leave out. An entry with a "/" is a path relative to
+	// the library root ("Extras/Featurettes"); without one it is a folder-name
+	// pattern matched at any depth ("Sample", "Behind*").
+	Exclude []string `json:"exclude,omitempty"`
+}
+
+// cleanExclude normalises the exclude list (trims, drops blanks/dupes, no "..").
+func cleanExclude(in []string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, e := range in {
+		e = strings.Trim(strings.TrimSpace(filepath.ToSlash(e)), "/")
+		if e == "" || e == "." || strings.Contains("/"+e+"/", "/../") || seen[strings.ToLower(e)] {
+			continue
+		}
+		if _, err := path.Match(e, "x"); err != nil {
+			continue // bad pattern
+		}
+		seen[strings.ToLower(e)] = true
+		out = append(out, e)
+	}
+	return out
+}
+
+// ExcludedDir reports whether the folder rel (slash path from the library
+// root, "" = root) or any of its parents is excluded.
+func (l Library) ExcludedDir(rel string) bool {
+	if len(l.Exclude) == 0 || rel == "" || rel == "." {
+		return false
+	}
+	parts := strings.Split(strings.ToLower(rel), "/")
+	for _, e := range l.Exclude {
+		e = strings.ToLower(e)
+		if strings.Contains(e, "/") {
+			n := strings.Count(e, "/") + 1
+			if len(parts) >= n {
+				if ok, _ := path.Match(e, strings.Join(parts[:n], "/")); ok {
+					return true
+				}
+			}
+			continue
+		}
+		for _, p := range parts {
+			if ok, _ := path.Match(e, p); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type LibraryStore struct {
@@ -130,8 +180,8 @@ func (ls *LibraryStore) validate(name, typ, path string) (string, error) {
 	return abs, nil
 }
 
-func (ls *LibraryStore) Add(name, typ, path string) (Library, error) {
-	abs, err := ls.validate(name, typ, path)
+func (ls *LibraryStore) Add(name, typ, dir string, exclude []string) (Library, error) {
+	abs, err := ls.validate(name, typ, dir)
 	if err != nil {
 		return Library{}, err
 	}
@@ -152,13 +202,13 @@ func (ls *LibraryStore) Add(name, typ, path string) (Library, error) {
 			}
 		}
 	}
-	l := &Library{ID: id, Name: strings.TrimSpace(name), Type: typ, Path: abs, Created: time.Now().Unix()}
+	l := &Library{ID: id, Name: strings.TrimSpace(name), Type: typ, Path: abs, Created: time.Now().Unix(), Exclude: cleanExclude(exclude)}
 	ls.libs = append(ls.libs, l)
 	return *l, ls.save()
 }
 
-func (ls *LibraryStore) Update(id, name, typ, path string) (Library, error) {
-	abs, err := ls.validate(name, typ, path)
+func (ls *LibraryStore) Update(id, name, typ, dir string, exclude *[]string) (Library, error) {
+	abs, err := ls.validate(name, typ, dir)
 	if err != nil {
 		return Library{}, err
 	}
@@ -167,6 +217,9 @@ func (ls *LibraryStore) Update(id, name, typ, path string) (Library, error) {
 	for _, l := range ls.libs {
 		if l.ID == id {
 			l.Name, l.Type, l.Path = strings.TrimSpace(name), typ, abs
+			if exclude != nil {
+				l.Exclude = cleanExclude(*exclude)
+			}
 			return *l, ls.save()
 		}
 	}
@@ -245,6 +298,9 @@ func (s *Server) resolveLib(p string) (string, os.FileInfo, Library, error) {
 	}
 	if !s.libs.Accepts(lib.Type, abs) {
 		return "", nil, Library{}, errors.New("file type not allowed")
+	}
+	if d := path.Dir(rel); d != "." && lib.ExcludedDir(d) {
+		return "", nil, Library{}, errors.New("not found")
 	}
 	st, err := os.Stat(abs)
 	if err != nil || !st.Mode().IsRegular() {

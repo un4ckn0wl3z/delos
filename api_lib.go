@@ -30,19 +30,21 @@ func (s *Server) libraryRoutes(mux *http.ServeMux) {
 }
 
 type libInfo struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Count    int    `json:"count"`
-	Scanned  int64  `json:"scanned"`
-	Path     string `json:"path,omitempty"` // admins only
-	Scanning bool   `json:"scanning,omitempty"`
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Type     string   `json:"type"`
+	Count    int      `json:"count"`
+	Scanned  int64    `json:"scanned"`
+	Path     string   `json:"path,omitempty"`    // admins only
+	Exclude  []string `json:"exclude,omitempty"` // admins only
+	Scanning bool     `json:"scanning,omitempty"`
 }
 
 func (s *Server) libInfo(l Library, admin bool) libInfo {
 	li := libInfo{ID: l.ID, Name: l.Name, Type: l.Type, Count: s.index.Count(l.ID), Scanned: s.index.Scanned(l.ID)}
 	if admin {
 		li.Path = l.Path
+		li.Exclude = l.Exclude
 	}
 	st := s.index.Status()
 	li.Scanning = st.Running && st.Lib == l.ID
@@ -166,6 +168,7 @@ func (s *Server) handleAdminLibraries(w http.ResponseWriter, r *http.Request) {
 
 type libBody struct {
 	Name, Type, Path string
+	Exclude          *[]string `json:"exclude"`
 }
 
 func (s *Server) handleAdminLibraryAdd(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +176,11 @@ func (s *Server) handleAdminLibraryAdd(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &b) {
 		return
 	}
-	l, err := s.libs.Add(b.Name, b.Type, b.Path)
+	var ex []string
+	if b.Exclude != nil {
+		ex = *b.Exclude
+	}
+	l, err := s.libs.Add(b.Name, b.Type, b.Path, ex)
 	if err != nil {
 		httpErr(w, 400, err.Error())
 		return
@@ -191,7 +198,7 @@ func (s *Server) handleAdminLibraryUpdate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	prev, _ := s.libs.Get(r.PathValue("id"))
-	l, err := s.libs.Update(r.PathValue("id"), b.Name, b.Type, b.Path)
+	l, err := s.libs.Update(r.PathValue("id"), b.Name, b.Type, b.Path, b.Exclude)
 	if err != nil {
 		httpErr(w, 400, err.Error())
 		return

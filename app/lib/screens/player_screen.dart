@@ -17,7 +17,9 @@ import '../util.dart';
 ///  * transcode — server sends H.264/AAC fMP4 starting at [_offset]. Seeking re-opens the
 ///                stream; text subs are fetched as WebVTT, image subs are burned in.
 class PlayerScreen extends StatefulWidget {
-  const PlayerScreen({super.key, required this.api, required this.file, this.nextLabel, this.onPlayNext, this.onProgress});
+  const PlayerScreen({super.key, required this.api, required this.file, this.nextLabel, this.onPlayNext, this.onProgress, this.startOver = false});
+  /// Ignore the saved position and play from the beginning.
+  final bool startOver;
   final Api api;
   final MediaFile file;
   /// Next episode (TV): offered when this one ends.
@@ -163,7 +165,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _transcode = s.quality == 'transcode';
       _maxh = s.maxh;
       var start = (prog['pos'] as num?)?.toDouble() ?? 0;
-      if (start < 30 || start > info.duration - 120) start = 0;
+      if (widget.startOver || start < 30 || start > info.duration - 120) start = 0;
 
       await api.ensureSession(); // media URLs carry the token
       if (!mounted) return;
@@ -718,7 +720,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         icon: const Icon(Icons.arrow_back, color: Colors.white),
                         onPressed: () => Navigator.pop(context)),
                     Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(widget.file.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,

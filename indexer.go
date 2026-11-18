@@ -374,6 +374,7 @@ func (ix *Indexer) scan(lib Library, refresh bool) error {
 	}
 	ix.mu.Unlock()
 
+	ix.setErr("") // only report errors from the latest scan
 	ix.setStatus(ScanStatus{Running: true, Lib: lib.ID, Phase: "Scanning files"})
 	found := map[string]*Item{}
 	var needTags []string
@@ -387,6 +388,11 @@ func (ix *Indexer) scan(lib Library, refresh bool) error {
 				return filepath.SkipDir
 			}
 			return nil
+		}
+		if d.IsDir() && p != lib.Path {
+			if rel, err := filepath.Rel(lib.Path, p); err == nil && lib.ExcludedDir(filepath.ToSlash(rel)) {
+				return filepath.SkipDir
+			}
 		}
 		if d.IsDir() || !ix.s.libs.Accepts(lib.Type, d.Name()) {
 			return nil

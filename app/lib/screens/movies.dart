@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../item_menu.dart';
 import '../library.dart';
 import '../util.dart';
 import '../widgets.dart';
@@ -108,6 +109,7 @@ class _MoviesViewState extends State<MoviesView> {
                         await Navigator.push(context, MaterialPageRoute(builder: (_) => MovieScreen(app: widget.app, data: d!, groupKey: g.key)));
                         if (mounted) setState(() {});
                       },
+                      onLongPress: () => showItemMenu(context, widget.app, d!, title: g.title, items: g.items, play: g.main, onChanged: () => _load(force: true)),
                     ),
                 ]),
               ),
@@ -162,6 +164,16 @@ class _MovieScreenState extends State<MovieScreen> {
         SliverAppBar(
           expandedHeight: m != null && m.backdrop.isNotEmpty ? 240 : 0,
           pinned: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.more_vert),
+              onPressed: () => showItemMenu(context, widget.app, widget.data, title: g.title, items: g.items, play: g.main, onChanged: () async {
+                final fresh = await widget.app.repo.lib(widget.data.info, force: true);
+                if (!context.mounted) return;
+                Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => MovieScreen(app: widget.app, data: fresh, groupKey: g.key)));
+              }),
+            ),
+          ],
           flexibleSpace: m != null && m.backdrop.isNotEmpty
               ? FlexibleSpaceBar(
                   background: Stack(fit: StackFit.expand, children: [

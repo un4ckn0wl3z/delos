@@ -27,6 +27,7 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/update/install", s.adminOnly(s.handleUpdateInstall))
 	mux.HandleFunc("POST /api/admin/settings", s.adminOnly(s.handleSettings))
 	mux.HandleFunc("GET /api/admin/settings", s.adminOnly(s.handleSettingsGet))
+	mux.HandleFunc("POST /api/admin/metadata/test", s.adminOnly(s.handleMetadataTest))
 }
 
 func (s *Server) handleAdminPage(w http.ResponseWriter, r *http.Request) {

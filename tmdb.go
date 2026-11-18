@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -166,11 +167,48 @@ func (t *TMDB) search(kind, title string, yr int) (int, error) {
 		}
 		return r.Results[0].ID, nil
 	}
-	id, err := try(true)
-	if err == nil && id == 0 && yr > 0 {
-		id, err = try(false)
+	for _, v := range titleVariants(title) {
+		title = v
+		id, err := try(true)
+		if err == nil && id == 0 && yr > 0 {
+			id, err = try(false)
+		}
+		if err != nil || id != 0 {
+			return id, err
+		}
 	}
-	return id, err
+	return 0, nil
+}
+
+var (
+	reSequelNum = regexp.MustCompile(`(\S)\s+\d{1,2}(\s|$)`)
+	reSpaces    = regexp.MustCompile(`\s+`)
+)
+
+// titleVariants: the parsed title first, then looser forms that TMDB is more
+// likely to find, e.g. "Now You See Me 3 Now You Don't" → "Now You See Me Now You Don't",
+// "Show - Subtitle" → "Show".
+func titleVariants(t string) []string {
+	out := []string{t}
+	add := func(v string) {
+		v = strings.TrimSpace(reSpaces.ReplaceAllString(v, " "))
+		if v == "" || len(v) < 2 {
+			return
+		}
+		for _, x := range out {
+			if strings.EqualFold(x, v) {
+				return
+			}
+		}
+		out = append(out, v)
+	}
+	add(reSequelNum.ReplaceAllString(t, "$1$2"))
+	for _, sep := range []string{" - ", ": "} {
+		if i := strings.Index(t, sep); i > 0 {
+			add(t[:i])
+		}
+	}
+	return out
 }
 
 type SearchResult struct {

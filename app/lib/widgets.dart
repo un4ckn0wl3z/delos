@@ -49,17 +49,21 @@ class PosterCard extends StatelessWidget {
     this.badge = '',
     this.round = false,
     required this.onTap,
+    this.onLongPress,
   });
   final String title, subtitle, image, badge;
   final Map<String, String>? headers;
   final double aspect, progress;
   final bool round;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
+      onSecondaryTap: onLongPress, // right-click on desktop
       borderRadius: BorderRadius.circular(8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
         AspectRatio(

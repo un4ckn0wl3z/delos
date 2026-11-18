@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseMovie(t *testing.T) {
 	cases := []struct {
@@ -52,5 +55,44 @@ func TestParseArtistTitle(t *testing.T) {
 	a, ti, tr := parseArtistTitle("03 - Daft Punk - One More Time.mp3")
 	if a != "Daft Punk" || ti != "One More Time" || tr != 3 {
 		t.Errorf("got %q %q %d", a, ti, tr)
+	}
+}
+
+func TestTitleVariants(t *testing.T) {
+	cases := map[string][]string{
+		"Now You See Me 3 Now You Don't": {"Now You See Me 3 Now You Don't", "Now You See Me Now You Don't"},
+		"Inception":                      {"Inception"},
+		"Star Wars - A New Hope":         {"Star Wars - A New Hope", "Star Wars"},
+		"2012":                           {"2012"},
+	}
+	for in, want := range cases {
+		got := titleVariants(in)
+		if strings.Join(got, "|") != strings.Join(want, "|") {
+			t.Errorf("titleVariants(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestExcludedDir(t *testing.T) {
+	l := Library{Exclude: cleanExclude([]string{" Sample ", "Extras/Featurettes/", "behind*", "../etc", "a/[b"})}
+	if strings.Join(l.Exclude, "|") != "Sample|Extras/Featurettes|behind*" {
+		t.Fatalf("cleanExclude = %q", l.Exclude)
+	}
+	cases := map[string]bool{
+		"":                         false,
+		"Movies":                   false,
+		"Movies/sample":            true,
+		"Movies/Foo (2020)/Sample": true,
+		"Extras":                   false,
+		"Extras/Featurettes":       true,
+		"Extras/Featurettes/Deep":  true,
+		"Other/Extras/Featurettes": false,
+		"Show/Behind the Scenes":   true,
+		"Show/Season 1":            false,
+	}
+	for rel, want := range cases {
+		if got := l.ExcludedDir(rel); got != want {
+			t.Errorf("ExcludedDir(%q) = %v, want %v", rel, got, want)
+		}
 	}
 }
