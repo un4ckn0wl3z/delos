@@ -45,6 +45,7 @@ if [ -f "$ENVF" ]; then
 fi
 
 MEDIA_ROOT="${MEDIA_ROOT:-${STREAMMKV_ROOT:-$HOME/torrents}}"
+MEDIA_ROOT="${MEDIA_ROOT/#\~/$HOME}"
 [ -d "$MEDIA_ROOT" ] || die "MEDIA_ROOT '$MEDIA_ROOT' does not exist"
 
 # ---------------------------------------------------------------- streammkv binary

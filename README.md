@@ -43,7 +43,14 @@ CI (`.github/workflows/app.yml`) signs the APK with the key from the `ANDROID_DE
 
 ## Install on the seedbox (no root, no package manager needed)
 
-**One-liner** (downloads the release binary + static ffmpeg, picks a free port, generates a password, starts the server and adds an autostart cron):
+**From your PC (easiest):** download and run the deploy script. It asks for the seedbox host, SSH user/port, your movie folder and an optional port, then installs or upgrades over SSH. You only type the SSH password. It remembers your answers for next time.
+
+- Windows 10/11: [`deploy/deploy.cmd`](deploy/deploy.cmd). Double-click it; it uses the built-in OpenSSH client.
+- Linux / macOS: [`deploy/deploy.sh`](deploy/deploy.sh). Run `bash deploy.sh`.
+
+At the end it prints the URL, username and password to put into the app or the Tampermonkey settings. Run it again any time to upgrade to the latest release; the port and password stay the same.
+
+**Or, on the seedbox itself** (one-liner; downloads the release binary + static ffmpeg, picks a free port, generates a password, starts the server and adds an autostart cron):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/deploy/install.sh | MEDIA_ROOT=~/torrents bash
