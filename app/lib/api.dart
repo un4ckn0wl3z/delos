@@ -135,6 +135,24 @@ class Api {
   Future<void> addDownload(String source, String lib, String subdir) =>
       _req('POST', 'downloads', body: {'source': source, 'lib': lib, 'subdir': subdir});
 
+  /// Upload a .torrent file (rtorrent downloads it into the library).
+  Future<void> addTorrentFile(String fileName, List<int> bytes, String lib, String subdir) async {
+    await ensureSession();
+    final req = http.MultipartRequest('POST', _u('downloads/torrent'))
+      ..headers.addAll(authHeaders)
+      ..fields['lib'] = lib
+      ..fields['subdir'] = subdir
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: fileName));
+    final res = await http.Response.fromStream(await _client.send(req));
+    if (res.statusCode != 200) {
+      String msg = res.reasonPhrase ?? 'upload failed';
+      try {
+        msg = (jsonDecode(res.body) as Map)['error'] as String? ?? msg;
+      } catch (_) {}
+      throw ApiException(res.statusCode, msg);
+    }
+  }
+
   Future<void> retryDownload(String id) => _req('POST', 'downloads/${Uri.encodeComponent(id)}/retry', body: const {});
 
   Future<void> deleteDownload(String id, {bool files = false}) =>

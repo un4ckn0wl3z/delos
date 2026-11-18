@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
@@ -82,6 +83,40 @@ class _DownloadsViewState extends State<DownloadsView> {
       await widget.app.api.addDownload(src, lib!, _sub.text.trim());
       _src.clear();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Download added')));
+      await _load();
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  /// Pick a .torrent file from the device and upload it into the chosen library.
+  Future<void> _pickTorrent() async {
+    if (lib == null) return;
+    FilePickerResult? r;
+    try {
+      // custom extensions aren't reliable for .torrent on Android, so pick any file and check
+      r = await FilePicker.platform.pickFiles(type: FileType.any, withData: true);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not open files: $e')));
+      return;
+    }
+    final f = r?.files.firstOrNull;
+    if (f == null) return;
+    final bytes = f.bytes;
+    if (bytes == null || bytes.isEmpty || !f.name.toLowerCase().endsWith('.torrent') && bytes.first != 0x64 /* 'd' */) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Choose a .torrent file')));
+      return;
+    }
+    if (bytes.length > 10 * 1024 * 1024) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('That file is too big for a .torrent (max 10 MB)')));
+      return;
+    }
+    setState(() => busy = true);
+    try {
+      await widget.app.api.addTorrentFile(f.name, bytes, lib!, _sub.text.trim());
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added ${f.name}')));
       await _load();
     } on ApiException catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
@@ -177,11 +212,21 @@ class _DownloadsViewState extends State<DownloadsView> {
           ),
         ]),
         const SizedBox(height: 10),
-        FilledButton.icon(
-          onPressed: busy ? null : _add,
-          icon: busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.download),
-          label: const Text('Download'),
-        ),
+        Row(children: [
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: busy ? null : _add,
+              icon: busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.download),
+              label: const Text('Download'),
+            ),
+          ),
+          const SizedBox(width: 10),
+          OutlinedButton.icon(
+            onPressed: busy ? null : _pickTorrent,
+            icon: const Icon(Icons.attach_file),
+            label: const Text('.torrent file'),
+          ),
+        ]),
         Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Text(
