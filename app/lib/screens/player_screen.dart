@@ -190,10 +190,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   // ------------------------------------------------------------------ mpv helpers
 
+  /// Set an mpv property (typed call — a dynamic call can silently fail in release builds).
   Future<void> _mpv(String prop, String value) async {
+    final p = _player.platform;
+    if (p is! NativePlayer) return;
     try {
-      await (_player.platform as dynamic).setProperty(prop, value);
-    } catch (_) {}
+      await p.setProperty(prop, value);
+    } catch (e) {
+      debugPrint('mpv $prop=$value failed: $e');
+    }
   }
 
   /// Audio output tuning, applied before the first file is opened.
@@ -259,6 +264,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
     // Text subs are drawn by Flutter (any font incl. Thai); image subs (PGS/VobSub) by mpv.
     final image = _sub != null && !info.subs[_sub!].text;
+    if (image && _sub != null) await _mpv('sid', '${_sub! + 1}'); // make sure mpv has it selected
     await _mpv('sub-visibility', image ? 'yes' : 'no');
     await _mpv('sub-delay', _subDelay.toStringAsFixed(3));
   }
@@ -392,6 +398,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     } else {
       await _applyDirectSub();
+      final isImage = i != null && !info.subs[i].text;
+      if (isImage && mounted) {
+        // some devices don't draw image subs in Direct mode — offer the server-side burn-in
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          duration: const Duration(seconds: 8),
+          content: const Text("Image subtitles (PGS). Not showing? Burn them in on the server."),
+          action: SnackBarAction(label: 'Burn in', onPressed: () => _setQuality(true, _maxh)),
+        ));
+      }
     }
     setState(() {});
   }

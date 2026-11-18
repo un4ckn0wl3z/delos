@@ -16,11 +16,11 @@ enum RepeatMode { off, all, one }
 class AudioController extends ChangeNotifier {
   AudioController(this.api) {
     if (Platform.isAndroid) {
-      try {
-        final p = player.platform as dynamic;
-        p.setProperty('ao', 'audiotrack,opensles');
-        p.setProperty('audio-buffer', '0.5');
-      } catch (_) {}
+      final p = player.platform;
+      if (p is NativePlayer) {
+        p.setProperty('ao', 'audiotrack,opensles').catchError((_) {});
+        p.setProperty('audio-buffer', '0.5').catchError((_) {});
+      }
     }
     _subs.addAll([
       player.stream.completed.listen((done) {
