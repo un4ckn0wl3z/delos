@@ -24,6 +24,8 @@ Admins can add as many libraries as they like from **/admin → Libraries**. Pic
 | **Other videos** | A plain folder browser with no scraping. |
 
 - **TMDB key:** set it in **/admin → Metadata**. A free v3 API key or a v4 read token works. You can also choose the metadata language, e.g. `th-TH`; when there is no overview in that language it falls back to English. Without a key, movies and TV shows still work, just without posters or metadata.
+- **Exclude folders:** under **Edit library → Exclude folders**, enter one entry per line, or use **Add folder…**. `Extras/Featurettes` (with a `/`) means that one folder. `Sample` or `Behind*` means any folder with that name, at any depth. Excluded folders are left out of every list and their files can't be played.
+- **Test:** **/admin → Metadata → Test** checks four things: the TMDB key and whether the server can reach TMDB, whether MusicBrainz is reachable, whether this browser can load poster images, and how many items in each library have artwork. It also lists titles that weren't matched and warns about libraries that will never get metadata, such as type *Other videos*. You can test a key before saving it.
 - **Scanning:** every library is re-scanned every 30 minutes, or straight away with **Scan**. **Refresh metadata** re-matches everything. Results are cached in `<data>/index/` and covers in `<data>/covers/`, so a rescan only looks up new titles.
 - **Per-user access:** **/admin → Users → Libraries** chooses which libraries a user can see. The default is all of them, so a kids' account can be limited to Music, for example.
 - **Fixing wrong matches:** in the userscript, open a movie, show, episode, album or track and press **✎ Edit**. You can search TMDB and pick the correct title, enter a TMDB ID, or override fields by hand (title, year, genres, overview, poster URL; artist, album, track, cover URL…). **Reset to automatic** removes the edit. Edits are kept separately and survive rescans. Admins can always edit; to let another user edit, use **/admin → Users → Make editor**.
@@ -50,7 +52,7 @@ StreamMKV supports several users. Each user has their own watch progress, resume
 
 The app is written in Flutter with [media_kit](https://github.com/media-kit/media-kit) (libmpv) and is the same on every platform. Download it from [Releases](https://github.com/un4ckn0wl3z/streammkv/releases/latest).
 
-The app browses libraries the same way the userscript does: Home (continue watching / recently added), movies with posters and genre filters, TV shows with seasons and Next up, and music by album, artist, genre or song. It has a mini player and background audio. Metadata editing is only in the userscript.
+The app browses libraries the same way the userscript does: Home (continue watching / recently added), movies with posters and genre filters, TV shows with seasons and Next up, and music by album, artist, genre or song. It has a mini player and background audio. **Long-press** a poster or episode to open a menu (on desktop, right-click). It offers Play/Resume, **Start over** and **Remove from Continue watching**. Admins and editors also get **Identify…**, which lets you search TMDB, pick the right title or type a TMDB ID; **Re-detect** returns the title to automatic matching. Other metadata edits are only in the userscript.
 
 | Platform | File | Install |
 |---|---|---|
