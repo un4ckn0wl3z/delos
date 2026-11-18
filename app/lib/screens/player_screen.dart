@@ -8,6 +8,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../api.dart';
+import '../social.dart';
 import '../models.dart';
 import '../util.dart';
 
@@ -133,6 +134,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void dispose() {
     _saveProgress();
+    if (NowWatching.activity?['path'] == path) NowWatching.set(null);
     for (final s in _subs) {
       s.cancel();
     }
@@ -172,6 +174,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       setState(() {});
       await _tuneAudio();
       await _open(start);
+      NowWatching.set({'kind': 'video', 'path': path, 'title': widget.file.name, 'pos': start.round(), 'dur': _duration.round()});
       _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) => _saveProgress());
       if (start > 0 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -415,6 +418,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (p < 30) return;
     api.saveProgress(path, pos: p, duration: _duration, audio: _audio, sub: _sub ?? -1);
     widget.onProgress?.call(p > _duration - 120 ? 0 : p);
+    NowWatching.activity?['pos'] = p.round();
   }
 
   // ------------------------------------------------------------------ controls visibility

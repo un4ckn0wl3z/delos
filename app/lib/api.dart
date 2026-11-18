@@ -140,6 +140,33 @@ class Api {
   Future<void> deleteDownload(String id, {bool files = false}) =>
       _req('DELETE', 'downloads/${Uri.encodeComponent(id)}', q: files ? {'files': '1'} : null);
 
+  // ---------------------------------------------------------------- people & chat
+
+  /// Live events (text/event-stream). Caller listens and cancels.
+  Future<http.StreamedResponse> events() async {
+    await ensureSession();
+    final req = http.Request('GET', _u('events'))..headers.addAll({...authHeaders, 'Accept': 'text/event-stream'});
+    final res = await http.Client().send(req);
+    if (res.statusCode != 200) throw ApiException(res.statusCode, 'events: ${res.statusCode}');
+    return res;
+  }
+
+  Future<void> presence(Map? activity) => _req('POST', 'presence', body: {'activity': activity});
+  Future<Map> people() async => await _req('GET', 'people') as Map;
+  Future<void> setHideActivity(bool hide) => _req('POST', 'me/privacy', body: {'hideActivity': hide});
+  Future<List<Map>> chats() async => List<Map>.from((await _req('GET', 'chat') as Map)['conversations'] as List? ?? const []);
+  Future<Map> chatDM(String user) async => await _req('POST', 'chat/dm', body: {'user': user}) as Map;
+  Future<Map> chatGroup(String name, List<String> members) async => await _req('POST', 'chat/groups', body: {'name': name, 'members': members}) as Map;
+  Future<Map> chatUpdate(String id, {String? name, List<String> add = const [], List<String> remove = const []}) async =>
+      await _req('PUT', 'chat/${Uri.encodeComponent(id)}', body: {if (name != null) 'name': name, 'add': add, 'remove': remove}) as Map;
+  Future<void> chatLeave(String id) => _req('POST', 'chat/${Uri.encodeComponent(id)}/leave', body: const {});
+  Future<Map> chatMessages(String id, {int before = 0}) async =>
+      await _req('GET', 'chat/${Uri.encodeComponent(id)}/messages', q: {if (before > 0) 'before': '$before'}) as Map;
+  /// Returns {"message", "warning"?}
+  Future<Map> chatSend(String id, String text, {Map? ref}) async =>
+      await _req('POST', 'chat/${Uri.encodeComponent(id)}/messages', body: {'text': text, if (ref != null) 'ref': ref}) as Map;
+  Future<void> chatRead(String id, int seq) => _req('POST', 'chat/${Uri.encodeComponent(id)}/read', body: {'seq': seq});
+
   // ---------------------------------------------------------------- personal libraries
 
   /// {"libraries": [...], "usage": {items, bytes}, "maxItems", "maxBytes"}

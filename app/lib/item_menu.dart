@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'library.dart';
+import 'screens/chat.dart';
 import 'screens/home_screen.dart';
 import 'util.dart';
 import 'widgets.dart';
@@ -60,6 +61,12 @@ Future<void> showItemMenu(
             subtitle: inProgress.length > 1 ? Text('${inProgress.length} files') : null,
             onTap: () => Navigator.pop(ctx, 'clear'),
           ),
+        if (app.social != null && (play ?? items.firstOrNull) != null)
+          ListTile(
+            leading: const Icon(Icons.send_outlined),
+            title: const Text('Send to a friend…'),
+            onTap: () => Navigator.pop(ctx, 'share'),
+          ),
         if (deletable.isNotEmpty)
           ListTile(
             leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
@@ -91,6 +98,17 @@ Future<void> showItemMenu(
         app.repo.setPos(it.path, 0);
       }
       messenger.showSnackBar(const SnackBar(content: Text('Removed from Continue watching')));
+    case 'share':
+      final it = play ?? items.first;
+      final m = type == 'tv' ? d.shows[showKey ?? it.show] : d.movieOf(it);
+      await shareSheet(context, app, {
+        'path': it.path,
+        'title': m?.title ?? title,
+        'sub': type == 'tv' && it.episode > 0 ? 'S${it.season}E${it.episode}${it.episodeTitle.isNotEmpty ? ' · ${it.episodeTitle}' : ''}' : (m != null && m.year > 0 ? '${m.year}' : ''),
+        'image': m?.poster ?? '',
+        'kind': 'video',
+      });
+      return;
     case 'delete':
       final ok = await showDialog<bool>(
         context: context,

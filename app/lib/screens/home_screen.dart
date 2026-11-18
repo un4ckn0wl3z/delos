@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../api.dart';
@@ -5,9 +7,11 @@ import '../audio.dart';
 import '../item_menu.dart';
 import '../library.dart';
 import '../media_session.dart';
+import '../social.dart';
 import '../update.dart';
 import '../util.dart';
 import '../widgets.dart';
+import 'chat.dart';
 import 'downloads.dart';
 import 'login_screen.dart';
 import 'movies.dart';
@@ -29,6 +33,8 @@ class AppCtx {
   bool downloader = false;
   /// Ids of this user's own personal libraries (deletable).
   Set<String> myLibs = {};
+  /// Who's online + chats (live).
+  Social? social;
 }
 
 /// Plays a video item; for episodes, offers the next one when it ends.
@@ -65,9 +71,10 @@ class _HomeScreenState extends State<HomeScreen> {
   late final AppCtx app = AppCtx(widget.api);
   List<LibraryInfo> libs = [];
   List<LibraryInfo> get videoLibs => libs.where((l) => l.type != 'music').toList();
-  /// 0 = Videos, 1 = Music, 2 = Downloads — separate sides with their own menus
+  /// 0 = Videos, 1 = Music, 2 = Chat, 3 = Downloads — separate sides with their own menus
   static int section = 0;
   int _lastMedia = 0;
+  StreamSubscription? _incoming;
   int sel = 0; // Videos: 0 = home, i + 1 = videoLibs[i]
   String? error;
   bool loading = true;
@@ -82,10 +89,21 @@ class _HomeScreenState extends State<HomeScreen> {
       app.admin = m['admin'] == true;
       app.editor = m['editor'] == true || app.admin;
       app.downloader = m['downloader'] == true || app.admin;
-      if (!app.downloader && section == 2) section = 0;
+      if (!app.downloader && section == 3) section = 0;
       if (mounted) setState(() {});
     }).catchError((_) {});
     MusicSession.attach(app.audio);
+    app.social = Social(widget.api, app.audio)..start();
+    _incoming = app.social!.incoming.stream.listen((e) {
+      if (!mounted) return;
+      final (conv, m) = e;
+      final c = app.social!.convs.where((x) => x['id'] == conv).firstOrNull;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('💬 ${m['from']}${c != null && c['kind'] == 'group' ? ' in ${c['title']}' : ''}: '
+            '${m['ref'] != null ? '📎 ${(m['ref'] as Map)['title']}' : m['text']}', maxLines: 2, overflow: TextOverflow.ellipsis),
+        action: SnackBarAction(label: 'Open', onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(app: app, convId: conv)))),
+      ));
+    });
     if (!_updateChecked) {
       _updateChecked = true;
       WidgetsBinding.instance.addPostFrameCallback((_) => checkForUpdate(context, widget.api.settings));
@@ -94,6 +112,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _incoming?.cancel();
+    app.social?.dispose();
+    NowWatching.onChange = null;
     app.audio.dispose();
     super.dispose();
   }
@@ -194,7 +215,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ? MusicView(key: ValueKey('music$reload'), app: app, lib: LibraryRepo.allMusic)
           : const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('No music library yet — an admin can add one (type Music) in the dashboard.')));
     }
-    if (section == 2) return DownloadsView(key: ValueKey('dl$reload'), app: app, preferMusic: _lastMedia == 1);
+    if (section == 2) return ChatView(app: app);
+    if (section == 3) return DownloadsView(key: ValueKey('dl$reload'), app: app, preferMusic: _lastMedia == 1);
     final vl = videoLibs;
     if (sel == 0 || sel > vl.length) return HomeView(key: ValueKey('home$reload'), app: app, libs: vl, open: (i) => setState(() => sel = i + 1));
     final lib = vl[sel - 1];
@@ -207,10 +229,15 @@ class _HomeScreenState extends State<HomeScreen> {
     };
   }
 
+  Widget _badged(IconData icon, String label) {
+    final n = label == 'Chat' ? app.social?.unread ?? 0 : 0;
+    return n > 0 ? Badge(label: Text(n > 99 ? '99+' : '$n'), child: Icon(icon)) : Icon(icon);
+  }
+
   void _go(int i) {
     if (i == section) return;
     setState(() {
-      if (section != 2) _lastMedia = section;
+      if (section < 2) _lastMedia = section;
       section = i;
     });
   }
@@ -221,12 +248,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final vl = videoLibs;
     final title = switch (section) {
       1 => 'Music',
-      2 => 'Downloads',
+      2 => 'Chat',
+      3 => 'Downloads',
       _ => sel == 0 || sel > vl.length ? 'Home' : vl[sel - 1].name,
     };
     final dests = <(IconData, IconData, String)>[
       (Icons.movie_outlined, Icons.movie, 'Videos'),
       (Icons.library_music_outlined, Icons.library_music, 'Music'),
+      (Icons.chat_bubble_outline, Icons.chat_bubble, 'Chat'),
       if (app.downloader) (Icons.download_outlined, Icons.download, 'Downloads'),
     ];
     final idx = section.clamp(0, dests.length - 1);
@@ -263,11 +292,14 @@ class _HomeScreenState extends State<HomeScreen> {
         Expanded(
           child: wide
               ? Row(children: [
-                  NavigationRail(
-                    selectedIndex: idx,
-                    labelType: NavigationRailLabelType.all,
-                    onDestinationSelected: _go,
-                    destinations: [for (final d in dests) NavigationRailDestination(icon: Icon(d.$1), selectedIcon: Icon(d.$2), label: Text(d.$3))],
+                  ListenableBuilder(
+                    listenable: app.social!,
+                    builder: (_, __) => NavigationRail(
+                      selectedIndex: idx,
+                      labelType: NavigationRailLabelType.all,
+                      onDestinationSelected: _go,
+                      destinations: [for (final d in dests) NavigationRailDestination(icon: _badged(d.$1, d.$3), selectedIcon: _badged(d.$2, d.$3), label: Text(d.$3))],
+                    ),
                   ),
                   const VerticalDivider(width: 1),
                   if (section == 0) ...[
@@ -283,10 +315,13 @@ class _HomeScreenState extends State<HomeScreen> {
       ]),
       bottomNavigationBar: wide
           ? null
-          : NavigationBar(
-              selectedIndex: idx,
-              onDestinationSelected: _go,
-              destinations: [for (final d in dests) NavigationDestination(icon: Icon(d.$1), selectedIcon: Icon(d.$2), label: d.$3)],
+          : ListenableBuilder(
+              listenable: app.social!,
+              builder: (_, __) => NavigationBar(
+                selectedIndex: idx,
+                onDestinationSelected: _go,
+                destinations: [for (final d in dests) NavigationDestination(icon: _badged(d.$1, d.$3), selectedIcon: _badged(d.$2, d.$3), label: d.$3)],
+              ),
             ),
     );
   }
