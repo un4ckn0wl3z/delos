@@ -24,6 +24,7 @@ class AppCtx {
 /// Plays a video item; for episodes, offers the next one when it ends.
 Future<void> openVideo(BuildContext context, AppCtx app, LibData d, Item it) async {
   app.audio.pause();
+  FocusManager.instance.primaryFocus?.unfocus(); // a search field's keyboard would squeeze the player
   Item? next;
   if (d.info.type == 'tv') {
     final eps = d.items.where((e) => e.show == it.show).toList()..sort(episodeOrder);

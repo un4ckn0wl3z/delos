@@ -53,7 +53,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final _vttCache = <int, String>{};
 
   bool _controls = true;
-  Timer? _hideTimer, _saveTimer, _seekTimer, _flashTimer;
+  Timer? _hideTimer, _saveTimer, _seekTimer, _flashTimer, _lockTimer;
+  /// Touch lock: ignores every tap/gesture/back until unlocked.
+  bool _locked = false, _lockHint = false;
   double? _drag; // slider value while dragging
   double? _pendingSeek; // transcode: target while waiting to re-open
   String? _flash; // "−10s" / "+10s" indicator
@@ -77,6 +79,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
   void initState() {
     super.initState();
     if (!_desktop) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      SystemChannels.textInput.invokeMethod('TextInput.hide');
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
     }
@@ -132,6 +136,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
     _hideTimer?.cancel();
     _saveTimer?.cancel();
+    _lockTimer?.cancel();
     _seekTimer?.cancel();
     _flashTimer?.cancel();
     _player.dispose();
@@ -398,6 +403,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   // ------------------------------------------------------------------ controls visibility
 
   void _showControls({bool autoHide = true}) {
+    if (_locked) return;
     if (!_controls) setState(() => _controls = true);
     if (autoHide) {
       _scheduleHide();
@@ -410,6 +416,33 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 3), () {
       if (mounted && _player.state.playing && _drag == null) setState(() => _controls = false);
+    });
+  }
+
+  void _lock() {
+    _hideTimer?.cancel();
+    setState(() {
+      _locked = true;
+      _controls = false;
+    });
+    _toast('Screen locked — tap the screen, then 🔒 to unlock');
+  }
+
+  void _unlock() {
+    _lockTimer?.cancel();
+    setState(() {
+      _locked = false;
+      _lockHint = false;
+    });
+    _showControls();
+  }
+
+  /// While locked, a tap only reveals the unlock button for a few seconds.
+  void _pokeLock() {
+    _lockTimer?.cancel();
+    setState(() => _lockHint = true);
+    _lockTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _lockHint = false);
     });
   }
 
@@ -591,8 +624,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: !_locked,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _locked) _pokeLock();
+      },
+      child: Scaffold(
       backgroundColor: Colors.black,
+      resizeToAvoidBottomInset: false,
       body: _error != null
           ? _ErrorView(message: _error!, onBack: () => Navigator.pop(context))
           : _info == null
@@ -604,9 +643,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   child: MouseRegion(
                     cursor: _controls || !_player.state.playing ? SystemMouseCursors.basic : SystemMouseCursors.none,
                     onHover: (_) => _showControls(),
-                    child: LayoutBuilder(builder: (context, box) => _stack(box)),
+                    child: MediaQuery.removeViewInsets(
+                      context: context,
+                      removeBottom: true,
+                      child: LayoutBuilder(builder: (context, box) => _stack(box)),
+                    ),
                   ),
                 ),
+      ),
     );
   }
 
@@ -637,9 +681,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ),
       GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => _controls ? setState(() => _controls = false) : _showControls(),
-        onDoubleTapDown: (d) => _tapX = d.localPosition.dx,
-        onDoubleTap: () => _onDoubleTap(box.maxWidth),
+        onTap: () => _locked ? _pokeLock() : (_controls ? setState(() => _controls = false) : _showControls()),
+        onDoubleTapDown: _locked ? null : (d) => _tapX = d.localPosition.dx,
+        onDoubleTap: _locked ? null : () => _onDoubleTap(box.maxWidth),
+        onLongPress: _locked ? _pokeLock : null,
       ),
       if (buffering) const Center(child: CircularProgressIndicator(color: Colors.white)),
       if (_flash != null)
@@ -652,15 +697,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ),
         ),
       IgnorePointer(
-        ignoring: !_controls,
+        ignoring: !_controls || _locked,
         child: AnimatedOpacity(
-          opacity: _controls ? 1 : 0,
+          opacity: _controls && !_locked ? 1 : 0,
           duration: const Duration(milliseconds: 200),
-          child: Stack(fit: StackFit.expand, children: [
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             // top bar
-            Align(
-              alignment: Alignment.topCenter,
-              child: Container(
+            Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                       begin: Alignment.topCenter,
@@ -684,6 +727,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             style: const TextStyle(color: Colors.white60, fontSize: 12)),
                       ]),
                     ),
+                    if (!_desktop)
+                      IconButton(
+                          tooltip: 'Lock screen',
+                          icon: const Icon(Icons.lock_open, color: Colors.white),
+                          onPressed: _lock),
                     IconButton(
                         tooltip: 'Audio',
                         icon: const Icon(Icons.audiotrack, color: Colors.white),
@@ -705,9 +753,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ]),
                 ),
               ),
-            ),
             // center buttons
-            Center(
+            Expanded(
+              child: Center(
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 IconButton(
                   iconSize: 40,
@@ -737,10 +785,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ),
               ]),
             ),
+            ),
             // bottom bar
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: Container(
+            Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                       begin: Alignment.bottomCenter,
@@ -772,10 +819,31 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ]),
                 ),
               ),
-            ),
           ]),
         ),
       ),
+      if (_locked)
+        Align(
+          alignment: const Alignment(-.85, 0),
+          child: IgnorePointer(
+            ignoring: !_lockHint,
+            child: AnimatedOpacity(
+              opacity: _lockHint ? 1 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: Material(
+                color: Colors.black54,
+                shape: const CircleBorder(),
+                child: IconButton(
+                  iconSize: 36,
+                  padding: const EdgeInsets.all(14),
+                  tooltip: 'Unlock',
+                  icon: const Icon(Icons.lock, color: Colors.white),
+                  onPressed: _unlock,
+                ),
+              ),
+            ),
+          ),
+        ),
     ]);
   }
 }
