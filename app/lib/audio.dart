@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -14,6 +15,13 @@ enum RepeatMode { off, all, one }
 /// including wma/ape/alac, straight from /api/raw).
 class AudioController extends ChangeNotifier {
   AudioController(this.api) {
+    if (Platform.isAndroid) {
+      try {
+        final p = player.platform as dynamic;
+        p.setProperty('ao', 'audiotrack,opensles');
+        p.setProperty('audio-buffer', '0.5');
+      } catch (_) {}
+    }
     _subs.addAll([
       player.stream.completed.listen((done) {
         if (done) _onCompleted();

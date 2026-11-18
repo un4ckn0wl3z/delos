@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Persistent app settings (SharedPreferences).
@@ -22,6 +24,12 @@ class Settings {
   /// 'direct' = original file played by mpv, 'transcode' = server-side H.264.
   String get quality => _p.getString('quality') ?? 'direct';
   set quality(String v) => _p.setString('quality', v);
+
+  /// Mix 5.1/7.1 audio down to stereo in the player. Phones and tablets have
+  /// stereo speakers anyway, and multichannel output makes some Android
+  /// devices stutter. Off by default on desktops (receivers / surround).
+  bool get stereoDownmix => _p.getBool('stereoDownmix') ?? (Platform.isAndroid || Platform.isIOS);
+  set stereoDownmix(bool v) => _p.setBool('stereoDownmix', v);
 
   int get maxh => _p.getInt('maxh') ?? 720;
   set maxh(int v) => _p.setInt('maxh', v);

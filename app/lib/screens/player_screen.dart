@@ -170,6 +170,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       await api.ensureSession(); // media URLs carry the token
       if (!mounted) return;
       setState(() {});
+      await _tuneAudio();
       await _open(start);
       _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) => _saveProgress());
       if (start > 0 && mounted) {
@@ -190,6 +191,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       await (_player.platform as dynamic).setProperty(prop, value);
     } catch (_) {}
+  }
+
+  /// Audio output tuning, applied before the first file is opened.
+  Future<void> _tuneAudio() async {
+    if (Platform.isAndroid) {
+      // AudioTrack is smoother than OpenSL ES on most devices (mpv-android's choice too),
+      // and a bigger buffer rides out decoder / scheduler hiccups.
+      await _mpv('ao', 'audiotrack,opensles');
+      await _mpv('audio-buffer', '0.5');
+    }
+    if (api.settings.stereoDownmix) await _mpv('audio-channels', 'stereo');
+    // read further ahead so a slow seedbox connection doesn't starve playback
+    await _mpv('demuxer-readahead-secs', '30');
+    await _mpv('cache-secs', '60');
   }
 
   Future<void> _open(double start, {bool? play}) async {

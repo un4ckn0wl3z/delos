@@ -68,6 +68,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   .toList(),
             ),
           ),
+          SwitchListTile(
+            title: const Text('Stereo audio (downmix 5.1 / 7.1)'),
+            subtitle: const Text('Fixes stuttering surround tracks on many phones and tablets. Turn off for an AV receiver.'),
+            value: s.stereoDownmix,
+            onChanged: (v) => setState(() => s.stereoDownmix = v),
+          ),
           ListTile(
             title: const Text('Subtitle size'),
             subtitle: Slider(
