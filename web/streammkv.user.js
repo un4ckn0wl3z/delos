@@ -529,6 +529,7 @@
           <span>${esc(it.name)}<br><small>${fmtSize(it.size)}${it.dir ? ' · ' + esc(it.dir) : ''}</small></span>
           ${canDelete(lib) ? '<button class="smkv-del" title="Delete this file from the server">🗑</button>' : ''}</div>`).join('')}</div>
         ${libOf(lib).owner ? `<div class="smkv-dim2" style="margin-top:8px">📦 From ${libOf(lib).owner === BR.me.user ? 'your' : esc(libOf(lib).owner) + "'s"} library “${esc(libOf(lib).name)}”</div>` : ''}
+        ${lib !== '_legacy' ? '<button class="smkv-sharebtn">📤 Send to a friend</button>' : ''}
         ${canEdit() && lib !== '_legacy' ? `<div class="smkv-admin-row">${m && m.id > 0 ? `TMDB #${m.id}` : m ? 'Edited manually' : 'Not matched'} · <a href="#" class="smkv-fix">✎ Edit / fix match…</a></div>` : ''}`,
         (root, close) => {
           root.querySelectorAll('.smkv-file').forEach((row) => {
@@ -538,6 +539,8 @@
             const del = row.querySelector('.smkv-del');
             if (del) del.onclick = async () => { if (await deleteFiles([row.dataset.p], `“${t}” (${row.querySelector('span').firstChild.textContent})`)) close(); };
           });
+          const sb = root.querySelector('.smkv-sharebtn');
+          if (sb) sb.onclick = () => { close(); shareDialog({ path: items[0].path, title: t, sub: String(m?.year || items[0].year || ''), image: m?.poster || '', kind: 'video' }); };
           const fix = root.querySelector('.smkv-fix');
           if (fix) fix.onclick = (e) => {
             e.preventDefault(); close();
@@ -1130,8 +1133,243 @@
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
       document.title = 'StreamMKV';
       route();
+      heartbeat(true); // no longer watching
     }
     $('#smkv-close').onclick = closeVideo;
+
+    // ------------------------------------------------------------ people & chat
+    const SO = { people: [], convs: [], open: null, msgs: [], es: null, hb: null, lastAct: '', hide: false };
+    function myActivity() {
+      if (S.file && S.info) {
+        const it = Object.values(BR.data).flatMap((d) => d.items || []).find((x) => x.path === S.file.path);
+        const m = it && it.movieId && BR.data[it.path.split('/')[0]]?.movies?.[it.movieId];
+        const sh = it && it.show && BR.data[it.path.split('/')[0]]?.shows?.[it.show];
+        return { kind: 'video', path: S.file.path, title: sh ? sh.title : (m ? m.title : S.file.name),
+          sub: it && it.show ? `S${it.season}E${it.episode}${it.episodeTitle ? ' · ' + it.episodeTitle : ''}` : (m && m.year ? String(m.year) : ''),
+          image: (sh && sh.poster) || (m && m.poster) || '', pos: Math.round(cur()), dur: Math.round(S.info.duration || 0) };
+      }
+      if (A.cur && !A.el.paused) {
+        return { kind: 'music', path: A.cur.path, title: A.cur.title || A.cur.name, sub: [A.cur.artist, A.cur.album].filter(Boolean).join(' — '),
+          image: A.cur.cover ? 'cover:' + A.cur.cover : '', pos: Math.round(A.el.currentTime + (A.off || 0)), dur: Math.round(A.cur.duration || 0) };
+      }
+      return null;
+    }
+    async function heartbeat(force) {
+      const a = myActivity(), key = a ? a.kind + a.path + a.title : '';
+      if (!force && key === SO.lastAct && heartbeat.at && Date.now() - heartbeat.at < 30000) return;
+      SO.lastAct = key; heartbeat.at = Date.now();
+      try { await apiPost('presence', { activity: a }); } catch (_) {}
+    }
+    const actImg = (img) => img.startsWith('cover:') ? coverUrl(img.slice(6)) : img;
+    function actLine(a) {
+      if (!a) return '';
+      const t = a.kind === 'music' ? '♪ ' : '▶ ';
+      return `${t}${esc(a.title)}${a.sub ? ' · ' + esc(a.sub) : ''}${a.kind === 'video' && a.dur ? ` <span class="smkv-dim2">${fmtTime(a.pos)} / ${fmtTime(a.dur)}</span>` : ''}`;
+    }
+    function drawPeople() {
+      const el = $('#smkv-people');
+      if (!el) return;
+      const others = SO.people.filter((p) => p.name !== BR.me.user);
+      const on = others.filter((p) => p.online);
+      el.innerHTML = `<div class="smkv-ph">People <span class="smkv-dim2">${on.length} online</span><button id="smkv-chat-open" title="Chats">💬<i id="smkv-unread" hidden></i></button></div>` +
+        others.map((p) => `<div class="smkv-person ${p.online ? 'on' : ''}" data-u="${esc(p.name)}" title="${p.online ? 'Online' : p.lastSeen ? 'Last seen ' + new Date(p.lastSeen * 1000).toLocaleString() : 'Offline'}">
+          <span class="smkv-dot"></span><div><b>${esc(p.name)}</b>${p.activity ? `<div class="smkv-act ${p.activity.path ? 'link' : ''}" data-p="${esc(p.activity.path || '')}" data-k="${esc(p.activity.kind)}">${actLine(p.activity)}</div>` : ''}</div></div>`).join('');
+      el.querySelectorAll('.smkv-person').forEach((r) => r.onclick = (e) => {
+        const act = e.target.closest('.smkv-act.link');
+        if (act) { e.stopPropagation(); return openRef({ path: act.dataset.p, kind: act.dataset.k }); }
+        openDM(r.dataset.u);
+      });
+      $('#smkv-chat-open').onclick = (e) => { e.stopPropagation(); toggleChat(); };
+      drawUnread();
+    }
+    function drawUnread() {
+      const n = SO.convs.reduce((t, c) => t + (c.unread || 0), 0), b = $('#smkv-unread');
+      if (b) { b.hidden = !n; b.textContent = n > 99 ? '99+' : n; }
+    }
+    function startSocial() {
+      if (SO.es || !BR.me || !window.EventSource) return;
+      const es = SO.es = new EventSource(new URL('api/events', BASE), { withCredentials: true });
+      es.addEventListener('people', (e) => { SO.people = JSON.parse(e.data); drawPeople(); });
+      es.addEventListener('conversation', (e) => {
+        const c = JSON.parse(e.data);
+        const i = SO.convs.findIndex((x) => x.id === c.id);
+        if (!c.members) SO.convs = SO.convs.filter((x) => x.id !== c.id); // removed from it
+        else if (i >= 0) SO.convs[i] = c; else SO.convs.unshift(c);
+        SO.convs.sort((a, b) => (b.last ? b.last.ts : b.created) - (a.last ? a.last.ts : a.created));
+        drawUnread();
+        if ($('#smkv-chat').classList.contains('show') && !SO.open) drawConvs();
+        if (SO.open && SO.open.id === c.id) { SO.open = c; drawChatHead(); }
+      });
+      es.addEventListener('message', (e) => {
+        const { conv, message: m } = JSON.parse(e.data);
+        if (SO.open && SO.open.id === conv && $('#smkv-chat').classList.contains('show')) {
+          if (!SO.msgs.some((x) => x.seq === m.seq)) { SO.msgs.push(m); drawMsgs(true); }
+          apiPost(`chat/${encodeURIComponent(conv)}/read`, { seq: m.seq }).catch(() => {});
+        } else if (m.from !== BR.me.user && !m.sys) {
+          const c = SO.convs.find((x) => x.id === conv);
+          toast(`💬 ${m.from}${c && c.kind === 'group' ? ' in ' + c.title : ''}: ${m.ref ? '📎 ' + m.ref.title : m.text}`, 6000, { label: 'Open', fn: () => openConv(conv) });
+        }
+      });
+      api('chat').then((r) => { SO.convs = r.conversations; drawUnread(); }).catch(() => {});
+      api('people').then((r) => { SO.hide = r.hideActivity; }).catch(() => {});
+      heartbeat(true);
+      SO.hb = setInterval(() => heartbeat(false), 15000);
+      ['play', 'pause'].forEach((ev) => { video.addEventListener(ev, () => heartbeat(true)); A.el.addEventListener(ev, () => heartbeat(true)); });
+    }
+
+    // chat drawer
+    function toggleChat(show) {
+      const c = $('#smkv-chat'), on = show ?? !c.classList.contains('show');
+      c.classList.toggle('show', on);
+      if (on && !SO.open) drawConvs();
+    }
+    function drawConvs() {
+      SO.open = null;
+      const c = $('#smkv-chat');
+      c.innerHTML = `<div class="smkv-ch"><b>Chats</b><span class="smkv-sp"></span><button id="smkv-newgroup">＋ Group</button><button class="smkv-x">✕</button></div>
+        <label class="smkv-check smkv-priv"><input type="checkbox" id="smkv-hideact" ${SO.hide ? 'checked' : ''}> Hide what I'm watching from others</label>
+        <div class="smkv-convs">${SO.convs.length ? SO.convs.map((v) => `<div class="smkv-conv" data-id="${esc(v.id)}">
+          <div class="smkv-av">${v.kind === 'group' ? '👥' : esc(v.title[0] || '?').toUpperCase()}</div>
+          <div class="smkv-cm"><b>${esc(v.title)}</b><span class="smkv-dim2">${v.last ? esc((v.last.sys ? '' : v.last.from + ': ') + (v.last.ref ? '📎 ' + v.last.ref.title : v.last.text)) : 'No messages yet'}</span></div>
+          ${v.unread ? `<i class="smkv-badge">${v.unread}</i>` : ''}</div>`).join('') : '<div class="smkv-dim" style="padding:16px">No chats yet — click someone in People to start one.</div>'}</div>`;
+      c.querySelector('.smkv-x').onclick = () => toggleChat(false);
+      c.querySelector('#smkv-newgroup').onclick = () => groupDialog();
+      c.querySelector('#smkv-hideact').onchange = async (e) => {
+        try { await apiPost('me/privacy', { hideActivity: e.target.checked }); SO.hide = e.target.checked; toast(SO.hide ? "Others won't see what you play" : "Others can see what you play"); }
+        catch (x) { toast(x.message); }
+      };
+      c.querySelectorAll('.smkv-conv').forEach((r) => r.onclick = () => openConv(r.dataset.id));
+    }
+    async function openDM(user) {
+      try { const v = await apiPost('chat/dm', { user }); upsertConv(v); openConv(v.id); } catch (x) { toast(x.message); }
+    }
+    function upsertConv(v) {
+      const i = SO.convs.findIndex((x) => x.id === v.id);
+      if (i >= 0) SO.convs[i] = v; else SO.convs.unshift(v);
+    }
+    async function openConv(id) {
+      toggleChat(true);
+      const c = $('#smkv-chat');
+      let r;
+      try { r = await api(`chat/${encodeURIComponent(id)}/messages`); } catch (x) { return toast(x.message); }
+      SO.open = r.conversation; SO.msgs = r.messages;
+      upsertConv(r.conversation);
+      c.innerHTML = `<div class="smkv-ch"><button class="smkv-back">←</button><b id="smkv-ctitle"></b><span class="smkv-sp"></span><button class="smkv-cmore" title="Group settings" hidden>⋯</button><button class="smkv-x">✕</button></div>
+        <div class="smkv-msgs"></div>
+        <form class="smkv-send"><input placeholder="Message…" autocomplete="off" maxlength="4000"><button>➤</button></form>`;
+      c.querySelector('.smkv-back').onclick = drawConvs;
+      c.querySelector('.smkv-x').onclick = () => toggleChat(false);
+      c.querySelector('.smkv-cmore').onclick = () => groupDialog(SO.open);
+      c.querySelector('.smkv-send').onsubmit = async (e) => {
+        e.preventDefault();
+        const inp = e.target.querySelector('input'), text = inp.value.trim();
+        if (!text) return;
+        inp.value = '';
+        try { const r = await apiPost(`chat/${encodeURIComponent(id)}/messages`, { text }); if (!SO.msgs.some((x) => x.seq === r.message.seq)) { SO.msgs.push(r.message); drawMsgs(true); } }
+        catch (x) { toast(x.message); inp.value = text; }
+      };
+      drawChatHead(); drawMsgs(true);
+      c.querySelector('.smkv-send input').focus();
+      if (SO.open.unread) apiPost(`chat/${encodeURIComponent(id)}/read`, { seq: SO.open.seq }).catch(() => {});
+      SO.open.unread = 0; drawUnread();
+    }
+    function drawChatHead() {
+      const t = $('#smkv-ctitle');
+      if (!t || !SO.open) return;
+      const p = SO.people.find((x) => x.name === SO.open.title);
+      t.innerHTML = SO.open.kind === 'group' ? `👥 ${esc(SO.open.title)} <span class="smkv-dim2">${SO.open.members.length}</span>`
+        : `${esc(SO.open.title)} <span class="smkv-dim2">${p && p.online ? '● online' : ''}</span>`;
+      $('#smkv-chat .smkv-cmore').hidden = SO.open.kind !== 'group';
+    }
+    function drawMsgs(scroll) {
+      const box = $('#smkv-chat .smkv-msgs');
+      if (!box) return;
+      let lastDay = '';
+      box.innerHTML = SO.msgs.map((m) => {
+        const d = new Date(m.ts * 1000), day = d.toLocaleDateString();
+        const sep = day !== lastDay ? `<div class="smkv-day">${esc(day)}</div>` : '';
+        lastDay = day;
+        if (m.sys) return sep + `<div class="smkv-sys">${esc(m.text)}</div>`;
+        const mine = m.from === BR.me.user;
+        const ref = m.ref ? `<div class="smkv-ref" data-p="${esc(m.ref.path)}" data-k="${esc(m.ref.kind || 'video')}">
+            ${m.ref.image ? `<img src="${esc(actImg(m.ref.image))}" onerror="this.remove()">` : `<span>${m.ref.kind === 'music' ? '♪' : '🎬'}</span>`}
+            <div><b>${esc(m.ref.title)}</b>${m.ref.sub ? `<small>${esc(m.ref.sub)}</small>` : ''}<em>${m.ref.kind === 'music' ? '▶ Play' : '▶ Watch'}</em></div></div>` : '';
+        return sep + `<div class="smkv-msg ${mine ? 'me' : ''}">${!mine && SO.open.kind === 'group' ? `<small class="smkv-from">${esc(m.from)}</small>` : ''}
+          ${ref}${m.text ? `<div class="smkv-bubble">${esc(m.text)}</div>` : ''}<small class="smkv-time">${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></div>`;
+      }).join('') || '<div class="smkv-dim" style="padding:16px">Say hi 👋</div>';
+      box.querySelectorAll('.smkv-ref').forEach((r) => r.onclick = () => openRef({ path: r.dataset.p, kind: r.dataset.k }));
+      if (scroll) box.scrollTop = box.scrollHeight;
+    }
+    async function openRef(ref) {
+      const lib = ref.path.split('/')[0];
+      if (!BR.libs.some((l) => l.id === lib)) return toast("You don't have access to that library");
+      if (ref.kind === 'music') {
+        try {
+          const d = await libData(lib);
+          const t = d.items.find((x) => x.path === ref.path);
+          if (!t) return toast('That song is gone');
+          playQueue([t], 0); location.hash = '#/music/now';
+        } catch (x) { toast(x.message); }
+        return;
+      }
+      toggleChat(false);
+      await libData(lib).catch(() => {});
+      playVideo(ref.path);
+    }
+    function groupDialog(conv) {
+      const others = SO.people.filter((p) => p.name !== BR.me.user);
+      detailModal(`<h2>${conv ? 'Group: ' + esc(conv.title) : 'New group'}</h2>
+        <label class="smkv-dim2">Name</label><input id="smkv-gname" class="smkv-inp" value="${conv ? esc(conv.name || conv.title) : ''}" maxlength="80">
+        <label class="smkv-dim2" style="display:block;margin-top:10px">Members</label>
+        <div class="smkv-gmembers">${others.map((p) => `<label class="smkv-check"><input type="checkbox" value="${esc(p.name)}" ${conv && conv.members.includes(p.name) ? 'checked' : ''}> ${esc(p.name)}${p.online ? ' <span class="smkv-dot on"></span>' : ''}</label>`).join('')}</div>
+        <div class="smkv-row" style="margin-top:14px">${conv ? '<button id="smkv-gleave" class="smkv-danger">Leave group</button>' : ''}<span class="smkv-sp"></span><button id="smkv-gsave" class="smkv-primary">${conv ? 'Save' : 'Create'}</button></div>`,
+        (root, close) => {
+          root.querySelector('#smkv-gsave').onclick = async () => {
+            const name = root.querySelector('#smkv-gname').value.trim();
+            const picked = [...root.querySelectorAll('.smkv-gmembers input:checked')].map((i) => i.value);
+            try {
+              if (!conv) {
+                if (!name) return toast('Name the group');
+                const v = await apiPost('chat/groups', { name, members: picked });
+                upsertConv(v); close(); openConv(v.id);
+              } else {
+                const add = picked.filter((u) => !conv.members.includes(u));
+                const remove = conv.members.filter((u) => u !== BR.me.user && !picked.includes(u));
+                const r = await fetch(new URL(`api/chat/${encodeURIComponent(conv.id)}`, BASE), { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ name, add, remove }) });
+                if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+                close(); openConv(conv.id);
+              }
+            } catch (x) { toast(x.message, 4000); }
+          };
+          const lv = root.querySelector('#smkv-gleave');
+          if (lv) lv.onclick = async () => {
+            if (!confirm(`Leave “${conv.title}”?`)) return;
+            try { await apiPost(`chat/${encodeURIComponent(conv.id)}/leave`, {}); SO.convs = SO.convs.filter((x) => x.id !== conv.id); close(); drawConvs(); }
+            catch (x) { toast(x.message); }
+          };
+        });
+    }
+    // "Send to a friend": pick a person or a chat, share the movie/episode/song card
+    function shareDialog(ref) {
+      const others = SO.people.filter((p) => p.name !== BR.me.user);
+      const groups = SO.convs.filter((c) => c.kind === 'group');
+      detailModal(`<h2>Send to…</h2><div class="smkv-dim2">${esc(ref.title)}${ref.sub ? ' · ' + esc(ref.sub) : ''}</div>
+        <input id="smkv-snote" class="smkv-inp" placeholder="Add a message (optional)" maxlength="500" style="margin-top:10px">
+        <div class="smkv-share">${groups.map((g) => `<button data-c="${esc(g.id)}">👥 ${esc(g.title)}</button>`).join('')}
+          ${others.map((p) => `<button data-u="${esc(p.name)}"><span class="smkv-dot ${p.online ? 'on' : ''}"></span> ${esc(p.name)}</button>`).join('')}</div>`,
+        (root, close) => {
+          root.querySelectorAll('.smkv-share button').forEach((b) => b.onclick = async () => {
+            try {
+              let id = b.dataset.c;
+              if (!id) { const v = await apiPost('chat/dm', { user: b.dataset.u }); upsertConv(v); id = v.id; }
+              const r = await apiPost(`chat/${encodeURIComponent(id)}/messages`, { text: root.querySelector('#smkv-snote').value.trim(), ref });
+              close();
+              toast(r.warning ? '⚠ Sent, but ' + r.warning : `Sent to ${b.textContent.trim()}`, r.warning ? 6000 : 2500);
+            } catch (x) { toast(x.message, 4000); }
+          });
+        });
+    }
 
     // ------------------------------------------------------------ audio player
     const A = { el: $('#smkv-aud'), queue: [], idx: -1, cur: null, offset: 0, transcoded: false, repeat: GM_getValue('repeat', 'off') };
@@ -1630,6 +1868,7 @@
       } catch { /* old server */ }
       await loadLibs();
       route();
+      startSocial();
     })();
   }
 
@@ -1645,8 +1884,10 @@
       <button id="smkv-logout" title="Log out">⏻</button>
     </header>
     <nav id="smkv-nav"></nav>
+    <div id="smkv-people"></div>
     <div id="smkv-mini" hidden title="Music is playing — open the music player"><span class="smkv-mini-i">🎵</span><div><b></b><span></span></div><button title="Play/Pause">❚❚</button></div>
   </aside>
+  <section id="smkv-chat"></section>
   <main id="smkv-browse">
     <div id="smkv-toolbar"></div>
     <div id="smkv-view"></div>
@@ -1770,6 +2011,52 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-dl.done .smkv-pbar.big i{background:#3ecf8e}.smkv-dl.failed .smkv-pbar.big i{background:#ff6b6b}
 .smkv-dlf2{display:flex;align-items:center;gap:8px}.smkv-dlf2 span{flex:1}
 .smkv-err{color:#ff7b7b}
+#smkv-side header{gap:4px!important}
+#smkv-side header button,#smkv-side header a{padding:4px 7px!important;min-width:0}
+#smkv-people{border-top:1px solid #1f242d;padding:6px 8px;max-height:38vh;overflow:auto}
+.smkv-ph{display:flex;align-items:center;gap:6px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8b95a5;padding:4px 4px 6px}
+.smkv-ph button{margin-left:auto;position:relative;background:transparent!important;border:none!important;font-size:16px!important;padding:2px 4px!important}
+.smkv-ph i,.smkv-badge{background:#e5484d;color:#fff;font-style:normal;font-size:10px;border-radius:9px;padding:1px 5px;font-weight:700}
+.smkv-ph i{position:absolute;top:-4px;right:-6px}
+.smkv-person{display:flex;gap:8px;align-items:flex-start;padding:5px 6px;border-radius:7px;cursor:pointer;opacity:.55}
+.smkv-person.on{opacity:1}.smkv-person:hover{background:#171c24}
+.smkv-person b{font-size:13px;color:#dfe4ea;font-weight:600}
+.smkv-dot{width:8px;height:8px;border-radius:50%;background:#4a5260;flex:none;margin-top:6px;display:inline-block}
+.smkv-person.on .smkv-dot,.smkv-dot.on{background:#3ecf8e;box-shadow:0 0 0 2px rgba(62,207,142,.18)}
+.smkv-act{font-size:11.5px;color:#9aa3b2;line-height:1.35;margin-top:1px}
+.smkv-act.link:hover{color:#fff;text-decoration:underline}
+#smkv-chat{position:fixed;top:0;right:0;bottom:0;width:min(380px,100vw);background:#10131a;border-left:1px solid #222935;z-index:2147483600;display:none;flex-direction:column;box-shadow:-10px 0 40px rgba(0,0,0,.5)}
+#smkv-chat.show{display:flex}
+body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
+.smkv-ch{display:flex;align-items:center;gap:8px;padding:12px;border-bottom:1px solid #1f242d}
+.smkv-ch b{font-size:15px}
+.smkv-priv{padding:8px 14px;font-size:12px;color:#9aa3b2;display:flex;gap:6px;align-items:center}
+.smkv-convs{overflow:auto;flex:1}
+.smkv-conv{display:flex;gap:10px;align-items:center;padding:10px 14px;cursor:pointer;border-bottom:1px solid #161b22}
+.smkv-conv:hover{background:#151a22}
+.smkv-av{width:36px;height:36px;border-radius:50%;background:#253043;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none}
+.smkv-cm{flex:1;min-width:0;display:flex;flex-direction:column}.smkv-cm span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smkv-msgs{flex:1;overflow:auto;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.smkv-msg{max-width:82%;align-self:flex-start;display:flex;flex-direction:column;gap:3px}
+.smkv-msg.me{align-self:flex-end;align-items:flex-end}
+.smkv-bubble{background:#1d2430;padding:7px 11px;border-radius:14px;white-space:pre-wrap;word-break:break-word;font-size:14px}
+.smkv-msg.me .smkv-bubble{background:#2b6fd6;color:#fff}
+.smkv-time,.smkv-from{font-size:10.5px;color:#7d8696}
+.smkv-sys,.smkv-day{align-self:center;font-size:11.5px;color:#7d8696;padding:2px 8px}
+.smkv-day{background:#171c24;border-radius:9px;margin:6px 0}
+.smkv-ref{display:flex;gap:10px;background:#1a202a;border:1px solid #2a3240;border-radius:12px;padding:8px;cursor:pointer;max-width:280px}
+.smkv-ref:hover{border-color:#4a9eff}
+.smkv-ref img,.smkv-ref>span{width:46px;height:68px;object-fit:cover;border-radius:5px;flex:none;background:#252c38;display:flex;align-items:center;justify-content:center}
+.smkv-ref div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.smkv-ref small{color:#9aa3b2}.smkv-ref em{font-style:normal;color:#6ab0ff;font-size:12px;margin-top:auto}
+.smkv-send{display:flex;gap:8px;padding:10px;border-top:1px solid #1f242d}
+.smkv-send input,.smkv-inp{flex:1;width:100%;box-sizing:border-box;background:#151920;color:#e6e9ee;border:1px solid #2a313c;border-radius:18px;padding:9px 14px;font:inherit}
+.smkv-inp{border-radius:8px}
+.smkv-gmembers{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px}
+.smkv-share{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.smkv-share .smkv-dot{margin:0}
+.smkv-sharebtn{margin-top:12px}
+.smkv-danger{color:#ff7b7b!important}
 .smkv-own{margin-left:6px;font-size:10.5px;color:#8b95a5;background:#1c222b;border-radius:8px;padding:1px 6px;font-weight:normal}
 .smkv-file .smkv-del{margin-left:auto;opacity:.6}.smkv-file .smkv-del:hover{opacity:1;color:#ff7b7b}
 .smkv-dlf2 .smkv-check{display:flex;align-items:center;gap:4px;color:#c9cfd8;font-size:13px}
