@@ -377,7 +377,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final c = conv;
     final group = c?['kind'] == 'group';
     final online = !group && s.people.any((p) => p['name'] == c?['title'] && p['online'] == true);
-    final activity = !group ? s.people.where((p) => p['name'] == c?['title']).firstOrNull?['activity'] as Map? : null;
+    final activity = group ? null : (s.people.where((p) => p['name'] == c?['title']).firstOrNull?['activity'] as Map?);
     final items = msgs.reversed.toList();
     return Scaffold(
       appBar: AppBar(
