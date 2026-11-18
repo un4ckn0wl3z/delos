@@ -10,7 +10,7 @@ on:
 permissions:
   contents: write
 jobs:
-  build:
+  server:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,5 +35,13 @@ jobs:
             gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" --notes "Install on a seedbox (no root):
           \`\`\`bash
           curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/deploy/install.sh | MEDIA_ROOT=~/torrents bash
-          \`\`\`"
+          \`\`\`
+
+          Android app: install \`streammkv-android-arm64-v8a.apk\` (most phones)."
           fi
+  android:
+    needs: server
+    uses: ./.github/workflows/app.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+    secrets: inherit

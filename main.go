@@ -36,6 +36,7 @@ type Config struct {
 	FFmpeg     string
 	FFprobe    string
 	CacheDir   string
+	DataDir    string
 	TLSCert    string
 	TLSKey     string
 	Exts       map[string]bool
@@ -44,8 +45,9 @@ type Config struct {
 }
 
 type Server struct {
-	cfg   Config
-	media *Media
+	cfg      Config
+	media    *Media
+	progress *ProgressStore
 }
 
 func envOr(k, def string) string {
@@ -67,6 +69,7 @@ func main() {
 	flag.StringVar(&cfg.FFmpeg, "ffmpeg", envOr("STREAMMKV_FFMPEG", "ffmpeg"), "ffmpeg binary")
 	flag.StringVar(&cfg.FFprobe, "ffprobe", envOr("STREAMMKV_FFPROBE", "ffprobe"), "ffprobe binary")
 	flag.StringVar(&cfg.CacheDir, "cache", envOr("STREAMMKV_CACHE", ""), "subtitle cache dir (default: user cache dir)")
+	flag.StringVar(&cfg.DataDir, "data", envOr("STREAMMKV_DATA", ""), "data dir for watch progress (default: cache dir)")
 	flag.StringVar(&cfg.TLSCert, "tls-cert", envOr("STREAMMKV_TLS_CERT", ""), "TLS certificate (optional)")
 	flag.StringVar(&cfg.TLSKey, "tls-key", envOr("STREAMMKV_TLS_KEY", ""), "TLS key (optional)")
 	flag.StringVar(&exts, "ext", envOr("STREAMMKV_EXT", ".mkv"), "comma-separated file extensions to list")
@@ -101,6 +104,12 @@ func main() {
 	if err := os.MkdirAll(cfg.CacheDir, 0o755); err != nil {
 		log.Fatal(err)
 	}
+	if cfg.DataDir == "" {
+		cfg.DataDir = cfg.CacheDir
+	}
+	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
+		log.Fatal(err)
+	}
 	cfg.Exts = map[string]bool{}
 	for _, e := range strings.Split(exts, ",") {
 		e = strings.ToLower(strings.TrimSpace(e))
@@ -115,7 +124,7 @@ func main() {
 	cfg.MaxStreams = maxStreams
 	cfg.TokenTTL = 30 * 24 * time.Hour
 
-	s := &Server{cfg: cfg, media: NewMedia(&cfg)}
+	s := &Server{cfg: cfg, media: NewMedia(&cfg), progress: NewProgressStore(cfg.DataDir)}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handleIndex)
@@ -128,6 +137,9 @@ func main() {
 	mux.HandleFunc("GET /api/keyframe", s.auth(s.handleKeyframe))
 	mux.HandleFunc("GET /api/stream", s.auth(s.handleStream))
 	mux.HandleFunc("GET /api/subtitle", s.auth(s.handleSubtitle))
+	mux.HandleFunc("GET /api/raw", s.auth(s.handleRaw))
+	mux.HandleFunc("GET /api/progress", s.auth(s.handleProgressGet))
+	mux.HandleFunc("POST /api/progress", s.auth(s.handleProgressPost))
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
@@ -145,7 +157,7 @@ func logRequests(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		h.ServeHTTP(w, r)
-		if strings.HasPrefix(r.URL.Path, "/api/stream") || strings.HasPrefix(r.URL.Path, "/api/subtitle") {
+		if strings.HasPrefix(r.URL.Path, "/api/stream") || strings.HasPrefix(r.URL.Path, "/api/subtitle") || strings.HasPrefix(r.URL.Path, "/api/raw") {
 			log.Printf("%s %s %s (%s)", r.RemoteAddr, r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
 		}
 	})
@@ -266,6 +278,9 @@ type FileEntry struct {
 	Dir   string `json:"dir"`
 	Size  int64  `json:"size"`
 	MTime int64  `json:"mtime"`
+	// watch progress (shared across clients)
+	Pos      float64 `json:"pos,omitempty"`
+	Duration float64 `json:"duration,omitempty"`
 }
 
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
@@ -297,6 +312,12 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 		files = append(files, FileEntry{Path: rel, Name: name, Dir: dir, Size: info.Size(), MTime: info.ModTime().Unix()})
 		return nil
 	})
+	prog := s.progress.All()
+	for i := range files {
+		if p, ok := prog[files[i].Path]; ok {
+			files[i].Pos, files[i].Duration = p.Pos, p.Duration
+		}
+	}
 	sort.Slice(files, func(i, j int) bool { return strings.ToLower(files[i].Path) < strings.ToLower(files[j].Path) })
 	writeJSON(w, 200, map[string]any{"files": files})
 }

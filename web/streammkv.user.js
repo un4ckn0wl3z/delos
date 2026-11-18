@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         StreamMKV
 // @namespace    https://github.com/un4ckn0wl3z/streammkv
-// @version      1.0.0
+// @version      1.1.0
 // @description  Watch MKV files from your seedbox in the browser — pick audio tracks and subtitles.
 // @author       un4ckn0wl3z
 // @match        *://*/*
@@ -224,6 +224,19 @@
       return opts.text ? r.text() : r.json();
     }
 
+    async function apiPost(path, body, retried = false) {
+      const r = await fetch(new URL('api/' + path, BASE), {
+        method: 'POST', credentials: 'same-origin', keepalive: true,
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      if (r.status === 401 && !retried) { await ensureLogin(); return apiPost(path, body, true); }
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+      return r.json();
+    }
+    // watch progress is stored on the server (shared with the app / other browsers);
+    // GM storage is only a fallback
+    const pushProgress = (body) => apiPost('progress', body).catch(() => {});
+
     // ------------------------------------------------------------ file list
     async function loadList() {
       $('#smkv-list').innerHTML = '<div class="smkv-dim">Loading…</div>';
@@ -243,7 +256,7 @@
       let html = '', lastDir = null;
       for (const f of files) {
         if (f.dir !== lastDir) { lastDir = f.dir; html += `<div class="smkv-dir">${esc(f.dir || '/')}</div>`; }
-        const pos = GM_getValue('pos:' + f.path, 0);
+        const pos = f.pos || GM_getValue('pos:' + f.path, 0);
         html += `<div class="smkv-item${S.file && S.file.path === f.path ? ' active' : ''}" data-path="${esc(f.path)}">
           <div class="smkv-name">${esc(f.name)}</div>
           <div class="smkv-sub">${fmtSize(f.size)}${pos ? ` · <span class="smkv-resume">⏵ ${fmtTime(pos)}</span>` : ''}</div></div>`;
@@ -297,8 +310,12 @@
       return parts.join(' ');
     }
 
-    function pickTracks(info, path) {
-      const saved = GM_getValue('tracks:' + path, null);
+    function pickTracks(info, path, server) {
+      let saved = GM_getValue('tracks:' + path, null);
+      if (server && (server.audio != null || server.sub != null)) {
+        saved = { audio: server.audio ?? null };
+        if (server.sub != null) saved.sub = server.sub < 0 ? null : server.sub;
+      }
       const s = getSettings();
       // audio
       let audio = 0;
@@ -323,6 +340,7 @@
     function saveTracks() {
       if (!S.file) return;
       GM_setValue('tracks:' + S.file.path, { audio: S.audio, sub: S.sub ? S.sub.idx : null });
+      pushProgress({ path: S.file.path, audio: S.audio, sub: S.sub ? S.sub.idx : -1 });
     }
 
     // ------------------------------------------------------------ open file
@@ -338,14 +356,19 @@
       $('#smkv-meta').textContent = 'Probing…';
       document.title = f.name + ' — StreamMKV';
       spinner(true);
-      let info;
-      try { info = await api('probe', { path: f.path }); } catch (e) {
+      let info, server = null;
+      try {
+        [info, server] = await Promise.all([
+          api('probe', { path: f.path }),
+          api('progress', { path: f.path }).catch(() => null),
+        ]);
+      } catch (e) {
         spinner(false); $('#smkv-meta').textContent = 'Probe failed: ' + e.message; return;
       }
       if (S.file !== f) return;
       S.info = info;
       const v = info.video;
-      const pick = pickTracks(info, f.path);
+      const pick = pickTracks(info, f.path, server);
       S.audio = pick.audio;
       S.sub = pick.sub != null ? { idx: pick.sub, text: info.subs[pick.sub].text } : null;
 
@@ -361,7 +384,7 @@
 
       // resume
       let start = 0;
-      const pos = GM_getValue('pos:' + f.path, 0);
+      const pos = (server && server.pos) || GM_getValue('pos:' + f.path, 0);
       if (pos > 30 && pos < (info.duration || 0) - 120) {
         start = pos;
         toast(`Resumed at ${fmtTime(pos)}`, 6000, { label: 'Start over', fn: () => playAt(0, true) });
@@ -437,10 +460,16 @@
       const now = Date.now();
       if (!force && now - S.lastSave < 5000) return;
       S.lastSave = now;
-      const t = cur();
-      if (t > (S.info.duration || 0) - 120) GM_deleteValue('pos:' + S.file.path);
+      const t = cur(), dur = S.info.duration || 0;
+      if (t > dur - 120) GM_deleteValue('pos:' + S.file.path);
       else if (t > 30) GM_setValue('pos:' + S.file.path, Math.floor(t));
+      if (t > 30) {
+        const f = S.files.find((x) => x.path === S.file.path);
+        if (f) f.pos = t > dur - 120 ? 0 : t;
+        pushProgress({ path: S.file.path, pos: t, duration: dur });
+      }
     }
+    window.addEventListener('pagehide', () => savePos(true));
 
     video.addEventListener('timeupdate', () => { updateTime(); savePos(false); });
     video.addEventListener('play', () => { ppBtn.textContent = '❚❚'; });
@@ -448,7 +477,14 @@
     video.addEventListener('waiting', () => spinner(true));
     video.addEventListener('playing', () => { spinner(false); S.errCount = 0; });
     video.addEventListener('canplay', () => spinner(false));
-    video.addEventListener('ended', () => { if (S.file) GM_deleteValue('pos:' + S.file.path); renderList(); });
+    video.addEventListener('ended', () => {
+      if (!S.file) return;
+      GM_deleteValue('pos:' + S.file.path);
+      pushProgress({ path: S.file.path, done: true });
+      const f = S.files.find((x) => x.path === S.file.path);
+      if (f) f.pos = 0;
+      renderList();
+    });
     video.addEventListener('error', async () => {
       if (!S.file || !video.getAttribute('src')) return;
       const t = cur();
