@@ -1,3 +1,4 @@
 dist/
 streammkv
 *.exe
+deploy-*.cmd

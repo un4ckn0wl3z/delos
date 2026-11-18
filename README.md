@@ -23,6 +23,16 @@
 
 ## Install on the seedbox (no root, no package manager needed)
 
+**One-liner** (downloads the release binary + static ffmpeg, picks a free port, generates a password, starts the server and adds an autostart cron):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/deploy/install.sh | MEDIA_ROOT=~/torrents bash
+```
+
+Re-running it upgrades to the latest release and keeps the port/password. Manage with `~/streammkv/run.sh {start|stop|restart|status}`; config lives in `~/streammkv/streammkv.env`.
+
+### Manual install
+
 ```bash
 mkdir -p ~/bin ~/streammkv && cd ~/streammkv
 
