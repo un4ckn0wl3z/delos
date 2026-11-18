@@ -2,3 +2,6 @@ dist/
 streammkv
 *.exe
 deploy-*.cmd
+signing/
+*.keystore
+*.jks

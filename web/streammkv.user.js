@@ -4,6 +4,9 @@
 // @version      1.1.0
 // @description  Watch MKV files from your seedbox in the browser — pick audio tracks and subtitles.
 // @author       un4ckn0wl3z
+// @homepageURL  https://github.com/un4ckn0wl3z/streammkv
+// @updateURL    https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/web/streammkv.user.js
+// @downloadURL  https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/web/streammkv.user.js
 // @match        *://*/*
 // @grant        GM_getValue
 // @grant        GM_setValue
