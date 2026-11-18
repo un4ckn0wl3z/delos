@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -54,6 +55,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   bool _flashLeft = false;
   double _tapX = 0;
   BoxFit _fit = BoxFit.contain;
+  final bool _desktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  bool _fullscreen = false;
+  final _focus = FocusNode();
 
   double get _duration {
     final d = _info?.duration ?? 0;
@@ -67,8 +71,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
+    if (!_desktop) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
+    }
     _subs.addAll([
       _player.stream.position.listen((_) {
         if (mounted && _drag == null) setState(() {});
@@ -111,8 +117,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _seekTimer?.cancel();
     _flashTimer?.cancel();
     _player.dispose();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations([]);
+    _focus.dispose();
+    if (_desktop) {
+      if (_fullscreen) defaultExitNativeFullscreen();
+    } else {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      SystemChrome.setPreferredOrientations([]);
+    }
     super.dispose();
   }
 
@@ -256,6 +267,62 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _seekBy(double d) => _seekTo(_position + d);
 
+  Future<void> _toggleFullscreen() async {
+    if (!_desktop) return;
+    _fullscreen = !_fullscreen;
+    await (_fullscreen ? defaultEnterNativeFullscreen() : defaultExitNativeFullscreen());
+    if (mounted) setState(() {});
+  }
+
+  void _cycleAudio() {
+    final n = _info?.audio.length ?? 0;
+    if (n < 2) return;
+    _setAudio((_audio + 1) % n);
+    _toast('Audio: ${_info!.audio[(_audio) % n].label}');
+  }
+
+  void _cycleSub() {
+    final n = _info?.subs.length ?? 0;
+    if (n == 0) return;
+    final next = _sub == null ? 0 : (_sub! + 1 < n ? _sub! + 1 : null);
+    _setSub(next);
+    _toast(next == null ? 'Subtitles off' : 'Subtitles: ${_info!.subs[next].label}');
+  }
+
+  KeyEventResult _onKey(FocusNode _, KeyEvent e) {
+    if (e is! KeyDownEvent && e is! KeyRepeatEvent) return KeyEventResult.ignored;
+    final k = e.logicalKey;
+    void vol(double d) {
+      final v = (_player.state.volume + d).clamp(0.0, 100.0).toDouble();
+      _player.setVolume(v);
+      _toast('Volume ${v.round()}%');
+    }
+
+    final handlers = <LogicalKeyboardKey, VoidCallback>{
+      LogicalKeyboardKey.space: _togglePlay,
+      LogicalKeyboardKey.keyK: _togglePlay,
+      LogicalKeyboardKey.mediaPlayPause: _togglePlay,
+      LogicalKeyboardKey.arrowLeft: () => _seekBy(-10),
+      LogicalKeyboardKey.arrowRight: () => _seekBy(10),
+      LogicalKeyboardKey.keyJ: () => _seekBy(-30),
+      LogicalKeyboardKey.keyL: () => _seekBy(30),
+      LogicalKeyboardKey.arrowUp: () => vol(5),
+      LogicalKeyboardKey.arrowDown: () => vol(-5),
+      LogicalKeyboardKey.keyM: () => vol(_player.state.volume > 0 ? -100 : 100),
+      LogicalKeyboardKey.keyF: _toggleFullscreen,
+      LogicalKeyboardKey.keyA: _cycleAudio,
+      LogicalKeyboardKey.keyC: _cycleSub,
+      LogicalKeyboardKey.keyZ: () => _setSubDelay(_subDelay - .1).then((_) => _toast('Subtitle delay ${_subDelay.toStringAsFixed(1)}s')),
+      LogicalKeyboardKey.keyX: () => _setSubDelay(_subDelay + .1).then((_) => _toast('Subtitle delay ${_subDelay.toStringAsFixed(1)}s')),
+      LogicalKeyboardKey.escape: () => _fullscreen ? _toggleFullscreen() : Navigator.maybePop(context),
+    };
+    final h = handlers[k];
+    if (h == null) return KeyEventResult.ignored;
+    h();
+    _showControls();
+    return KeyEventResult.handled;
+  }
+
   Future<void> _setAudio(int i) async {
     _audio = i;
     _saveTracks();
@@ -342,6 +409,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
     } else if (_tapX > width - third) {
       _seekBy(10);
       _showFlash('+10s', false);
+    } else if (_desktop) {
+      _toggleFullscreen();
     } else {
       _togglePlay();
     }
@@ -360,13 +429,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   // ------------------------------------------------------------------ sheets
 
-  Future<void> _sheet(Widget Function(StateSetter setSheet) builder) => showModalBottomSheet(
+  Future<void> _sheet(Widget Function(StateSetter setSheet) builder) => showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
         showDragHandle: true,
         constraints: BoxConstraints(maxWidth: 560, maxHeight: MediaQuery.of(context).size.height * .9),
         builder: (_) => StatefulBuilder(builder: (ctx, setSheet) => SafeArea(child: builder(setSheet))),
-      );
+      ).whenComplete(() => _focus.requestFocus());
 
   void _audioSheet() {
     final info = _info!;
@@ -476,6 +545,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
               setState(() {});
             },
           ),
+          const _SheetTitle('Volume'),
+          Slider(
+            value: _player.state.volume.clamp(0, 100).toDouble(),
+            max: 100,
+            divisions: 20,
+            label: '${_player.state.volume.round()}%',
+            onChanged: (v) {
+              _player.setVolume(v);
+              setSheet(() {});
+            },
+          ),
           const _SheetTitle('Video'),
           SwitchListTile(
             title: const Text('Fill screen (crop)'),
@@ -498,7 +578,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ? _ErrorView(message: _error!, onBack: () => Navigator.pop(context))
           : _info == null
               ? const Center(child: CircularProgressIndicator())
-              : LayoutBuilder(builder: (context, box) => _stack(box)),
+              : Focus(
+                  focusNode: _focus,
+                  autofocus: true,
+                  onKeyEvent: _onKey,
+                  child: MouseRegion(
+                    cursor: _controls || !_player.state.playing ? SystemMouseCursors.basic : SystemMouseCursors.none,
+                    onHover: (_) => _showControls(),
+                    child: LayoutBuilder(builder: (context, box) => _stack(box)),
+                  ),
+                ),
     );
   }
 
@@ -589,6 +678,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         tooltip: 'Settings',
                         icon: const Icon(Icons.tune, color: Colors.white),
                         onPressed: _tuneSheet),
+                    if (_desktop)
+                      IconButton(
+                          tooltip: 'Fullscreen (F)',
+                          icon: Icon(_fullscreen ? Icons.fullscreen_exit : Icons.fullscreen, color: Colors.white),
+                          onPressed: _toggleFullscreen),
                   ]),
                 ),
               ),

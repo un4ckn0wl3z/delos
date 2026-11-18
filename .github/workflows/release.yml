@@ -63,6 +63,8 @@ jobs:
             \`curl -fsSL https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/deploy/install.sh | MEDIA_ROOT=~/torrents bash\`
             Servers with auto-update enabled install this release by themselves.
           - **Android:** \`streammkv-android-arm64-v8a.apk\` (most phones). The app offers updates automatically.
+          - **iOS:** add this source in SideStore / AltStore: \`https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/altstore-source.json\` (or sideload \`streammkv-ios.ipa\`).
+          - **Windows / Linux:** unzip \`streammkv-windows-x64.zip\` / \`streammkv-linux-x64.tar.gz\` and run StreamMKV (Linux needs \`libmpv2\`, e.g. \`sudo apt install libmpv2\`).
           - **Userscript:** Tampermonkey updates it automatically.
           NOTES
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -79,8 +81,24 @@ jobs:
       version: ${{ needs.meta.outputs.version }}
     secrets: inherit
 
+  ios:
+    needs: [meta, server]
+    uses: ./.github/workflows/ios.yml
+    with:
+      tag: ${{ needs.meta.outputs.tag }}
+      version: ${{ needs.meta.outputs.version }}
+    secrets: inherit
+
+  desktop:
+    needs: [meta, server]
+    uses: ./.github/workflows/desktop.yml
+    with:
+      tag: ${{ needs.meta.outputs.tag }}
+      version: ${{ needs.meta.outputs.version }}
+    secrets: inherit
+
   publish:
-    needs: [meta, android]
+    needs: [meta, android, ios, desktop]
     runs-on: ubuntu-latest
     steps:
       - env:

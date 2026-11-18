@@ -31,8 +31,13 @@ bool newerThan(String a, String b) {
   return false;
 }
 
-/// APK name for this device's CPU (Dart's Platform.version ends with `on "android_arm64"`).
-String _apkName() {
+/// Release asset for this device: the IPA on iOS, or the APK for the CPU on Android
+/// (Dart's Platform.version ends with `on "android_arm64"`).
+String _assetName() {
+  if (Platform.isIOS) return 'streammkv-ios.ipa';
+  if (Platform.isWindows) return 'streammkv-windows-x64.zip';
+  if (Platform.isLinux) return 'streammkv-linux-x64.tar.gz';
+  if (Platform.isMacOS) return 'streammkv-macos.zip';
   final v = Platform.version;
   final abi = v.contains('android_arm64')
       ? 'arm64-v8a'
@@ -50,7 +55,7 @@ Future<AppRelease?> fetchLatestRelease() async {
         headers: {'Accept': 'application/vnd.github+json'}).timeout(const Duration(seconds: 15));
     if (r.statusCode != 200) return null;
     final j = jsonDecode(r.body) as Map;
-    final name = _apkName();
+    final name = _assetName();
     String? apk;
     for (final a in (j['assets'] as List? ?? const [])) {
       if ((a as Map)['name'] == name) apk = a['browser_download_url'] as String?;
@@ -93,8 +98,13 @@ Future<void> checkForUpdate(BuildContext context, Settings settings, {bool manua
             Text(notes, style: const TextStyle(fontSize: 13, color: Color(0xFF9AA3B2))),
           ],
           const SizedBox(height: 12),
-          const Text('The APK downloads in your browser — open it to install the update.',
-              style: TextStyle(fontSize: 12, color: Color(0xFF7D8696))),
+          Text(
+              Platform.isIOS
+                  ? 'Update it in SideStore / AltStore (My Apps → refresh sources), or download the IPA and open it with SideStore.'
+                  : Platform.isWindows || Platform.isLinux || Platform.isMacOS
+                  ? 'Download the new build, close StreamMKV and replace the old folder with the new one.'
+                  : 'The APK downloads in your browser — open it to install. If Android says "App not installed", uninstall the old version first (your progress is kept on the server).',
+              style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))),
         ]),
       ),
       actions: [

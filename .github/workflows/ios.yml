@@ -1,0 +1,65 @@
+name: ios
+on:
+  push:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to attach the IPA to
+        type: string
+        required: false
+      version:
+        description: App version (X.Y.Z)
+        type: string
+        required: false
+permissions:
+  contents: write
+jobs:
+  ipa:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Version
+        run: |
+          VERSION="${{ inputs.version }}"
+          [ -n "$VERSION" ] || VERSION="$(tr -d ' \n' < ../VERSION)-ci"
+          IFS=. read -r MA MI PA <<< "${VERSION%%-*}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "CODE=$(( MA * 10000 + MI * 100 + PA ))" >> "$GITHUB_ENV"
+      - name: Generate iOS project
+        run: |
+          flutter --version
+          flutter create --org dev.un4ckn0wl3z --project-name streammkv --platforms ios .
+          python3 tool/patch_ios.py
+      - name: Build unsigned IPA
+        run: |
+          flutter pub get
+          dart run flutter_launcher_icons
+          flutter build ios --release --no-codesign \
+            --build-name="${VERSION%%-*}" --build-number="$CODE" --dart-define=APP_VERSION="$VERSION"
+          mkdir -p ../dist/Payload
+          cp -R build/ios/iphoneos/Runner.app ../dist/Payload/
+          (cd ../dist && zip -qry streammkv-ios.ipa Payload && rm -rf Payload)
+          python3 tool/altstore_source.py "${VERSION%%-*}" "$CODE" ../dist/streammkv-ios.ipa > ../dist/altstore-source.json
+          ls -la ../dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: streammkv-ios
+          path: |
+            dist/streammkv-ios.ipa
+            dist/altstore-source.json
+      - name: Attach to release
+        if: inputs.tag != ''
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.tag }}" dist/streammkv-ios.ipa dist/altstore-source.json --clobber -R "$GITHUB_REPOSITORY"

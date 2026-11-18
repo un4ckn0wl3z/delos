@@ -1,0 +1,99 @@
+name: desktop
+on:
+  push:
+    branches: [main]
+    paths: ['app/**', '.github/workflows/desktop.yml']
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: false
+      version:
+        type: string
+        required: false
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: ubuntu-latest
+            platform: linux
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux build deps
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libmpv-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Version
+        run: |
+          VERSION="${{ inputs.version }}"
+          [ -n "$VERSION" ] || VERSION="$(tr -d ' \r\n' < ../VERSION)-ci"
+          IFS=. read -r MA MI PA <<< "${VERSION%%-*}"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "CODE=$(( MA * 10000 + MI * 100 + PA ))" >> "$GITHUB_ENV"
+      - name: Generate project
+        run: |
+          flutter --version
+          flutter create --org dev.un4ckn0wl3z --project-name streammkv --platforms ${{ matrix.platform }} .
+          python3 tool/patch_desktop.py || python tool/patch_desktop.py
+      - name: Build
+        run: |
+          flutter pub get
+          dart run flutter_launcher_icons
+          flutter build ${{ matrix.platform }} --release \
+            --build-name="${VERSION%%-*}" --build-number="$CODE" --dart-define=APP_VERSION="$VERSION"
+          mkdir -p ../dist
+      - name: Package (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        working-directory: app
+        run: |
+          $out = "build/windows/x64/runner/Release"
+          Rename-Item "$out/streammkv.exe" "StreamMKV.exe"
+          New-Item -ItemType Directory -Force ../dist/StreamMKV | Out-Null
+          Copy-Item -Recurse "$out/*" ../dist/StreamMKV/
+          Compress-Archive -Path ../dist/StreamMKV -DestinationPath ../dist/streammkv-windows-x64.zip
+          Remove-Item -Recurse ../dist/StreamMKV
+          Get-ChildItem ../dist
+      - name: Package (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          cp -r build/linux/x64/release/bundle ../dist/StreamMKV
+          cp assets/icon.png ../dist/StreamMKV/streammkv.png
+          cat > ../dist/StreamMKV/streammkv.desktop <<DESK
+          [Desktop Entry]
+          Type=Application
+          Name=StreamMKV
+          Comment=Watch MKV files from your seedbox
+          Exec=sh -c '"\$(dirname "%k")/streammkv"'
+          Icon=streammkv
+          Categories=AudioVideo;Video;Player;
+          DESK
+          sed -i 's/^ *//' ../dist/StreamMKV/streammkv.desktop
+          (cd ../dist && tar czf streammkv-linux-x64.tar.gz StreamMKV && rm -rf StreamMKV && ls -la)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: streammkv-${{ matrix.platform }}
+          path: dist/*
+      - name: Attach to release
+        if: inputs.tag != ''
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.tag }}" dist/streammkv-* --clobber -R "$GITHUB_REPOSITORY"
