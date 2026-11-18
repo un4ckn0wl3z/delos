@@ -28,7 +28,30 @@ StreamMKV supports several users. Each user has their own watch progress, resume
 - **App:** when it starts, it checks the latest release and offers the APK built for your phone's CPU. *Settings → Check for app updates* runs the check by hand. Android does not let sideloaded apps install updates silently, so you still have to tap Install.
 - **Userscript:** Tampermonkey updates it from GitHub through `@updateURL`.
 
-## Android app
+## Apps: Android, iOS, Windows, Linux
+
+The app is written in Flutter with [media_kit](https://github.com/media-kit/media-kit) (libmpv) and is the same on every platform. Download it from [Releases](https://github.com/un4ckn0wl3z/streammkv/releases/latest).
+
+| Platform | File | Install |
+|---|---|---|
+| Android | `streammkv-android-arm64-v8a.apk` | Open the APK. When an update fails with "App not installed", uninstall the old app first; your watch progress is kept on the server. |
+| iOS / iPadOS | `streammkv-ios.ipa` (unsigned) | Install with [SideStore](https://sidestore.io) or [AltStore](https://altstore.io) using a free Apple ID. See below. |
+| Windows 10/11 | `streammkv-windows-x64.zip` | Unzip and run `StreamMKV.exe`. |
+| Linux x64 | `streammkv-linux-x64.tar.gz` | Install libmpv first (`sudo apt install libmpv2`), then unpack and run `StreamMKV/streammkv`. A `.desktop` file is included. |
+
+On Windows and Linux: press **F** or double-click the middle of the video for fullscreen. Other keys: space play/pause, ←/→ ±10s, J/L ±30s, ↑/↓ volume, A cycles audio, C cycles subtitles, Z/X adjust subtitle delay, Esc leaves fullscreen.
+
+### iOS with SideStore / AltStore (free Apple ID)
+
+1. Set up SideStore or AltStore once, following their guides. The first setup needs a computer.
+2. In SideStore/AltStore open **Sources → +** and add
+   `https://github.com/un4ckn0wl3z/streammkv/releases/latest/download/altstore-source.json`
+3. Install **StreamMKV** from that source. Once a new release is out, the source shows the update.
+4. Apps signed with a free Apple ID expire after **7 days**, and you can have at most 3 sideloaded apps. Refresh StreamMKV in SideStore before it expires; SideStore can do this on the phone, or set up the auto-refresh Shortcut.
+
+With a paid Apple Developer account, the same CI could upload to TestFlight instead.
+
+### Android details
 
 The `app/` folder holds a Flutter app that uses [media_kit](https://github.com/media-kit/media-kit) (libmpv). Install the APK from [Releases](https://github.com/un4ckn0wl3z/streammkv/releases): `streammkv-android-arm64-v8a.apk` works on most phones.
 
