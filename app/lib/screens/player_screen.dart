@@ -17,9 +17,14 @@ import '../util.dart';
 ///  * transcode — server sends H.264/AAC fMP4 starting at [_offset]. Seeking re-opens the
 ///                stream; text subs are fetched as WebVTT, image subs are burned in.
 class PlayerScreen extends StatefulWidget {
-  const PlayerScreen({super.key, required this.api, required this.file});
+  const PlayerScreen({super.key, required this.api, required this.file, this.nextLabel, this.onPlayNext, this.onProgress});
   final Api api;
   final MediaFile file;
+  /// Next episode (TV): offered when this one ends.
+  final String? nextLabel;
+  final VoidCallback? onPlayNext;
+  /// Called with the saved position so lists can update without reloading.
+  final void Function(double pos)? onProgress;
 
   @override
   State<PlayerScreen> createState() => _PlayerScreenState();
@@ -94,8 +99,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }),
       _player.stream.tracks.listen(_onTracks),
       _player.stream.completed.listen((done) {
-        if (done && _info != null && _position > _duration - 120) {
+        if (!done || _info == null) return;
+        if (_position > _duration - 120) {
           api.saveProgress(path, done: true);
+          widget.onProgress?.call(0);
+        }
+        if (widget.nextLabel != null && widget.onPlayNext != null && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            duration: const Duration(seconds: 20),
+            content: Text('Up next: ${widget.nextLabel}'),
+            action: SnackBarAction(label: 'Play next', onPressed: () {
+              final go = widget.onPlayNext!;
+              Navigator.of(context).pop();
+              go();
+            }),
+          ));
         }
       }),
       _player.stream.error.listen((e) {
@@ -374,6 +392,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final p = _position;
     if (p < 30) return;
     api.saveProgress(path, pos: p, duration: _duration, audio: _audio, sub: _sub ?? -1);
+    widget.onProgress?.call(p > _duration - 120 ? 0 : p);
   }
 
   // ------------------------------------------------------------------ controls visibility

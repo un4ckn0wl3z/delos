@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../settings.dart';
-import 'files_screen.dart';
+import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.settings});
@@ -37,7 +37,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       await api.login();
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => FilesScreen(api: api)));
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => HomeScreen(api: api)));
     } catch (e) {
       setState(() => _error = e.toString());
     } finally {

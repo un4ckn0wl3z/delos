@@ -30,6 +30,7 @@ p["UIStatusBarHidden"] = False
 p["UIViewControllerBasedStatusBarAppearance"] = True
 p["UIFileSharingEnabled"] = False
 p["ITSAppUsesNonExemptEncryption"] = False
+p["UIBackgroundModes"] = ["audio"]  # keep music playing with the screen locked
 
 with info.open("wb") as f:
     plistlib.dump(p, f)

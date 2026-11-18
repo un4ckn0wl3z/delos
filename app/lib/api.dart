@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'library.dart';
 import 'models.dart';
 import 'settings.dart';
 
@@ -76,6 +77,17 @@ class Api {
 
   /// {"user","admin","version"} — version is missing on servers older than 1.2.
   Future<Map<String, dynamic>> me() async => Map<String, dynamic>.from(await _req('GET', 'me') as Map);
+
+  Future<List<LibraryInfo>> libraries() async {
+    final res = await _req('GET', 'libraries') as Map;
+    return (res['libraries'] as List).map((e) => LibraryInfo.fromJson(e as Map)).toList();
+  }
+
+  Future<Map> lib(String id) async => await _req('GET', 'lib/${Uri.encodeComponent(id)}') as Map;
+
+  Map<String, String> get authHeaders => {if (settings.token != null) 'Authorization': 'Bearer ${settings.token}'};
+
+  String coverUrl(String key) => key.isEmpty ? '' : _u('cover/$key').toString();
 
   Future<List<MediaFile>> list() async {
     final res = await _req('GET', 'list') as Map;

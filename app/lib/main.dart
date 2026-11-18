@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'api.dart';
-import 'screens/files_screen.dart';
+import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'settings.dart';
 
@@ -29,7 +29,7 @@ class StreamMkvApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF0D0F13),
         appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF11141A)),
       ),
-      home: settings.loggedIn ? FilesScreen(api: Api(settings)) : LoginScreen(settings: settings),
+      home: settings.loggedIn ? HomeScreen(api: Api(settings)) : LoginScreen(settings: settings),
     );
   }
 }
