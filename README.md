@@ -1,6 +1,6 @@
 # StreamMKV
 
-ดูหนัง MKV จาก seedbox ผ่านเบราว์เซอร์ เลือก audio track / subtitle ได้
+ดูหนัง MKV จาก seedbox ผ่านเบราว์เซอร์ เลือก audio track / subtitle ได้ — พร้อมหลาย library (หนัง / ซีรีส์ / เพลง / วิดีโออื่น), ดึง metadata จาก TMDB + MusicBrainz, จัดกลุ่มตามแนว ศิลปิน อัลบั้ม และสตรีมเพลง (mp3/flac/…)
 
 ```
 ┌──────────── Browser (Tampermonkey) ────────────┐        ┌────────────── Seedbox ──────────────┐
@@ -12,9 +12,27 @@
 └────────────────────────────────────────────────┘        └──────────────────────────────────────┘
 ```
 
+## Libraries & metadata
+
+Admins can add as many libraries as they like from **/admin → Libraries**. Pick a folder on the seedbox with the folder browser, then choose its type:
+
+| type | what you get |
+|---|---|
+| **Movies** | Matched to TMDB from the file or folder name, e.g. `Children.of.Men.2006.1080p…`. You get the poster, backdrop, overview, genres, rating, director and cast. Multiple files of the same movie are grouped as "versions". |
+| **TV series** | `S01E02`, `1x02` and `Season N/` folders are recognised. You get show metadata, season tabs, episode titles, stills and overviews, plus a **Next up** button. |
+| **Music** | `.mp3 .flac .m4a .ogg .opus .wav .wma …`. Tags are read with ffprobe. Browse by album, artist, genre or song. Covers come from `cover.jpg`/`folder.jpg`, then embedded art, then MusicBrainz/Cover Art Archive. |
+| **Other videos** | A plain folder browser with no scraping. |
+
+- **TMDB key:** set it in **/admin → Metadata**. A free v3 API key or a v4 read token works. You can also choose the metadata language, e.g. `th-TH`; when there is no overview in that language it falls back to English. Without a key, movies and TV shows still work, just without posters or metadata.
+- **Scanning:** every library is re-scanned every 30 minutes, or straight away with **Scan**. **Refresh metadata** re-matches everything. Results are cached in `<data>/index/` and covers in `<data>/covers/`, so a rescan only looks up new titles.
+- **Per-user access:** **/admin → Users → Libraries** chooses which libraries a user can see. The default is all of them, so a kids' account can be limited to Music, for example.
+- **Fixing wrong matches:** in the userscript, open a movie, show, episode, album or track and press **✎ Edit**. You can search TMDB and pick the correct title, enter a TMDB ID, or override fields by hand (title, year, genres, overview, poster URL; artist, album, track, cover URL…). **Reset to automatic** removes the edit. Edits are kept separately and survive rescans. Admins can always edit; to let another user edit, use **/admin → Users → Make editor**.
+- **Music playback:** files the browser or app can play natively are streamed as they are, with Range support. Anything else (wma, ape, …) is transcoded to mp3 on the fly through `/api/audio`. Playback continues in the background, with lock-screen and media-key controls.
+- **Upgrading from ≤1.3:** your old `-root` becomes a library called `main` (type *Other videos*), and watch progress carries over. You can change its type to Movies or TV in the dashboard.
+
 ## Users & admin dashboard
 
-StreamMKV supports several users. Each user has their own watch progress, resume positions and track choices, and everyone sees the same library.
+StreamMKV supports several users. Each user has their own watch progress, resume positions and track choices. Admins choose which libraries each user can see.
 
 - **Dashboard:** `http://<server>/admin`. Admins can add users, reset passwords, promote users to admin, sign a user out on every device, and view or clear a user's history. The dashboard also shows who is watching now, the open streams and whether each one is direct or transcode, library and disk stats, and update status. A user who is not an admin only gets a "change password" page there.
 - **CLI on the seedbox:** `~/streammkv/run.sh user list | add NAME [--admin] [--password P] | passwd NAME | admin NAME on|off | revoke NAME | del NAME`. If you leave out the password, a random one is generated. The running server picks up changes within 2 seconds.
@@ -31,6 +49,8 @@ StreamMKV supports several users. Each user has their own watch progress, resume
 ## Apps: Android, iOS, Windows, Linux, macOS
 
 The app is written in Flutter with [media_kit](https://github.com/media-kit/media-kit) (libmpv) and is the same on every platform. Download it from [Releases](https://github.com/un4ckn0wl3z/streammkv/releases/latest).
+
+The app browses libraries the same way the userscript does: Home (continue watching / recently added), movies with posters and genre filters, TV shows with seasons and Next up, and music by album, artist, genre or song. It has a mini player and background audio. Metadata editing is only in the userscript.
 
 | Platform | File | Install |
 |---|---|---|
@@ -125,14 +145,14 @@ To keep it running with no systemd: `nohup ... > streammkv.log 2>&1 &` or `scree
 
 | flag | env | default | |
 |---|---|---|---|
-| `-root` | `STREAMMKV_ROOT` | `.` | media folder (scanned recursively, hidden folders skipped) |
+| `-root` | `STREAMMKV_ROOT` | `.` | folder for the first library; later libraries are added in /admin |
 | `-listen` | `STREAMMKV_LISTEN` | `:8090` | |
 | `-user` / `-pass` | `STREAMMKV_USER` / `STREAMMKV_PASS` | — | first admin (only used while no users exist) |
 | `-secret` | `STREAMMKV_SECRET` | random, saved in `<data>/secret.key` | key for signing tokens |
 | `-ffmpeg` / `-ffprobe` | `STREAMMKV_FFMPEG` / `STREAMMKV_FFPROBE` | from PATH | |
-| `-ext` | `STREAMMKV_EXT` | `.mkv` | e.g. `.mkv,.mp4,.avi` |
+| `-ext` | `STREAMMKV_EXT` | `.mkv,.mp4,.m4v,.avi,.webm,.mov,.ts,…` | video extensions for video libraries |
 | `-cache` | `STREAMMKV_CACHE` | `~/.cache/streammkv` | WebVTT cache |
-| `-data` | `STREAMMKV_DATA` | same as cache | `users.json`, `progress.json`, `settings.json`, `secret.key` |
+| `-data` | `STREAMMKV_DATA` | same as cache | `users.json`, `progress.json`, `settings.json`, `libraries.json`, `secret.key`, `index/`, `covers/` |
 | | `STREAMMKV_UPDATE_REPO` | `un4ckn0wl3z/streammkv` | GitHub repo to update from (forks) |
 | `-tls-cert` / `-tls-key` | `STREAMMKV_TLS_CERT` / `_KEY` | — | serve HTTPS directly |
 | `-max-streams` | | `3` | max number of ffmpeg processes at once |
@@ -159,6 +179,8 @@ Then set the Server URL in the userscript to `https://your.box/streammkv/`.
 3. Tampermonkey menu → **⚙ StreamMKV settings**. Enter the Server URL, username, password, and your preferred languages, e.g. audio `jpn,eng` and subs `tha,eng`.
 4. Tampermonkey menu → **▶ Open StreamMKV**, or open the server URL directly.
 
+The left sidebar lists your libraries. **Home** shows *Continue watching* and *Recently added*. Movies and shows can be filtered by genre. Music has Albums / Artists / Genres / Songs tabs and a player bar at the bottom with a queue, shuffle and repeat.
+
 The script uses `@match *://*/*` so the menu shows up on every website. It does nothing on other pages except register the menu. If you only want it on the server page, change `@match` to your server URL.
 
 ### Keyboard
@@ -182,7 +204,11 @@ All endpoints except `/`, `/streammkv.user.js` and `/api/login` need auth: the `
 
 ```
 POST /api/login        {"username","password"} → {"token","expires","user","admin"} + Set-Cookie
-GET  /api/list         → {"files":[{path,name,dir,size,mtime}]}
+GET  /api/libraries    → [{id,name,type,count,scanned}]   (only libraries this user may see)
+GET  /api/lib/{id}     → {library, items[] (+pos/watched), movies{}, shows{}, edits? (editors)}
+GET  /api/cover/{key}  → image
+GET  /api/audio        ?path=&fmt=mp3|aac&start=S   → transcoded audio
+GET  /api/list         → {"files":[…]}   (legacy flat list of all video libraries; paths are "<libid>/<relpath>")
 GET  /api/probe        ?path=            → {duration,start,video,audio[],subs[]}
 GET  /api/keyframe     ?path=&t=         → {"t": keyframe time ≤ t}
 GET  /api/stream       ?path=&audio=N&start=S&v=copy|transcode&burn=N&maxh=1080&crf=22  → video/mp4 (fragmented)
@@ -190,7 +216,12 @@ GET  /api/subtitle     ?path=&sub=N      → text/vtt
 GET  /api/raw          ?path=            → original file (HTTP Range)
 GET  /api/progress     [?path=]          → {"items":{path:{pos,duration,audio,sub,updated}}} or a single entry
 POST /api/progress     {"path","pos","duration","audio","sub" (-1 = off),"done"}      (per user)
-GET  /api/me                              → {"user","admin","version"}
+GET  /api/me                              → {"user","admin","editor","version"}
+
+# editors (admins + users with the editor role)
+GET  /api/meta/search  ?lib=&type=movie|tv&q=&year=   → TMDB results
+POST /api/meta/match   {"lib","key","tmdbId"}         (key = movie group / show key)
+POST /api/meta/edit    {"lib","key","fields":{…}}     (fields: null = reset to automatic)
 POST /api/me/password  {"old","new"}
 
 # admin only
@@ -201,5 +232,10 @@ POST   /api/admin/users/{name}/role       {"admin": bool}
 POST   /api/admin/users/{name}/revoke     DELETE /api/admin/users/{name}
 GET|DELETE /api/admin/users/{name}/progress
 GET    /api/admin/update                  POST /api/admin/update/check | /api/admin/update/install
-POST   /api/admin/settings                {"autoUpdate": bool}
+GET|POST /api/admin/settings              {"autoUpdate"?, "tmdbKey"?, "tmdbLang"?}
+GET|POST /api/admin/libraries             {"name","type":"movies|tv|music|videos","path"}
+PUT|DELETE /api/admin/libraries/{id}      POST /api/admin/libraries/{id}/scan[?refresh=1]
+GET    /api/admin/browse ?path=           folder picker
+POST   /api/admin/users/{name}/libraries  {"libraries": [ids] | null (= all)}
+POST   /api/admin/users/{name}/editor     {"editor": bool}
 ```
