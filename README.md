@@ -40,6 +40,12 @@ Use **/admin → Downloads** to paste a link, then pick a library and an optiona
 - **magnet:… links, `.torrent` URLs and `.torrent` uploads** — these are handed to the seedbox's **rtorrent**, which downloads straight into the library folder and keeps seeding as usual. They are labelled `StreamMKV` in ruTorrent.
 - **Finding rtorrent:** StreamMKV looks in `~/.rtorrent.rc` / `~/.config/rtorrent/rtorrent.rc` for `network.scgi.open_local` / `scgi_port` and checks common socket paths. If that doesn't find it, enter the address under **Downloads → rtorrent**: a socket path, `127.0.0.1:5000`, or a ruTorrent URL like `https://user:pass@host/rutorrent/plugins/httprpc/action.php` or `/RPC2`. Then press **Test**.
 - **On your own VPS:** install rtorrent (`apt install rtorrent`), add `network.scgi.open_local = ~/.rtorrent.sock` to `~/.rtorrent.rc` and keep it running (tmux or systemd). HTTP downloads work without rtorrent.
+- **Duplicates:** before downloading, StreamMKV checks for three kinds:
+  - **The same torrent** (by info hash, for magnets, .torrent files and .torrent links). If it's already in rtorrent, the download is refused and you're told where it is.
+  - **The same file or link.** For http(s) links the file name is checked first.
+  - **The same movie or episode** already in a library of that type, even under a different file name.
+
+  For the last two you can choose **Download anyway**. After a download finishes and is matched, other versions of the same title are listed on it ("⚠ Also in the library").
 - **Who can add downloads:** admins, plus users given **Make downloader** in Users. Downloaders only see libraries they have access to, and only they or an admin can cancel or remove their downloads. They can't download from private or loopback addresses.
 
 ## Personal libraries & limits
