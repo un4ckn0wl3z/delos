@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 func (s *Server) libraryRoutes(mux *http.ServeMux) {
@@ -61,7 +60,8 @@ func (s *Server) handleLibraries(w http.ResponseWriter, r *http.Request) {
 
 type itemOut struct {
 	Item
-	Pos float64 `json:"pos,omitempty"`
+	Pos     float64 `json:"pos,omitempty"`
+	Watched int64   `json:"watched,omitempty"` // last progress update (for "continue watching")
 }
 
 // GET /api/lib/{id} → every item of a library + movie/show metadata + this user's progress
@@ -78,7 +78,7 @@ func (s *Server) handleLib(w http.ResponseWriter, r *http.Request) {
 	for _, it := range snap.Items {
 		o := itemOut{Item: it}
 		if p, ok := prog[it.Path]; ok {
-			o.Pos = p.Pos
+			o.Pos, o.Watched = p.Pos, p.Updated
 			if o.Duration == 0 {
 				o.Duration = p.Duration
 			}
@@ -91,6 +91,9 @@ func (s *Server) handleLib(w http.ResponseWriter, r *http.Request) {
 	}
 	if lib.Type == LibTV {
 		resp["shows"] = snap.Shows
+	}
+	if s.canEdit(r) {
+		resp["edits"] = snap.Edits // so editors can change one field without dropping others
 	}
 	writeJSON(w, 200, resp)
 }
@@ -305,5 +308,3 @@ func (s *Server) handleAdminUserLibraries(w http.ResponseWriter, r *http.Request
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
-
-var _ = time.Now

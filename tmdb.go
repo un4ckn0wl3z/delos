@@ -173,6 +173,56 @@ func (t *TMDB) search(kind, title string, yr int) (int, error) {
 	return id, err
 }
 
+type SearchResult struct {
+	ID            int    `json:"id"`
+	Title         string `json:"title"`
+	OriginalTitle string `json:"originalTitle,omitempty"`
+	Year          int    `json:"year,omitempty"`
+	Poster        string `json:"poster,omitempty"`
+	Overview      string `json:"overview,omitempty"`
+}
+
+// SearchList returns up to 12 candidates (for the "fix match" picker).
+func (t *TMDB) SearchList(kind, title string, yr int) ([]SearchResult, error) {
+	q := url.Values{"query": {title}, "include_adult": {"false"}}
+	if yr > 0 {
+		if kind == "movie" {
+			q.Set("year", strconv.Itoa(yr))
+		} else {
+			q.Set("first_air_date_year", strconv.Itoa(yr))
+		}
+	}
+	var r struct {
+		Results []struct {
+			ID            int    `json:"id"`
+			Title         string `json:"title"`
+			Name          string `json:"name"`
+			OriginalTitle string `json:"original_title"`
+			OriginalName  string `json:"original_name"`
+			ReleaseDate   string `json:"release_date"`
+			FirstAirDate  string `json:"first_air_date"`
+			PosterPath    string `json:"poster_path"`
+			Overview      string `json:"overview"`
+		} `json:"results"`
+	}
+	if err := t.get("/search/"+kind, q, "", &r); err != nil {
+		return nil, err
+	}
+	out := []SearchResult{}
+	for i, x := range r.Results {
+		if i >= 12 {
+			break
+		}
+		sr := SearchResult{ID: x.ID, Title: firstNonEmpty(x.Title, x.Name), OriginalTitle: firstNonEmpty(x.OriginalTitle, x.OriginalName),
+			Year: year(firstNonEmpty(x.ReleaseDate, x.FirstAirDate)), Poster: img("w185", x.PosterPath), Overview: x.Overview}
+		if sr.OriginalTitle == sr.Title {
+			sr.OriginalTitle = ""
+		}
+		out = append(out, sr)
+	}
+	return out, nil
+}
+
 func (t *TMDB) SearchMovie(title string, yr int) (int, error) { return t.search("movie", title, yr) }
 func (t *TMDB) SearchTV(title string, yr int) (int, error)    { return t.search("tv", title, yr) }
 

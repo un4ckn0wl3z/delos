@@ -188,7 +188,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.auth(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "version": version})
+		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "editor": s.canEdit(r), "version": version})
 	}))
 	mux.HandleFunc("POST /api/me/password", s.auth(s.handleOwnPassword))
 	mux.HandleFunc("GET /admin", s.handleAdminPage)
@@ -202,6 +202,7 @@ func main() {
 	mux.HandleFunc("GET /api/progress", s.auth(s.handleProgressGet))
 	mux.HandleFunc("POST /api/progress", s.auth(s.handleProgressPost))
 	s.libraryRoutes(mux)
+	s.editRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

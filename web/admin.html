@@ -317,7 +317,7 @@
     $('#n-users').textContent = d.users.length;
     $('#users').innerHTML = `<table><tr><th>User</th><th class="h-m">Last seen</th><th class="h-m">Watching</th><th class="h-m">Created</th><th></th></tr>${
       d.users.map((u) => `<tr data-u="${esc(u.name)}">
-        <td><b>${esc(u.name)}</b>${u.admin ? '<span class="badge">admin</span>' : ''}${u.name === d.me ? '<span class="badge you">you</span>' : ''}
+        <td><b>${esc(u.name)}</b>${u.admin ? '<span class="badge">admin</span>' : ''}${!u.admin && u.editor ? '<span class="badge t-tv">editor</span>' : ''}${u.name === d.me ? '<span class="badge you">you</span>' : ''}
           ${u.streams ? `<span class="dim"> · ${u.streams} stream${u.streams > 1 ? 's' : ''}</span>` : ''}</td>
         <td class="h-m dim">${ago(u.lastSeen)}</td>
         <td class="h-m dim">${u.inProgress} in progress · ${u.watched} total</td>
@@ -326,6 +326,7 @@
           <button data-a="history">History</button>
           ${u.admin ? '' : `<button data-a="libs" title="Which libraries this user can see">Libraries${u.libraries ? ` (${u.libraries.length})` : ''}</button>`}
           <button data-a="password">Reset password</button>
+          ${u.admin ? '' : `<button data-a="editor" title="Editors can fix wrong movie / show / music info">${u.editor ? 'Remove editor' : 'Make editor'}</button>`}
           <button data-a="role">${u.admin ? 'Remove admin' : 'Make admin'}</button>
           <button data-a="revoke" title="Sign this user out on every device">Sign out</button>
           ${u.name === d.me ? '' : '<button class="danger" data-a="delete">Delete</button>'}
@@ -352,6 +353,9 @@
               r.password ? showPassword('Password reset', u.name, r.password) : toast('Password changed');
             } catch (x) { b.querySelector('#e').textContent = x.message; }
           });
+      } else if (a === 'editor') {
+        await api(`admin/users/${n}/editor`, { method: 'POST', body: { editor: !u.editor } });
+        toast(u.editor ? 'Editor removed' : 'Can now edit metadata'); loadUsers();
       } else if (a === 'role') {
         await api(`admin/users/${n}/role`, { method: 'POST', body: { admin: !u.admin } });
         toast(u.admin ? 'Admin removed' : 'Now an admin'); loadUsers();

@@ -56,6 +56,7 @@ type LibIndex struct {
 	ShowMatch  map[string]int                 `json:"showMatch,omitempty"`
 	Manual     map[string]int                 `json:"manual,omitempty"` // item path or "show:<key>" → TMDB id
 	CoverMiss  map[string]int64               `json:"coverMiss,omitempty"`
+	Edits      map[string]map[string]string   `json:"edits,omitempty"` // manual corrections, see edits.go
 	Scanned    int64                          `json:"scanned"`
 }
 
@@ -89,6 +90,9 @@ func (li *LibIndex) init() {
 	}
 	if li.CoverMiss == nil {
 		li.CoverMiss = map[string]int64{}
+	}
+	if li.Edits == nil {
+		li.Edits = map[string]map[string]string{}
 	}
 }
 
@@ -251,6 +255,7 @@ type LibSnapshot struct {
 	Items   []Item
 	Movies  map[int]*MovieMeta
 	Shows   map[string]*ShowMeta
+	Edits   map[string]map[string]string
 	Scanned int64
 }
 
@@ -262,7 +267,14 @@ func (ix *Indexer) Snapshot(lib string) LibSnapshot {
 	if li == nil {
 		return LibSnapshot{}
 	}
-	snap := LibSnapshot{Items: items, Movies: map[int]*MovieMeta{}, Shows: map[string]*ShowMeta{}, Scanned: li.Scanned}
+	snap := LibSnapshot{Items: items, Movies: map[int]*MovieMeta{}, Shows: map[string]*ShowMeta{}, Edits: map[string]map[string]string{}, Scanned: li.Scanned}
+	for k, v := range li.Edits {
+		c := map[string]string{}
+		for f, x := range v {
+			c[f] = x
+		}
+		snap.Edits[k] = c
+	}
 	for k, v := range li.Movies {
 		c := *v
 		snap.Movies[k] = &c
@@ -348,9 +360,9 @@ func (ix *Indexer) scan(lib Library, refresh bool) error {
 		ix.libs[lib.ID] = li
 	}
 	if refresh {
-		manual := li.Manual
+		manual, edits := li.Manual, li.Edits
 		old := li.Items
-		*li = LibIndex{Lib: lib.ID, Type: lib.Type, Manual: manual}
+		*li = LibIndex{Lib: lib.ID, Type: lib.Type, Manual: manual, Edits: edits}
 		li.init()
 		for k, v := range old { // keep "added" dates
 			li.Items[k] = &Item{Added: v.Added}
@@ -420,6 +432,9 @@ func (ix *Indexer) scan(lib Library, refresh bool) error {
 
 	ix.mu.Lock()
 	li.Items = found
+	if lib.Type == LibMusic {
+		ix.applyEdits(lib, li) // album/artist edits decide the cover groups
+	}
 	ix.mu.Unlock()
 
 	switch lib.Type {
@@ -429,8 +444,12 @@ func (ix *Indexer) scan(lib Library, refresh bool) error {
 		ix.scrapeShows(lib, li)
 	case LibMusic:
 		ix.covers(lib, li)
+		ix.applyCoverEdits(li)
 	}
 	ix.mu.Lock()
+	if lib.Type != LibMusic {
+		ix.applyEdits(lib, li)
+	}
 	li.Scanned = time.Now().Unix()
 	ix.mu.Unlock()
 	ix.save(li)

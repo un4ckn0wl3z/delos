@@ -31,6 +31,8 @@ type User struct {
 	Created int64  `json:"created"`
 	// Libraries the user may see; nil = all, empty = none. Admins always see all.
 	Libraries *[]string `json:"libraries,omitempty"`
+	// Editor may correct metadata (admins always can).
+	Editor bool `json:"editor,omitempty"`
 }
 
 type UserView struct {
@@ -40,6 +42,7 @@ type UserView struct {
 	LastSeen int64  `json:"lastSeen,omitempty"`
 	// nil = all libraries
 	Libraries *[]string `json:"libraries"`
+	Editor    bool      `json:"editor"`
 }
 
 // UserStore keeps users.json in memory. The file is re-read when it changes on
@@ -195,7 +198,7 @@ func (us *UserStore) List() []UserView {
 	defer us.mu.Unlock()
 	out := make([]UserView, 0, len(us.users))
 	for n, u := range us.users {
-		out = append(out, UserView{Name: n, Admin: u.Admin, Created: u.Created, LastSeen: us.lastSeen[n], Libraries: u.Libraries})
+		out = append(out, UserView{Name: n, Admin: u.Admin, Created: u.Created, LastSeen: us.lastSeen[n], Libraries: u.Libraries, Editor: u.Editor})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -258,6 +261,24 @@ func (us *UserStore) SetPassword(name, pw string) (string, error) {
 	u.Hash = hashPassword(pw)
 	u.Gen++
 	return pw, us.saveLocked()
+}
+
+func (us *UserStore) IsEditor(name string) bool {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	u, ok := us.users[name]
+	return ok && (u.Editor || u.Admin)
+}
+
+func (us *UserStore) SetEditor(name string, editor bool) error {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	u, ok := us.users[name]
+	if !ok {
+		return errors.New("no such user")
+	}
+	u.Editor = editor
+	return us.saveLocked()
 }
 
 // Libraries returns the library ids a user may see; nil means all.
