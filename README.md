@@ -12,6 +12,26 @@
 └────────────────────────────────────────────────┘        └──────────────────────────────────────┘
 ```
 
+## Android app
+
+The `app/` folder holds a Flutter app that uses [media_kit](https://github.com/media-kit/media-kit) (libmpv). Install the APK from [Releases](https://github.com/un4ckn0wl3z/streammkv/releases): `streammkv-android-arm64-v8a.apk` works on most phones.
+
+- **Direct**: mpv streams the original MKV through `/api/raw`, which supports HTTP Range. It plays every codec (HEVC, DTS, TrueHD…), switches between the file's audio and subtitle tracks, and renders full ASS styling and PGS. Seeking is native and accurate, and the server uses almost no CPU, but this mode needs enough bandwidth for the original bitrate.
+- **Transcode 1080/720/480p**: plays the stream from `/api/stream`. Use it to save data on a mobile network.
+- **Watch progress and tracks** are stored on the server (`/api/progress`), so the app and every browser running the userscript can pick up where you left off.
+- **Gestures**: double-tap the left/right side to skip back/forward 10s, double-tap the middle to play or pause. The ⚙ menu has quality, subtitle delay and subtitle size.
+
+Build it yourself:
+
+```bash
+cd app
+flutter create --org dev.un4ckn0wl3z --project-name streammkv --platforms android .
+python3 tool/patch_android.py      # INTERNET permission, cleartext HTTP, app label
+flutter build apk --release --split-per-abi
+```
+
+CI (`.github/workflows/app.yml`) signs the APK with the key from the `ANDROID_DEBUG_KEYSTORE_B64` secret, a base64-encoded keystore with alias `androiddebugkey` and password `android`. If that secret isn't set, every build gets a different key, and you have to uninstall the old version before installing a new one.
+
 ## How it works
 
 - **Video**: if the browser can decode the video codec (H.264 8-bit, HEVC/AV1/VP9 when supported), it is passed through unchanged with `-c:v copy`, which uses almost no CPU. Otherwise it is transcoded to H.264 with `libx264 veryfast`, scaled down to the max height you choose.
@@ -65,6 +85,7 @@ To keep it running with no systemd: `nohup ... > streammkv.log 2>&1 &` or `scree
 | `-ffmpeg` / `-ffprobe` | `STREAMMKV_FFMPEG` / `STREAMMKV_FFPROBE` | from PATH | |
 | `-ext` | `STREAMMKV_EXT` | `.mkv` | e.g. `.mkv,.mp4,.avi` |
 | `-cache` | `STREAMMKV_CACHE` | `~/.cache/streammkv` | WebVTT cache |
+| `-data` | `STREAMMKV_DATA` | same as cache | `progress.json` (watch progress) |
 | `-tls-cert` / `-tls-key` | `STREAMMKV_TLS_CERT` / `_KEY` | — | serve HTTPS directly |
 | `-max-streams` | | `3` | max number of ffmpeg processes at once |
 
@@ -98,7 +119,7 @@ The script uses `@match *://*/*` so the menu shows up on every website. It does 
 
 ### Remembered per file
 
-The script remembers your playback position (resume) and the audio and subtitle tracks you picked for each file.
+For each file, the server remembers your playback position and the audio/subtitle tracks you picked. The browser and the Android app share this, so you can stop on one and continue on the other.
 
 ## Limitations
 
@@ -118,4 +139,7 @@ GET  /api/probe        ?path=            → {duration,start,video,audio[],subs[
 GET  /api/keyframe     ?path=&t=         → {"t": keyframe time ≤ t}
 GET  /api/stream       ?path=&audio=N&start=S&v=copy|transcode&burn=N&maxh=1080&crf=22  → video/mp4 (fragmented)
 GET  /api/subtitle     ?path=&sub=N      → text/vtt
+GET  /api/raw          ?path=            → original file (HTTP Range)
+GET  /api/progress     [?path=]          → {"items":{path:{pos,duration,audio,sub,updated}}} or a single entry
+POST /api/progress     {"path","pos","duration","audio","sub" (-1 = off),"done"}
 ```
