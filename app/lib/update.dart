@@ -9,7 +9,7 @@ import 'settings.dart';
 
 /// Set by CI: flutter build apk --dart-define=APP_VERSION=1.2.0
 const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: 'dev');
-const _repo = 'un4ckn0wl3z/delos';
+const _repo = 'un4ckn0wl3z/streammkv';
 
 class AppRelease {
   AppRelease(this.version, this.notes, this.pageUrl, this.apkUrl);

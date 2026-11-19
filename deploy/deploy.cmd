@@ -3,7 +3,7 @@ rem Deploy / upgrade Delos on your seedbox over SSH (Windows 10/11, built-in Ope
 rem Asks for the connection details; answers are remembered in %USERPROFILE%\.streammkv-deploy.cmd
 setlocal EnableExtensions
 title Delos deploy
-set "URL=https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/deploy/install.sh"
+set "URL=https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/deploy/install.sh"
 set "CFG=%USERPROFILE%\.streammkv-deploy.cmd"
 
 set "SSH_HOST="

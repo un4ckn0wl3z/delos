@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Delos installer for seedboxes — no root, no package manager.
 #
-#   curl -fsSL https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/deploy/install.sh \
+#   curl -fsSL https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/deploy/install.sh \
 #     | MEDIA_ROOT=$HOME/torrents bash
 #
 # Env (all optional):
@@ -16,7 +16,7 @@
 # Re-running upgrades the binary and keeps port / password / secret.
 set -euo pipefail
 
-REPO="un4ckn0wl3z/delos"
+REPO="un4ckn0wl3z/streammkv"
 DIR="${SMKV_DIR:-$HOME/streammkv}"
 BIN="$DIR/bin"
 ENVF="$DIR/streammkv.env"

@@ -207,7 +207,7 @@ func (s *Server) fetchCAA(artist, album, dst string) error {
 	}
 	u := mbBase() + "/release-group/?" + url.Values{"query": {q}, "fmt": {"json"}, "limit": {"3"}}.Encode()
 	req, _ := http.NewRequest("GET", u, nil)
-	req.Header.Set("User-Agent", "Delos/"+version+" ( https://github.com/un4ckn0wl3z/delos )")
+	req.Header.Set("User-Agent", "Delos/"+version+" ( https://github.com/un4ckn0wl3z/streammkv )")
 	req.Header.Set("Accept", "application/json")
 	c := &http.Client{Timeout: 20 * time.Second}
 	resp, err := c.Do(req)
