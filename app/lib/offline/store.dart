@@ -135,15 +135,21 @@ class OfflineStore extends ChangeNotifier {
 
   static Future<OfflineStore> init(Settings settings) async {
     if (_instance != null) return _instance!..settings = settings;
-    final base = await getApplicationSupportDirectory();
-    final s = OfflineStore._(base.path)..settings = settings;
+    String dir;
+    try {
+      dir = (await getApplicationSupportDirectory()).path;
+    } catch (e) {
+      // never stop the app from starting over this
+      debugPrint('offline store dir: $e');
+      dir = '${Directory.systemTemp.path}/streammkv';
+    }
+    final s = OfflineStore._(dir)..settings = settings;
     _instance = s;
     await s._load();
-    try {
-      await s._startDownloader();
-    } catch (e) {
+    // never hold up app start for the background downloader
+    unawaited(s._startDownloader().timeout(const Duration(seconds: 20)).catchError((Object e) {
       debugPrint('downloader: $e');
-    }
+    }));
     return s;
   }
 

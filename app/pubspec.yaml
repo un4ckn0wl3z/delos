@@ -28,3 +28,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+dependency_overrides:
+  # 2.3.x (JNI) can't find android.content.Context in release builds →
+  # getApplicationSupportDirectory throws and the app hangs on the splash.
+  path_provider_android: 2.2.23

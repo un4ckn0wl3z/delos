@@ -69,9 +69,41 @@ jobs:
         with:
           name: streammkv-android
           path: dist/*.apk
+
+  # Install the x86_64 APK on an emulator and make sure it starts (no
+  # unhandled Dart exception / crash) before it can reach a release.
+  launch:
+    needs: apk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: streammkv-android
+          path: dist
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Start the app on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: |
+            adb install -r dist/streammkv-android-x86_64.apk
+            adb logcat -c
+            adb shell monkey -p dev.un4ckn0wl3z.streammkv -c android.intent.category.LAUNCHER 1
+            sleep 20
+            adb logcat -d > launch.log
+            PID=$(adb shell pidof dev.un4ckn0wl3z.streammkv | tr -d '\r'); echo "pid=$PID"
+            grep -E " (E|F) (flutter|AndroidRuntime)" launch.log | head -60 || true
+            if [ -z "$PID" ] || grep -qE "E flutter : .*Unhandled Exception|FATAL EXCEPTION.*|Fatal signal" launch.log; then echo "::error::The app does not start cleanly"; exit 1; fi
+            echo "App started OK"
       - name: Attach to release
         if: inputs.tag != ''
-        working-directory: .
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ inputs.tag }}" dist/*.apk --clobber -R "$GITHUB_REPOSITORY"

@@ -12,7 +12,11 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
   final settings = await Settings.load();
-  await OfflineStore.init(settings);
+  try {
+    await OfflineStore.init(settings).timeout(const Duration(seconds: 5));
+  } catch (e) {
+    debugPrint('offline store: $e');
+  }
   runApp(StreamMkvApp(settings: settings));
 }
 
