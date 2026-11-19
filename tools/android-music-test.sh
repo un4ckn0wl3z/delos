@@ -18,7 +18,7 @@ adb logcat -c
 adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null
 sleep 30
 adb exec-out screencap -p > "$OUT/1-app.png"
-adb logcat -d | grep -iE "AUTOTEST|media session|audio_service|AudioService|flutter" | tail -80 > "$OUT/logcat.txt"
+adb logcat -d | grep -iE "AUTOTEST|media session|audio_service|AudioService|flutter|MediaSession" | tail -120 > "$OUT/logcat.txt"
 adb shell dumpsys media_session > "$OUT/media_session.txt"
 adb shell dumpsys notification --noredact > "$OUT/notification.txt"
 adb shell cmd statusbar expand-notifications; sleep 2
@@ -27,7 +27,7 @@ adb shell cmd statusbar collapse
 adb shell input keyevent 26; sleep 2; adb shell input keyevent 26; sleep 3   # lock, then wake to the lock screen
 adb exec-out screencap -p > "$OUT/3-lockscreen.png"
 
-cat "$OUT/logcat.txt" | tail -40
+cat "$OUT/logcat.txt" | tail -80
 echo "---- media sessions for $PKG"
 grep -A12 "package=$PKG" "$OUT/media_session.txt" | head -40
 echo "---- notifications for $PKG"

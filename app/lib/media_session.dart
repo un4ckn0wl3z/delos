@@ -28,6 +28,7 @@ class MusicSession extends BaseAudioHandler with QueueHandler, SeekHandler {
     if (!supported) return;
     if (_instance == null && !_starting) {
       _starting = true;
+      debugPrint('media session: starting');
       try {
         _instance = await AudioService.init(
           builder: MusicSession._,
@@ -38,6 +39,7 @@ class MusicSession extends BaseAudioHandler with QueueHandler, SeekHandler {
             androidStopForegroundOnPause: true,
           ),
         );
+        debugPrint('media session: ready');
       } catch (e) {
         // no media session on this device — music still plays in the foreground
         error = '$e';
@@ -47,6 +49,7 @@ class MusicSession extends BaseAudioHandler with QueueHandler, SeekHandler {
       }
     }
     final s = _instance;
+    debugPrint('media session: attach (${s == null ? 'no session' : 'ok'})');
     if (s == null || identical(s._c, c)) return;
     s._c?.removeListener(s._sync);
     s._c = c;
@@ -86,6 +89,7 @@ class MusicSession extends BaseAudioHandler with QueueHandler, SeekHandler {
     // state changes right away; position only every few seconds (the OS interpolates)
     final now = DateTime.now();
     if (c.playing == _lastPlaying && c.index == _lastIndex && now.difference(_lastPush).inSeconds < 5) return;
+    if (_lastPlaying != c.playing) debugPrint('media session: playing=${c.playing}');
     _lastPlaying = c.playing;
     _lastIndex = c.index;
     _lastPush = now;
