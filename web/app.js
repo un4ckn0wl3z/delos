@@ -1357,8 +1357,14 @@
           apiPost(`chat/${encodeURIComponent(conv)}/read`, { seq: m.seq }).catch(() => {});
         } else if (m.from !== BR.me.user && !m.sys) {
           const c = SO.convs.find((x) => x.id === conv);
-          toast(`💬 ${m.from}${c && c.kind === 'group' ? ' in ' + c.title : ''}: ${m.ref ? '📎 ' + m.ref.title : m.text}`, 6000, { label: 'Open', fn: () => openConv(conv) });
+          toast(`💬 ${m.from}${c && c.kind === 'group' ? ' in ' + c.title : ''}: ${msgPreview(m)}`, 6000, { label: 'Open', fn: () => openConv(conv) });
         }
+      });
+      es.addEventListener('reaction', (e) => {
+        const r = JSON.parse(e.data);
+        if (!SO.open || SO.open.id !== r.conv) return;
+        const m = SO.msgs.find((x) => x.seq === r.seq);
+        if (m) { m.reactions = r.reactions || null; drawMsgs(false); }
       });
       api('chat').then((r) => { SO.convs = r.conversations; drawUnread(); }).catch(() => {});
       api('people').then((r) => { SO.hide = r.hideActivity; }).catch(() => {});
@@ -1382,7 +1388,7 @@
         <label class="smkv-check smkv-priv"><input type="checkbox" id="smkv-hideact" ${SO.hide ? 'checked' : ''}> Hide what I'm watching from others</label>
         <div class="smkv-convs">${SO.convs.length ? SO.convs.map((v) => `<div class="smkv-conv" data-id="${esc(v.id)}">
           ${v.kind === 'group' ? '<div class="smkv-av">👥</div>' : avatarHtml(v.title, 36, (SO.people.find((x) => x.name === v.title) || {}).online || false)}
-          <div class="smkv-cm"><b>${esc(v.title)}${v.kind === 'group' ? '' : adminBadge(v.title)}</b><span class="smkv-dim2">${v.last ? esc((v.last.sys ? '' : v.last.from + ': ') + (v.last.ref ? '📎 ' + v.last.ref.title : v.last.text)) : 'No messages yet'}</span></div>
+          <div class="smkv-cm"><b>${esc(v.title)}${v.kind === 'group' ? '' : adminBadge(v.title)}</b><span class="smkv-dim2">${v.last ? esc((v.last.sys ? '' : v.last.from + ': ') + msgPreview(v.last)) : 'No messages yet'}</span></div>
           ${v.unread ? `<i class="smkv-badge">${v.unread}</i>` : ''}</div>`).join('') : '<div class="smkv-dim" style="padding:16px">No chats yet — click someone in People to start one.</div>'}</div>`;
       c.querySelector('.smkv-x').onclick = () => toggleChat(false);
       c.querySelector('#smkv-newgroup').onclick = () => groupDialog();
@@ -1410,20 +1416,42 @@
       upsertConv(r.conversation);
       c.innerHTML = `<div class="smkv-ch"><button class="smkv-back">←</button><b id="smkv-ctitle"></b><span class="smkv-sp"></span><button class="smkv-cmore" title="Group settings" hidden>⋯</button><button class="smkv-x">✕</button></div>
         <div class="smkv-msgs"></div>
-        <form class="smkv-send"><input placeholder="Message…" autocomplete="off" maxlength="4000"><button>➤</button></form>`;
+        <div class="smkv-uploads"></div>
+        <form class="smkv-send"><button type="button" class="smkv-cbtn" data-a="emo" title="Emoji">😊</button>
+          ${BR.me.chatMaxMB > 0 ? `<label class="smkv-cbtn" title="Attach pictures or files (max ${BR.me.chatMaxMB} MB) — you can also paste or drop them"><input type="file" multiple hidden>📎</label>` : ''}
+          <input placeholder="Message…" autocomplete="off" maxlength="4000"><button class="smkv-sendb" title="Send">➤</button></form>`;
       c.querySelector('.smkv-back').onclick = drawConvs;
       c.querySelector('.smkv-x').onclick = () => toggleChat(false);
       c.querySelector('.smkv-cmore').onclick = () => groupDialog(SO.open);
+      const inpEl = c.querySelector('.smkv-send input:not([type])');
+      c.querySelector('[data-a=emo]').onclick = (e) => emojiPicker(e.currentTarget, (em) => {
+        const a = inpEl.selectionStart ?? inpEl.value.length, b = inpEl.selectionEnd ?? a;
+        inpEl.value = inpEl.value.slice(0, a) + em + inpEl.value.slice(b);
+        inpEl.focus(); inpEl.setSelectionRange(a + em.length, a + em.length);
+      }, { keepOpen: true });
+      const fileInp = c.querySelector('.smkv-send input[type=file]');
+      if (fileInp) fileInp.onchange = () => { uploadFiles(id, [...fileInp.files], inpEl); fileInp.value = ''; };
+      inpEl.addEventListener('paste', (e) => {
+        const files = [...(e.clipboardData?.files || [])];
+        if (files.length && BR.me.chatMaxMB > 0) { e.preventDefault(); uploadFiles(id, files, inpEl); }
+      });
+      c.ondragover = (e) => { if (SO.open && BR.me.chatMaxMB > 0 && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); c.classList.add('smkv-drop'); } };
+      c.ondragleave = (e) => { if (!c.contains(e.relatedTarget)) c.classList.remove('smkv-drop'); };
+      c.ondrop = (e) => {
+        c.classList.remove('smkv-drop');
+        if (!SO.open || !e.dataTransfer.files.length) return;
+        e.preventDefault(); uploadFiles(SO.open.id, [...e.dataTransfer.files], inpEl);
+      };
       c.querySelector('.smkv-send').onsubmit = async (e) => {
         e.preventDefault();
-        const inp = e.target.querySelector('input'), text = inp.value.trim();
+        const inp = inpEl, text = inp.value.trim();
         if (!text) return;
         inp.value = '';
         try { const r = await apiPost(`chat/${encodeURIComponent(id)}/messages`, { text }); if (!SO.msgs.some((x) => x.seq === r.message.seq)) { SO.msgs.push(r.message); drawMsgs(true); } }
         catch (x) { toast(x.message); inp.value = text; }
       };
       drawChatHead(); drawMsgs(true);
-      c.querySelector('.smkv-send input').focus();
+      inpEl.focus();
       if (SO.open.unread) apiPost(`chat/${encodeURIComponent(id)}/read`, { seq: SO.open.seq }).catch(() => {});
       SO.open.unread = 0; drawUnread();
     }
@@ -1438,6 +1466,7 @@
     function drawMsgs(scroll) {
       const box = $('#smkv-chat .smkv-msgs');
       if (!box) return;
+      const keep = scroll ? null : box.scrollTop;
       let lastDay = '';
       box.innerHTML = SO.msgs.map((m) => {
         const d = new Date(m.ts * 1000), day = d.toLocaleDateString();
@@ -1448,13 +1477,29 @@
         const ref = m.ref ? `<div class="smkv-ref" data-p="${esc(m.ref.path)}" data-k="${esc(m.ref.kind || 'video')}">
             ${m.ref.image ? `<img src="${esc(actImg(m.ref.image))}" onerror="this.remove()">` : `<span>${m.ref.kind === 'music' ? '♪' : '🎬'}</span>`}
             <div><b>${esc(m.ref.title)}</b>${m.ref.sub ? `<small>${esc(m.ref.sub)}</small>` : ''}<em>${m.ref.kind === 'music' ? '▶ Play' : '▶ Watch'}</em></div></div>` : '';
+        const rx = m.reactions ? `<div class="smkv-rxs">${Object.entries(m.reactions).map(([e, us]) =>
+          `<button class="smkv-rx${us.includes(BR.me.user) ? ' on' : ''}" data-e="${esc(e)}" title="${esc(us.join(', '))}">${esc(e)}${us.length > 1 ? ` <b>${us.length}</b>` : ''}</button>`).join('')}</div>` : '';
         const body = `${!mine && SO.open.kind === 'group' ? `<small class="smkv-from">${esc(m.from)}${adminBadge(m.from)}</small>` : ''}
-          ${ref}${m.text ? `<div class="smkv-bubble">${esc(m.text)}</div>` : ''}<small class="smkv-time">${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>`;
-        return sep + (mine ? `<div class="smkv-msg me">${body}</div>`
-          : `<div class="smkv-mrow">${avatarHtml(m.from, 28)}<div class="smkv-msg">${body}</div></div>`);
+          ${ref}${attHtml(m)}${m.text ? `<div class="smkv-bubble">${linkify(m.text).replace(/<br>/g, "\n")}</div>` : ''}${rx}
+          <small class="smkv-time">${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}<button class="smkv-rxadd" title="React">☺︎+</button></small>`;
+        return sep + (mine ? `<div class="smkv-msg me" data-seq="${m.seq}">${body}</div>`
+          : `<div class="smkv-mrow">${avatarHtml(m.from, 28)}<div class="smkv-msg" data-seq="${m.seq}">${body}</div></div>`);
       }).join('') || '<div class="smkv-dim" style="padding:16px">Say hi 👋</div>';
       box.querySelectorAll('.smkv-ref').forEach((r) => r.onclick = () => openRef({ path: r.dataset.p, kind: r.dataset.k }));
+      const seqOf = (el) => +el.closest('.smkv-msg').dataset.seq;
+      box.querySelectorAll('.smkv-rx').forEach((b) => b.onclick = () => react(seqOf(b), b.dataset.e));
+      box.querySelectorAll('.smkv-rxadd').forEach((b) => b.onclick = (e) => { e.stopPropagation(); quickReact(b, seqOf(b)); });
+      box.querySelectorAll('.smkv-msg').forEach((el) => el.onclick = (e) => { // touch: tap a message to show its react button
+        if (e.target.closest('button,a,img,.smkv-ref')) return;
+        box.querySelectorAll('.smkv-msg.act').forEach((x) => x !== el && x.classList.remove('act'));
+        el.classList.toggle('act');
+      });
+      box.querySelectorAll('.smkv-attimg').forEach((im) => {
+        im.onclick = () => viewImage(im.dataset.full, im.dataset.name, im.dataset.dl);
+        if (scroll) im.onload = () => { if (box.scrollHeight - box.scrollTop - box.clientHeight < im.height + 80) box.scrollTop = box.scrollHeight; };
+      });
       if (scroll) box.scrollTop = box.scrollHeight;
+      else if (keep != null) box.scrollTop = keep;
     }
     async function openRef(ref) {
       const lib = ref.path.split('/')[0];
@@ -1472,6 +1517,138 @@
       await libData(lib).catch(() => {});
       playVideo(ref.path);
     }
+    // ---- chat: attachments, reactions, emoji
+    function msgPreview(m) {
+      if (!m) return '';
+      if (m.ref) return '📎 ' + m.ref.title;
+      if (m.att) return (m.att.image ? '🖼 Photo' : '📎 ' + m.att.name) + (m.text ? ' · ' + m.text : '');
+      return m.text || '';
+    }
+    const fileUrl = (conv, att, q = '') => new URL(`api/chat/${encodeURIComponent(conv)}/files/${att.id}${q}`, BASE).href;
+    function attHtml(m) {
+      const a = m.att;
+      if (!a) return '';
+      if (a.gone) return `<div class="smkv-attf gone">📎 <span>${esc(a.name)}</span><small>expired</small></div>`;
+      const conv = SO.open.id;
+      if (a.image) {
+        const w = Math.min(240, a.w || 240), h = a.w && a.h ? Math.round(w * a.h / a.w) : 0;
+        return `<img class="smkv-attimg" loading="lazy" src="${esc(fileUrl(conv, a, a.thumb ? '?thumb=1' : ''))}" ${h ? `width="${w}" height="${Math.min(h, 360)}"` : ''}
+          alt="${esc(a.name)}" data-full="${esc(fileUrl(conv, a))}" data-dl="${esc(fileUrl(conv, a, '?dl=1'))}" data-name="${esc(a.name)}">`;
+      }
+      const ic = /^video\//.test(a.mime) ? '🎞' : /^audio\//.test(a.mime) ? '🎵' : /pdf/.test(a.mime) ? '📄' : /zip|rar|7z|tar|gzip/.test(a.mime) ? '🗜' : '📎';
+      return `<a class="smkv-attf" href="${esc(fileUrl(conv, a, '?dl=1'))}" download="${esc(a.name)}" title="Download">${ic} <span>${esc(a.name)}</span><small>${fmtSize(a.size)} ⬇</small></a>`;
+    }
+    function viewImage(src, name, dl) {
+      detailModal(`<div class="smkv-imgview"><img src="${esc(src)}" alt="${esc(name)}"></div>
+        <div class="smkv-row" style="margin-top:10px"><span class="smkv-dim2" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</span><a class="smkv-btnlink" href="${esc(dl)}" download="${esc(name)}">⬇ Download</a></div>`);
+    }
+    async function react(seq, emoji) {
+      if (!SO.open) return;
+      try {
+        const r = await apiPost(`chat/${encodeURIComponent(SO.open.id)}/messages/${seq}/react`, { emoji });
+        const m = SO.msgs.find((x) => x.seq === seq);
+        if (m) { m.reactions = r.reactions || null; drawMsgs(false); }
+        rememberEmoji(emoji);
+      } catch (x) { toast(x.message); }
+    }
+    function quickReact(anchor, seq) {
+      closePops();
+      const quick = [...new Set([...lsGet('emojiRecent', []), '👍', '❤️', '😂', '😮', '😢', '🙏'])].slice(0, 6);
+      const pop = document.createElement('div');
+      pop.className = 'smkv-pop smkv-quick';
+      pop.innerHTML = quick.map((e) => `<button data-e="${esc(e)}">${esc(e)}</button>`).join('') + '<button data-more title="More">＋</button>';
+      document.body.appendChild(pop);
+      placePop(pop, anchor);
+      pop.querySelectorAll('[data-e]').forEach((b) => b.onclick = () => { closePops(); react(seq, b.dataset.e); });
+      pop.querySelector('[data-more]').onclick = () => { closePops(); emojiPicker(anchor, (e) => react(seq, e)); };
+    }
+    function closePops() { document.querySelectorAll('.smkv-pop').forEach((p) => p.remove()); }
+    document.addEventListener('pointerdown', (e) => { if (!e.target.closest('.smkv-pop,[data-a=emo],.smkv-rxadd')) closePops(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.querySelector('.smkv-pop')) { closePops(); e.stopPropagation(); } }, true);
+    function placePop(pop, anchor) {
+      const r = anchor.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
+      let x = Math.min(Math.max(8, anchor.classList.contains('smkv-rxadd') ? r.right - pw : r.left), innerWidth - pw - 8);
+      let y = r.top - ph - 6;
+      if (y < 8) y = Math.min(r.bottom + 6, innerHeight - ph - 8);
+      pop.style.left = x + 'px'; pop.style.top = y + 'px';
+    }
+    function rememberEmoji(e) { lsSet('emojiRecent', [e, ...lsGet('emojiRecent', []).filter((x) => x !== e)].slice(0, 24)); }
+    let emojiData = null;
+    async function emojiPicker(anchor, onPick, opts = {}) {
+      if (document.querySelector('.smkv-emo')) { closePops(); return; }
+      closePops();
+      const pop = document.createElement('div');
+      pop.className = 'smkv-pop smkv-emo';
+      pop.innerHTML = '<div class="smkv-dim2" style="padding:20px">Loading…</div>';
+      document.body.appendChild(pop);
+      placePop(pop, anchor);
+      if (!emojiData) {
+        try { emojiData = await (await fetch(new URL('emoji.json?v=' + (window.SMKV_VERSION || ''), BASE))).json(); }
+        catch { pop.remove(); return toast("Couldn't load emoji"); }
+      }
+      if (!pop.isConnected) return;
+      const groups = [{ name: 'Recent', icon: '🕘', items: lsGet('emojiRecent', []).map((e) => [e, '']) }, ...emojiData.groups].filter((g) => g.items.length);
+      pop.innerHTML = `<input class="smkv-emoq" placeholder="Search emoji" autocomplete="off">
+        <div class="smkv-emotabs">${groups.map((g, i) => `<button data-g="${i}" title="${esc(g.name)}">${g.icon}</button>`).join('')}</div>
+        <div class="smkv-emogrid"></div>`;
+      const grid = pop.querySelector('.smkv-emogrid'), q = pop.querySelector('.smkv-emoq');
+      const cell = (e, kw) => `<button data-e="${esc(e)}" title="${esc(kw.split(' ').slice(0, 3).join(' '))}">${esc(e)}</button>`;
+      const show = () => {
+        const t = q.value.trim().toLowerCase();
+        if (t) {
+          const hits = [];
+          for (const g of emojiData.groups) for (const [e, kw] of g.items) if (kw.includes(t)) hits.push(cell(e, kw));
+          grid.innerHTML = hits.slice(0, 240).join('') || '<div class="smkv-dim2" style="padding:12px">No emoji found</div>';
+        } else {
+          grid.innerHTML = groups.map((g, i) => `<div class="smkv-emoh" data-h="${i}">${esc(g.name)}</div>${g.items.map(([e, kw]) => cell(e, kw)).join('')}`).join('');
+        }
+      };
+      show();
+      q.oninput = show;
+      pop.querySelectorAll('.smkv-emotabs button').forEach((b) => b.onclick = () => {
+        q.value = ''; show();
+        const h = grid.querySelector(`[data-h="${b.dataset.g}"]`); if (h) grid.scrollTop = h.offsetTop - grid.offsetTop;
+      });
+      grid.onclick = (e) => {
+        const b = e.target.closest('[data-e]');
+        if (!b) return;
+        rememberEmoji(b.dataset.e);
+        onPick(b.dataset.e);
+        if (!opts.keepOpen) closePops();
+      };
+      placePop(pop, anchor);
+      if (matchMedia('(pointer:fine)').matches) q.focus();
+    }
+    // Uploads: one at a time per file, with a progress row above the composer.
+    function uploadFiles(conv, files, captionInput) {
+      const max = (BR.me.chatMaxMB || 0) * 1048576;
+      for (const f of files) {
+        if (max && f.size > max) { toast(`${f.name} is too big (max ${BR.me.chatMaxMB} MB)`, 4000); continue; }
+        const caption = captionInput && files.length === 1 ? captionInput.value.trim() : '';
+        if (caption) captionInput.value = '';
+        const row = document.createElement('div');
+        row.className = 'smkv-up';
+        row.innerHTML = `<span>${esc(f.name || 'pasted image')}</span><progress max="100" value="0"></progress><button title="Cancel">✕</button>`;
+        $('#smkv-chat .smkv-uploads')?.appendChild(row);
+        const fd = new FormData();
+        if (caption) fd.append('text', caption);
+        fd.append('file', f, f.name || 'image.png');
+        const x = new XMLHttpRequest();
+        x.open('POST', new URL(`api/chat/${encodeURIComponent(conv)}/attachments`, BASE));
+        x.withCredentials = true;
+        x.upload.onprogress = (e) => { if (e.lengthComputable) row.querySelector('progress').value = e.loaded / e.total * 100; };
+        x.onload = () => {
+          row.remove();
+          let r = {}; try { r = JSON.parse(x.responseText); } catch { /* ignore */ }
+          if (x.status !== 200) return toast(`${f.name}: ${r.error || x.statusText}`, 5000);
+          if (SO.open && SO.open.id === conv && r.message && !SO.msgs.some((m) => m.seq === r.message.seq)) { SO.msgs.push(r.message); drawMsgs(true); }
+        };
+        x.onerror = () => { row.remove(); toast(`${f.name}: upload failed`, 4000); };
+        row.querySelector('button').onclick = () => { x.abort(); row.remove(); };
+        x.send(fd);
+      }
+    }
+
     function groupDialog(conv) {
       const others = SO.people.filter((p) => p.name !== BR.me.user);
       detailModal(`<h2>${conv ? 'Group: ' + esc(conv.title) : 'New group'}</h2>
@@ -2321,7 +2498,35 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 .smkv-ref img,.smkv-ref>span{width:46px;height:68px;object-fit:cover;border-radius:5px;flex:none;background:#252c38;display:flex;align-items:center;justify-content:center}
 .smkv-ref div{display:flex;flex-direction:column;gap:2px;min-width:0}
 .smkv-ref small{color:#9aa3b2}.smkv-ref em{font-style:normal;color:#6ab0ff;font-size:12px;margin-top:auto}
-.smkv-send{display:flex;gap:8px;padding:10px;border-top:1px solid #1f242d}
+.smkv-send{display:flex;gap:6px;padding:10px;border-top:1px solid #1f242d;align-items:center}
+#smkv-chat .smkv-cbtn{background:none!important;border:none!important;font-size:19px;padding:4px 5px!important;cursor:pointer;line-height:1;opacity:.85;flex:none}
+#smkv-chat .smkv-cbtn:hover{opacity:1}
+#smkv-chat.smkv-drop .smkv-msgs{outline:2px dashed #4a9eff;outline-offset:-8px;background:#121a26}
+.smkv-uploads{display:flex;flex-direction:column;gap:4px;padding:0 10px}
+.smkv-up{display:flex;gap:8px;align-items:center;font-size:12px;color:#9aa3b2;padding:4px 0}.smkv-up span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.smkv-up progress{width:90px}
+.smkv-attimg{display:block;max-width:240px;max-height:360px;width:auto;height:auto;border-radius:12px;cursor:zoom-in;background:#1a202a;object-fit:cover}
+.smkv-attf{display:flex;gap:8px;align-items:center;background:#1a202a;border:1px solid #2a3240;border-radius:12px;padding:9px 11px;color:#d7dce4!important;text-decoration:none;max-width:260px;font-size:13.5px}
+.smkv-attf:hover{border-color:#4a9eff}.smkv-attf span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.smkv-attf small{color:#8b95a5;flex:none}
+.smkv-attf.gone{opacity:.6}
+.smkv-imgview{display:flex;justify-content:center}.smkv-imgview img{max-width:100%;max-height:78vh;border-radius:8px}
+.smkv-btnlink{color:#fff;background:#2b6fd6;border-radius:6px;padding:6px 12px;text-decoration:none;font-size:13px}
+.smkv-rxs{display:flex;flex-wrap:wrap;gap:4px}
+#smkv-chat .smkv-rx{padding:1px 7px!important;border-radius:11px!important;font-size:13px;background:#1a202a!important;border:1px solid #2a3240!important}
+#smkv-chat .smkv-rx.on{border-color:#4a9eff!important;background:#16263d!important}#smkv-chat .smkv-rx b{font-size:11px;color:#c9cfd8}
+#smkv-chat .smkv-rxadd{visibility:hidden;background:none!important;border:none!important;padding:0 4px!important;margin-left:6px;color:#8b95a5;font-size:12px;cursor:pointer}
+#smkv-chat .smkv-msg:hover .smkv-rxadd,#smkv-chat .smkv-msg.act .smkv-rxadd{visibility:visible}
+@media (hover:none){#smkv-chat .smkv-rxadd{visibility:visible;opacity:.55}}
+.smkv-pop{position:fixed;z-index:2147483646;background:#161b23;border:1px solid #2c3442;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.55)}
+.smkv-quick{display:flex;gap:2px;padding:4px}
+.smkv-pop button{background:none;border:none;font-size:22px;line-height:1;padding:6px;border-radius:8px;cursor:pointer;color:#c9cfd8}
+.smkv-pop button:hover{background:#252c38}
+.smkv-emo{width:min(330px,94vw);display:flex;flex-direction:column}
+.smkv-emoq{margin:8px 8px 4px;background:#0f1217;color:#e6e9ee;border:1px solid #2a313c;border-radius:8px;padding:7px 10px;font:13px system-ui,sans-serif}
+.smkv-emotabs{display:flex;justify-content:space-between;padding:0 6px;border-bottom:1px solid #222935}
+.smkv-emotabs button{font-size:17px;padding:5px}
+.smkv-emogrid{height:250px;overflow:auto;display:grid;grid-template-columns:repeat(8,1fr);padding:4px 6px 8px;align-content:start}
+.smkv-emogrid button{font-size:23px;padding:4px 0}
+.smkv-emoh{grid-column:1/-1;font:600 11px system-ui,sans-serif;color:#7d8696;text-transform:uppercase;letter-spacing:.5px;padding:8px 2px 4px}
 .smkv-send input,.smkv-inp{flex:1;width:100%;box-sizing:border-box;background:#151920;color:#e6e9ee;border:1px solid #2a313c;border-radius:18px;padding:9px 14px;font:inherit}
 .smkv-inp{border-radius:8px}
 .smkv-gmembers{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px}

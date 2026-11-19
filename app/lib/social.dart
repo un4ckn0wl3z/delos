@@ -33,6 +33,10 @@ class Social extends ChangeNotifier {
   /// The conversation on screen (its messages arrive via [onMessage]).
   String? openConv;
   void Function(String conv, Map msg)? onMessage;
+  void Function(String conv, int seq, Map? reactions)? onReaction;
+
+  /// Largest attachment in MB (0 = attachments are off), from /api/me.
+  int chatMaxMB = 0;
 
   /// A message arrived for a chat that isn't open (for a SnackBar).
   final incoming = StreamController<(String conv, Map msg)>.broadcast();
@@ -87,6 +91,7 @@ class Social extends ChangeNotifier {
     heartbeat(force: true);
     try {
       convs = await api.chats();
+      api.me().then((m) => chatMaxMB = (m['chatMaxMB'] as num? ?? 0).toInt()).catchError((_) => 0);
       final p = await api.people();
       people = List<Map>.from(p['people'] as List? ?? const []);
       hideActivity = p['hideActivity'] == true;
@@ -143,6 +148,8 @@ class Social extends ChangeNotifier {
         convs.removeWhere((x) => x['id'] == c['id']);
         if (c['members'] != null) convs.insert(0, c);
         convs.sort((a, b) => _ts(b).compareTo(_ts(a)));
+      case 'reaction':
+        if ('${v['conv']}' == openConv) onReaction?.call('${v['conv']}', (v['seq'] as num).toInt(), v['reactions'] as Map?);
       case 'message':
         final conv = '${v['conv']}';
         final m = Map.from(v['message'] as Map);
@@ -154,6 +161,15 @@ class Social extends ChangeNotifier {
         }
     }
     notifyListeners();
+  }
+
+  /// One line for a chat list / notification.
+  static String preview(Map? m) {
+    if (m == null) return '';
+    final ref = m['ref'] as Map?, att = m['att'] as Map?, text = '${m['text'] ?? ''}';
+    if (ref != null) return '📎 ${ref['title']}';
+    if (att != null) return '${att['image'] == true ? '🖼 Photo' : '📎 ${att['name']}'}${text.isNotEmpty ? ' · $text' : ''}';
+    return text;
   }
 
   static int _ts(Map c) => ((c['last'] as Map?)?['ts'] as num? ?? c['created'] as num? ?? 0).toInt();

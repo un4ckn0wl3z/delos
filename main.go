@@ -26,7 +26,7 @@ import (
 	"time"
 )
 
-//go:embed web/index.html web/admin.html web/app.js web/player-wasm.mjs web/streammkv.user.js web/manifest.webmanifest web/tls.html web/*.png web/vendor/*.mjs
+//go:embed web/index.html web/admin.html web/app.js web/player-wasm.mjs web/streammkv.user.js web/manifest.webmanifest web/tls.html web/emoji.json web/*.png web/vendor/*.mjs
 var webFS embed.FS
 
 var tlsMode string
@@ -207,7 +207,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.auth(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "editor": s.canEdit(r), "downloader": s.users.IsDownloader(userOf(r)), "offline": s.users.IsOffline(userOf(r)), "avatar": s.avatars.Version(userOf(r)), "version": version, "https": s.tls.Enabled()})
+		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "editor": s.canEdit(r), "downloader": s.users.IsDownloader(userOf(r)), "offline": s.users.IsOffline(userOf(r)), "avatar": s.avatars.Version(userOf(r)), "version": version, "https": s.tls.Enabled(), "chatMaxMB": s.settings.Get().ChatMaxMB})
 	}))
 	mux.HandleFunc("POST /api/me/password", s.auth(s.handleOwnPassword))
 	mux.HandleFunc("GET /admin", s.handleAdminPage)

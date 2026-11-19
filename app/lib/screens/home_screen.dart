@@ -117,8 +117,8 @@ class _HomeScreenState extends State<HomeScreen> {
       final (conv, m) = e;
       final c = app.social!.convs.where((x) => x['id'] == conv).firstOrNull;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('💬 ${m['from']}${c != null && c['kind'] == 'group' ? ' in ${c['title']}' : ''}: '
-            '${m['ref'] != null ? '📎 ${(m['ref'] as Map)['title']}' : m['text']}', maxLines: 2, overflow: TextOverflow.ellipsis),
+        content: Text('💬 ${m['from']}${c != null && c['kind'] == 'group' ? ' in ${c['title']}' : ''}: ${Social.preview(m)}',
+            maxLines: 2, overflow: TextOverflow.ellipsis),
         action: SnackBarAction(label: 'Open', onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(app: app, convId: conv)))),
       ));
     });

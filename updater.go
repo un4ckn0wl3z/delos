@@ -284,6 +284,9 @@ type ServerSettings struct {
 	SeedRatio  float64 `json:"seedRatio,omitempty"`
 	SeedHours  float64 `json:"seedHours,omitempty"`
 	SeedAction string  `json:"seedAction,omitempty"` // "stop" (default) | "remove" (remove the torrent, keep the files)
+	// Chat attachments: largest file in MB (0 = attachments off) and how many days files are kept (0 = forever).
+	ChatMaxMB    int `json:"chatMaxMB"`
+	ChatKeepDays int `json:"chatKeepDays"`
 }
 
 type SettingsStore struct {
@@ -293,7 +296,7 @@ type SettingsStore struct {
 }
 
 func NewSettingsStore(dir string) *SettingsStore {
-	st := &SettingsStore{file: filepath.Join(dir, "settings.json"), v: ServerSettings{AutoUpdate: true}}
+	st := &SettingsStore{file: filepath.Join(dir, "settings.json"), v: ServerSettings{AutoUpdate: true, ChatMaxMB: 25, ChatKeepDays: 30}}
 	if b, err := os.ReadFile(st.file); err == nil {
 		json.Unmarshal(b, &st.v)
 	}
@@ -367,6 +370,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		SeedRatio    *float64 `json:"seedRatio"`
 		SeedHours    *float64 `json:"seedHours"`
 		SeedAction   *string  `json:"seedAction"`
+		ChatMaxMB    *int     `json:"chatMaxMB"`
+		ChatKeepDays *int     `json:"chatKeepDays"`
 	}
 	if !decodeJSON(w, r, &b) {
 		return
@@ -420,6 +425,20 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		cur.SeedAction = *b.SeedAction
 	}
+	if b.ChatMaxMB != nil {
+		if *b.ChatMaxMB < 0 || *b.ChatMaxMB > 4096 {
+			httpErr(w, 400, "attachment size must be between 0 and 4096 MB")
+			return
+		}
+		cur.ChatMaxMB = *b.ChatMaxMB
+	}
+	if b.ChatKeepDays != nil {
+		if *b.ChatKeepDays < 0 || *b.ChatKeepDays > 3650 {
+			httpErr(w, 400, "days must be between 0 and 3650")
+			return
+		}
+		cur.ChatKeepDays = *b.ChatKeepDays
+	}
 	if b.UserLibRoot != nil {
 		v := strings.TrimSpace(*b.UserLibRoot)
 		if v != "" {
@@ -449,7 +468,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) adminSettings() map[string]any {
 	cur := s.settings.Get()
 	return map[string]any{"autoUpdate": cur.AutoUpdate, "tmdbKeySet": cur.TMDBKey != "", "tmdbLang": cur.TMDBLang, "rtorrent": cur.RTorrent, "userLibRoot": s.userLibRoot(),
-		"seed": map[string]any{"ratio": cur.SeedRatio, "hours": cur.SeedHours, "action": cmp.Or(cur.SeedAction, "stop")}, "streams": s.streamUsage(), "update": s.updater.Status()}
+		"seed": map[string]any{"ratio": cur.SeedRatio, "hours": cur.SeedHours, "action": cmp.Or(cur.SeedAction, "stop")},
+		"chat": map[string]any{"maxMB": cur.ChatMaxMB, "keepDays": cur.ChatKeepDays, "usedBytes": s.chat.filesSize()}, "streams": s.streamUsage(), "update": s.updater.Status()}
 }
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {

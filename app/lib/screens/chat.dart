@@ -1,9 +1,13 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api.dart';
 import '../library.dart';
 import '../social.dart';
+import '../util.dart';
 import '../widgets.dart';
+import 'emoji_picker.dart';
 import 'home_screen.dart';
 
 String _actLine(Map a) {
@@ -237,7 +241,7 @@ class ChatView extends StatelessWidget {
     final online = c['kind'] == 'dm' && app.social!.people.any((p) => p['name'] == c['title'] && p['online'] == true);
     final preview = last == null
         ? 'No messages yet'
-        : '${last['sys'] == true ? '' : '${last['from']}: '}${last['ref'] != null ? '📎 ${(last['ref'] as Map)['title']}' : last['text']}';
+        : '${last['sys'] == true ? '' : '${last['from']}: '}${Social.preview(last)}';
     return ListTile(
       leading: UserAvatar(app.social!, '${c['title']}', online: online, group: c['kind'] == 'group'),
       title: c['kind'] == 'group'
@@ -339,6 +343,7 @@ class _ChatScreenState extends State<ChatScreen> {
   List<Map> msgs = [];
   Map? conv;
   bool loading = true, more = true;
+  final List<String> _uploads = [];
 
   Social get s => widget.app.social!;
 
@@ -349,6 +354,11 @@ class _ChatScreenState extends State<ChatScreen> {
     s.onMessage = (id, m) {
       if (!mounted || id != widget.convId || msgs.any((x) => x['seq'] == m['seq'])) return;
       setState(() => msgs.add(m));
+    };
+    s.onReaction = (id, seq, re) {
+      if (!mounted || id != widget.convId) return;
+      final m = msgs.where((x) => x['seq'] == seq).firstOrNull;
+      if (m != null) setState(() => m['reactions'] = re);
     };
     s.addListener(_convChanged);
     _load();
@@ -365,6 +375,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (s.openConv == widget.convId) {
       s.openConv = null;
       s.onMessage = null;
+      s.onReaction = null;
     }
     _text.dispose();
     _scroll.dispose();
@@ -409,6 +420,152 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _insertEmoji(String e) {
+    final v = _text.value;
+    final sel = v.selection;
+    final start = sel.isValid ? sel.start : v.text.length;
+    final end = sel.isValid ? sel.end : v.text.length;
+    _text.value = TextEditingValue(text: v.text.replaceRange(start, end, e), selection: TextSelection.collapsed(offset: start + e.length));
+  }
+
+  Future<void> _attach() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final FilePickerResult? r;
+    try {
+      r = await FilePicker.platform.pickFiles(allowMultiple: true);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('$e')));
+      return;
+    }
+    if (r == null) return;
+    final max = s.chatMaxMB * 1024 * 1024;
+    final caption = r.files.length == 1 ? _text.text.trim() : '';
+    if (caption.isNotEmpty) _text.clear();
+    for (final f in r.files) {
+      final path = f.path;
+      if (path == null) continue;
+      if (max > 0 && f.size > max) {
+        messenger.showSnackBar(SnackBar(content: Text('${f.name} is too big (max ${s.chatMaxMB} MB)')));
+        continue;
+      }
+      setState(() => _uploads.add(f.name));
+      try {
+        final res = await widget.app.api.chatAttach(widget.convId, path, f.name, text: caption);
+        final m = Map.from(res['message'] as Map);
+        if (mounted && !msgs.any((x) => x['seq'] == m['seq'])) setState(() => msgs.add(m));
+      } on ApiException catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text('${f.name}: ${e.message}')));
+      } finally {
+        if (mounted) setState(() => _uploads.remove(f.name));
+      }
+    }
+  }
+
+  Future<void> _react(Map m) async {
+    final text = '${m['text'] ?? ''}';
+    final e = await pickReaction(context, widget.app.api, copyText: text.isEmpty ? null : text);
+    if (e != null) _toggle(m, e);
+  }
+
+  Future<void> _toggle(Map m, String emoji) async {
+    try {
+      final r = await widget.app.api.chatReact(widget.convId, (m['seq'] as num).toInt(), emoji);
+      if (mounted) setState(() => m['reactions'] = r['reactions']);
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  void _open(String url) => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+
+  Widget _attachment(Map a, bool mine) {
+    final api = widget.app.api;
+    final id = '${a['id']}';
+    if (a['gone'] == true) {
+      return _fileCard(Icons.history, '${a['name']}', 'expired', null);
+    }
+    if (a['image'] == true) {
+      final w = (a['w'] as num? ?? 0).toDouble(), h = (a['h'] as num? ?? 0).toDouble();
+      final ratio = w > 0 && h > 0 ? (w / h).clamp(0.4, 2.5).toDouble() : 4 / 3;
+      return GestureDetector(
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => _ImageView(
+            url: api.chatFileUrl(widget.convId, id),
+            name: '${a['name']}',
+            onDownload: () => _open(api.chatFileUrl(widget.convId, id, download: true)),
+          ),
+        )),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            width: 230,
+            child: AspectRatio(
+              aspectRatio: ratio,
+              child: NetImage(api.chatFileUrl(widget.convId, id, thumb: a['thumb'] == true), placeholder: '🖼'),
+            ),
+          ),
+        ),
+      );
+    }
+    final mime = '${a['mime'] ?? ''}';
+    final icon = mime.startsWith('video/')
+        ? Icons.movie_outlined
+        : mime.startsWith('audio/')
+            ? Icons.audiotrack
+            : mime.contains('pdf')
+                ? Icons.picture_as_pdf_outlined
+                : Icons.insert_drive_file_outlined;
+    return _fileCard(icon, '${a['name']}', '${fmtSize((a['size'] as num? ?? 0).toInt())} · tap to download',
+        () => _open(api.chatFileUrl(widget.convId, id, download: true)));
+  }
+
+  Widget _fileCard(IconData icon, String name, String sub, VoidCallback? onTap) => Card(
+        margin: const EdgeInsets.symmetric(vertical: 2),
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 22, color: const Color(0xFF9AA3B2)),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(name, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  Text(sub, style: const TextStyle(fontSize: 11.5, color: Color(0xFF8B95A5))),
+                ]),
+              ),
+            ]),
+          ),
+        ),
+      );
+
+  Widget _reactions(Map m) {
+    final re = m['reactions'] as Map?;
+    if (re == null || re.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 3),
+      child: Wrap(spacing: 4, runSpacing: 4, children: [
+        for (final e in re.entries)
+          Tooltip(
+            message: (e.value as List).join(', '),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => _toggle(m, '${e.key}'),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: (e.value as List).contains(s.me) ? const Color(0xFF16263D) : const Color(0xFF1A202A),
+                  border: Border.all(color: (e.value as List).contains(s.me) ? const Color(0xFF4A9EFF) : const Color(0xFF2A3240)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text((e.value as List).length > 1 ? '${e.key} ${(e.value as List).length}' : '${e.key}', style: const TextStyle(fontSize: 13)),
+              ),
+            ),
+          ),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = conv;
@@ -449,11 +606,29 @@ class _ChatScreenState extends State<ChatScreen> {
                   },
                 ),
         ),
+        for (final u in _uploads)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: Row(children: [
+              const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+              const SizedBox(width: 10),
+              Expanded(child: Text('Sending $u…', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Color(0xFF9AA3B2)))),
+            ]),
+          ),
         SafeArea(
           top: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 6, 6, 8),
+            padding: const EdgeInsets.fromLTRB(2, 6, 6, 8),
             child: Row(children: [
+              IconButton(
+                tooltip: 'Emoji',
+                icon: const Icon(Icons.emoji_emotions_outlined),
+                onPressed: () async {
+                  final e = await pickEmoji(context, widget.app.api);
+                  if (e != null) _insertEmoji(e);
+                },
+              ),
+              if (s.chatMaxMB > 0) IconButton(tooltip: 'Attach pictures or files', icon: const Icon(Icons.attach_file), onPressed: _attach),
               Expanded(
                 child: TextField(
                   controller: _text,
@@ -482,8 +657,13 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     final mine = m['from'] == s.me;
     final ref = m['ref'] as Map?;
+    final att = m['att'] as Map?;
     final time = '${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}';
-    return Align(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: () => _react(m),
+      onSecondaryTap: () => _react(m),
+      child: Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * .78),
@@ -528,16 +708,43 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
               ),
+            if (att != null) _attachment(att, mine),
             if ('${m['text'] ?? ''}'.isNotEmpty)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(color: mine ? const Color(0xFF2B6FD6) : const Color(0xFF1D2430), borderRadius: BorderRadius.circular(16)),
-                child: SelectableText('${m['text']}', style: const TextStyle(color: Colors.white)),
+                child: Text('${m['text']}', style: const TextStyle(color: Colors.white)),
               ),
+            _reactions(m),
             Text(time, style: const TextStyle(fontSize: 10, color: Color(0xFF7D8696))),
           ]),
         ),
       ),
-    );
+    ));
   }
+}
+
+/// Full-size picture from a chat, zoomable.
+class _ImageView extends StatelessWidget {
+  const _ImageView({required this.url, required this.name, required this.onDownload});
+  final String url, name;
+  final VoidCallback onDownload;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15)),
+          actions: [IconButton(tooltip: 'Download', icon: const Icon(Icons.download), onPressed: onDownload)],
+        ),
+        body: InteractiveViewer(
+          maxScale: 6,
+          child: Center(
+            child: Image.network(url,
+                loadingBuilder: (_, child, p) => p == null ? child : const Center(child: CircularProgressIndicator()),
+                errorBuilder: (_, __, ___) => const Text('This picture has expired or could not load', style: TextStyle(color: Colors.white70))),
+          ),
+        ),
+      );
 }

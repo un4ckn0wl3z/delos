@@ -224,6 +224,48 @@ class Api {
       await _req('POST', 'chat/${Uri.encodeComponent(id)}/messages', body: {'text': text, if (ref != null) 'ref': ref}) as Map;
   Future<void> chatRead(String id, int seq) => _req('POST', 'chat/${Uri.encodeComponent(id)}/read', body: {'seq': seq});
 
+  /// Toggle my reaction on a message → {reactions: {emoji: [users]}}.
+  Future<Map> chatReact(String id, int seq, String emoji) async =>
+      await _req('POST', 'chat/${Uri.encodeComponent(id)}/messages/$seq/react', body: {'emoji': emoji}) as Map;
+
+  /// Send a picture / file (streamed from disk) with an optional caption → {message}.
+  Future<Map> chatAttach(String id, String filePath, String filename, {String text = ''}) async {
+    await ensureSession();
+    final req = http.MultipartRequest('POST', _u('chat/${Uri.encodeComponent(id)}/attachments'))
+      ..headers.addAll(authHeaders);
+    if (text.isNotEmpty) req.fields['text'] = text;
+    req.files.add(await http.MultipartFile.fromPath('file', filePath, filename: filename));
+    final http.Response res;
+    try {
+      res = await http.Response.fromStream(await _client.send(req).timeout(const Duration(minutes: 30)));
+    } on TimeoutException {
+      throw ApiException(0, 'Upload timed out');
+    } on SocketException catch (e) {
+      throw ApiException(0, 'Network error: ${e.message}');
+    }
+    Map body = const {};
+    try {
+      body = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
+    } catch (_) {}
+    if (res.statusCode != 200) throw ApiException(res.statusCode, '${body['error'] ?? 'HTTP ${res.statusCode}'}');
+    return body;
+  }
+
+  /// URL of a chat attachment (token in the query so images and the browser can open it).
+  String chatFileUrl(String conv, String att, {bool thumb = false, bool download = false}) =>
+      _u('chat/${Uri.encodeComponent(conv)}/files/$att', {
+        if (thumb) 'thumb': '1',
+        if (download) 'dl': '1',
+        'token': settings.token ?? '',
+      }).toString();
+
+  /// The emoji list the server ships (same as the web app's picker).
+  Future<Map> emojiData() async {
+    final r = await _client.get(Uri.parse(settings.server).resolve('emoji.json')).timeout(const Duration(seconds: 30));
+    if (r.statusCode != 200) throw ApiException(r.statusCode, 'emoji list unavailable');
+    return jsonDecode(utf8.decode(r.bodyBytes)) as Map;
+  }
+
   // ---------------------------------------------------------------- personal libraries
 
   /// {"libraries": [...], "usage": {items, bytes}, "maxItems", "maxBytes"}

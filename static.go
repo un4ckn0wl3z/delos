@@ -25,6 +25,7 @@ var staticFiles = map[string]string{ // URL path → embedded file
 	"/favicon.ico":           "web/favicon.png",
 	"/streammkv.user.js":     "web/streammkv.user.js",
 	"/tls":                   "web/tls.html",
+	"/emoji.json":            "web/emoji.json",
 }
 
 type staticEntry struct {
@@ -47,6 +48,8 @@ func staticType(name string) string {
 		return "application/manifest+json"
 	case ".png":
 		return "image/png"
+	case ".json":
+		return "application/json; charset=utf-8"
 	}
 	return "application/octet-stream"
 }

@@ -199,6 +199,16 @@
     <div id="meta-test" style="padding:0 16px 12px;font-size:13px;line-height:1.7"></div>
   </section>
 
+  <section>
+    <h2>Chat files</h2>
+    <form class="add" id="chatf-form" style="border-top:none;font-size:13px;flex-wrap:wrap">
+      <label class="dim" title="0 turns attachments off">Largest file <input type="number" name="mb" min="0" max="4096" style="width:76px"> MB</label>
+      <label class="dim" title="Pictures and files are deleted after this many days (the message stays). 0 = keep forever.">Keep for <input type="number" name="days" min="0" max="3650" style="width:76px"> days</label>
+      <span class="dim" id="chatf-used"></span><span class="sp" style="flex:1"></span>
+      <button class="primary">Save</button>
+    </form>
+  </section>
+
   <section id="tls-sec">
     <h2>HTTPS</h2>
     <div id="tls-info" style="padding:4px 18px 14px;font-size:13.5px;line-height:1.7"></div>
@@ -725,6 +735,11 @@
 
   // metadata settings
   function renderMeta(st) {
+    if (st.chat) {
+      const cf = $('#chatf-form');
+      if (document.activeElement.form !== cf) { cf.mb.value = st.chat.maxMB; cf.days.value = st.chat.keepDays; }
+      $('#chatf-used').textContent = `${size(st.chat.usedBytes)} used${st.chat.maxMB ? '' : ' · attachments are off'}${st.chat.keepDays ? '' : ' · kept forever'}`;
+    }
     if (st.streams) {
       const lf = $('#lim-form');
       lf.t.value = st.streams.maxTranscode; lf.r.value = st.streams.maxRemux; lf.u.value = st.streams.maxPerUser || 0;
@@ -1086,6 +1101,14 @@
   $('#orph-btn').onclick = orphans;
   const loadTorrents = () => api('admin/torrents').then(renderTorrents).catch(() => {});
   $('#tor-q').oninput = () => { pageReset('tor'); if (torData) renderTorrents(torData); };
+  $('#chatf-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    try {
+      renderMeta(await api('admin/settings', { method: 'POST', body: { chatMaxMB: Math.max(0, Math.round(+f.mb.value || 0)), chatKeepDays: Math.max(0, Math.round(+f.days.value || 0)) } }));
+      document.activeElement.blur(); toast('Saved');
+    } catch (x) { toast(x.message); }
+  };
   $('#seed-form').onsubmit = async (e) => {
     e.preventDefault();
     const f = e.target;

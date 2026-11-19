@@ -59,12 +59,15 @@ type Ref struct { // a movie / episode / song shared into a chat
 }
 
 type Message struct {
-	Seq  int64  `json:"seq"`
-	From string `json:"from"`
-	Text string `json:"text,omitempty"`
-	Ref  *Ref   `json:"ref,omitempty"`
-	Sys  bool   `json:"sys,omitempty"` // "bob added alice"
-	TS   int64  `json:"ts"`
+	Seq  int64       `json:"seq"`
+	From string      `json:"from"`
+	Text string      `json:"text,omitempty"`
+	Ref  *Ref        `json:"ref,omitempty"`
+	Sys  bool        `json:"sys,omitempty"` // "bob added alice"
+	Att  *Attachment `json:"att,omitempty"`
+	TS   int64       `json:"ts"`
+	// Reactions are kept beside the log (<id>.reactions.json) and merged in when reading: emoji → users.
+	Reactions map[string][]string `json:"reactions,omitempty"`
 }
 
 type Conversation struct {
@@ -90,6 +93,8 @@ type Chat struct {
 	subs  map[string]map[chan []byte]struct{} // user → event channels
 	rate  map[string][]time.Time
 	dirty bool
+
+	reacts map[string]map[int64]map[string][]string // conv → seq → emoji → users (guarded by mu)
 }
 
 func NewChat(s *Server) *Chat {
@@ -107,7 +112,9 @@ func NewChat(s *Server) *Chat {
 			}
 		}
 	}
+	c.reacts = map[string]map[int64]map[string][]string{}
 	go c.presenceLoop()
+	go c.filesLoop()
 	return c
 }
 
@@ -175,6 +182,13 @@ func (c *Chat) messages(cv *Conversation, before int64, limit int) []Message {
 	}
 	if len(all) > limit {
 		all = all[len(all)-limit:]
+	}
+	re := c.reactionsLocked(cv.ID)
+	for i := range all {
+		all[i].Reactions = re[all[i].Seq]
+		if a := all[i].Att; a != nil {
+			a.Gone = !c.attExists(cv.ID, a.ID)
+		}
 	}
 	if all == nil {
 		all = []Message{}
@@ -326,6 +340,9 @@ func (s *Server) chatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/chat/{id}/messages", s.auth(s.handleChatMessages))
 	mux.HandleFunc("POST /api/chat/{id}/messages", s.auth(s.handleChatSend))
 	mux.HandleFunc("POST /api/chat/{id}/read", s.auth(s.handleChatRead))
+	mux.HandleFunc("POST /api/chat/{id}/attachments", s.auth(s.handleChatAttach))
+	mux.HandleFunc("GET /api/chat/{id}/files/{att}", s.auth(s.handleChatFile))
+	mux.HandleFunc("POST /api/chat/{id}/messages/{seq}/react", s.auth(s.handleChatReact))
 }
 
 // GET /api/events — text/event-stream: people, message, conversation, read
@@ -677,6 +694,9 @@ func (s *Server) handleChatLeave(w http.ResponseWriter, r *http.Request) {
 	if len(cv.Members) == 0 {
 		delete(c.convs, cv.ID)
 		os.Remove(filepath.Join(c.dir, cv.ID+".jsonl"))
+		os.Remove(filepath.Join(c.dir, cv.ID+".reactions.json"))
+		delete(c.reacts, cv.ID)
+		os.RemoveAll(filepath.Join(c.dir, "files", cv.ID))
 	} else {
 		m := &Message{From: me, Sys: true, Text: me + " left the group"}
 		c.appendMsg(cv, m)
