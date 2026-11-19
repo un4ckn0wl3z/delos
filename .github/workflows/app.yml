@@ -76,6 +76,7 @@ jobs:
     needs: apk
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: streammkv-android
@@ -92,17 +93,7 @@ jobs:
           target: google_apis
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
-          script: |
-            adb install -r dist/streammkv-android-x86_64.apk
-            adb logcat -c
-            adb shell monkey -p dev.un4ckn0wl3z.streammkv -c android.intent.category.LAUNCHER 1
-            sleep 20
-            PID=$(adb shell pidof dev.un4ckn0wl3z.streammkv | tr -d '\r'); echo "pid=$PID"
-            if [ -z "$PID" ]; then adb logcat -d | grep -A30 "FATAL EXCEPTION" | head -60; echo "::error::The app is not running (crashed?)"; exit 1; fi
-            adb logcat -d --pid=$PID > launch.log
-            grep -E " (E|F) " launch.log | head -60 || true
-            if grep -qE "Unhandled Exception|FATAL EXCEPTION|Fatal signal" launch.log; then echo "::error::The app does not start cleanly"; exit 1; fi
-            echo "App started OK"
+          script: bash tools/android-launch-test.sh dist/streammkv-android-x86_64.apk
       - name: Attach to release
         if: inputs.tag != ''
         env:
