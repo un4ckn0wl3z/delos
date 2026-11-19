@@ -45,6 +45,7 @@ type OnlinePerson struct {
 	LastSeen int64     `json:"lastSeen,omitempty"`
 	Activity *Activity `json:"activity,omitempty"`
 	Admin    bool      `json:"admin,omitempty"`
+	Avatar   int64     `json:"avatar,omitempty"` // picture version; 0 = none (show initials)
 }
 
 // ---------------------------------------------------------------- chat store
@@ -247,7 +248,7 @@ func (c *Chat) People(viewer string, viewerAdmin bool) []OnlinePerson {
 	c.pmu.Lock()
 	out := make([]OnlinePerson, 0, len(users))
 	for _, u := range users {
-		p := OnlinePerson{Name: u.Name, Admin: u.Admin, LastSeen: u.LastSeen, Online: c.online(u.Name)}
+		p := OnlinePerson{Name: u.Name, Admin: u.Admin, LastSeen: u.LastSeen, Online: c.online(u.Name), Avatar: c.s.avatars.Version(u.Name)}
 		if pr := c.pres[u.Name]; pr != nil {
 			if pr.seen > p.LastSeen {
 				p.LastSeen = pr.seen

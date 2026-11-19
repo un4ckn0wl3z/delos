@@ -82,6 +82,7 @@ type adminUser struct {
 	InProgress int    `json:"inProgress"`
 	Streams    int    `json:"streams"`
 	Usage      *usage `json:"usage,omitempty"` // personal libraries
+	Avatar     int64  `json:"avatar,omitempty"`
 }
 
 func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +93,7 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	out := []adminUser{}
 	for _, u := range s.users.List() {
 		total, inProg := s.progress.Count(u.Name)
-		au := adminUser{UserView: u, Watched: total, InProgress: inProg, Streams: conns[u.Name]}
+		au := adminUser{UserView: u, Watched: total, InProgress: inProg, Streams: conns[u.Name], Avatar: s.avatars.Version(u.Name)}
 		if len(s.libs.Owned(u.Name)) > 0 || u.MaxItems > 0 || u.MaxBytes > 0 {
 			us := s.usageOf(u.Name, false)
 			au.Usage = &us

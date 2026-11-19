@@ -56,6 +56,7 @@ type Server struct {
 	index    *Indexer
 	dl       *Downloads
 	chat     *Chat
+	avatars  *Avatars
 	started  time.Time
 }
 
@@ -183,6 +184,7 @@ func main() {
 	s.index = NewIndexer(s)
 	s.dl = NewDownloads(s)
 	s.chat = NewChat(s)
+	s.avatars = NewAvatars(cfg.DataDir)
 	go s.index.Loop()
 	s.updater = NewUpdater(s, s.settings)
 	go s.updater.Loop()
@@ -193,7 +195,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.auth(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "editor": s.canEdit(r), "downloader": s.users.IsDownloader(userOf(r)), "offline": s.users.IsOffline(userOf(r)), "version": version})
+		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "editor": s.canEdit(r), "downloader": s.users.IsDownloader(userOf(r)), "offline": s.users.IsOffline(userOf(r)), "avatar": s.avatars.Version(userOf(r)), "version": version})
 	}))
 	mux.HandleFunc("POST /api/me/password", s.auth(s.handleOwnPassword))
 	mux.HandleFunc("GET /admin", s.handleAdminPage)
@@ -214,6 +216,7 @@ func main() {
 	s.chatRoutes(mux)
 	s.offlineRoutes(mux)
 	s.torrentRoutes(mux)
+	s.avatarRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
