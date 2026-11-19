@@ -119,6 +119,21 @@ class _HomeScreenState extends State<HomeScreen> {
           debugPrint('AUTOTEST: ${d.items.length} tracks');
           if (d.items.isNotEmpty) await app.audio.playQueue(d.items, 0);
           debugPrint('AUTOTEST: playing=${app.audio.playing}');
+          if (AutoTest.config?['offline'] == true && d.items.length > 1) {
+            // save two songs, then play the saved copy from its file
+            await OfflineStore.instance.downloadMusic(app.api, d.items.take(2).toList());
+            for (var i = 0; i < 60; i++) {
+              await Future.delayed(const Duration(seconds: 1));
+              final saved = OfflineStore.instance.music.where((x) => x.ready).toList();
+              if (saved.length >= 2) {
+                debugPrint('AUTOTEST: saved ${saved.length} songs');
+                await app.audio.playQueue([saved.first.toTrack()], 0);
+                await Future.delayed(const Duration(seconds: 2));
+                debugPrint('AUTOTEST: offline playing=${app.audio.playing} file=${app.audio.current?.path.startsWith('file:')}');
+                break;
+              }
+            }
+          }
         } catch (e) {
           debugPrint('AUTOTEST: play failed: $e');
         }
