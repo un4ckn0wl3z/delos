@@ -199,6 +199,11 @@
     <div id="meta-test" style="padding:0 16px 12px;font-size:13px;line-height:1.7"></div>
   </section>
 
+  <section id="tls-sec">
+    <h2>HTTPS</h2>
+    <div id="tls-info" style="padding:4px 18px 14px;font-size:13.5px;line-height:1.7"></div>
+  </section>
+
   <section>
     <h2>Users <span class="count" id="n-users">0</span></h2>
     <div id="users"></div>
@@ -1098,6 +1103,39 @@
 
   const loadOverview = () => api('admin/overview').then(renderOverview).catch(() => {});
   const loadUsers = () => api('admin/users').then(renderUsers).catch(() => {});
+  const loadTLS = () => api('admin/tls').then(renderTLS).catch(() => {});
+  function renderTLS(t) {
+    const el = $('#tls-info');
+    const url = 'https://' + location.host + location.pathname.replace(/admin\/?$/, '');
+    if (t.mode === 'off') {
+      el.innerHTML = '<span class="dim">Off. Remove <code>STREAMMKV_TLS=off</code> (or <code>-tls off</code>) and restart to serve https on the same port.</span>';
+      return;
+    }
+    const exp = t.expires ? new Date(t.expires).toLocaleDateString() : '?';
+    const head = `${location.protocol === 'https:' ? '✅ You are on https.' : `http and https share this port — <a href="${esc(url)}">${esc(url)}</a>`}
+      · <a href="${BASE}tls" target="_blank">help page for users</a>`;
+    if (t.mode === 'custom') {
+      el.innerHTML = `${head}<div class="dim">Your certificate file · ${esc((t.hosts || []).join(', '))} · expires ${exp} · reloaded automatically when the file changes</div>`;
+      return;
+    }
+    el.innerHTML = `${head}
+      <div class="dim">Built-in certificate for <b style="color:#d7dce4">${esc((t.hosts || []).join(', '))}</b> · renews itself (current one until ${exp}).
+        Users can install <a href="${BASE}tls/ca.crt">the certificate</a> once per device to remove the browser warning — it only works for these names.</div>
+      <div class="dim" style="font:11.5px/1.5 ui-monospace,monospace;word-break:break-all">CA SHA-256 ${esc(t.fingerprint || '')}</div>
+      <form class="add" id="tls-form" style="border-top:none;padding:8px 0 0">
+        <span class="dim" title="Names or IPs people use to reach this server. The address you opened this page with is added automatically.">Host names</span>
+        <input name="hosts" style="flex:1;min-width:240px" value="${esc((t.learned || []).join(', '))}" placeholder="media.example.com, 203.0.113.5">
+        <button class="primary">Save</button>
+      </form>
+      ${t.env && t.env.length ? `<div class="dim">Also from STREAMMKV_TLS_HOSTS: ${esc(t.env.join(', '))}</div>` : ''}`;
+    $('#tls-form').onsubmit = (e) => {
+      e.preventDefault();
+      const hosts = e.target.hosts.value.split(/[\s,]+/).filter(Boolean);
+      confirmBox('Changing the host names makes a new certificate — devices that installed the old one need to install it again.', 'Save', async () => {
+        try { renderTLS(await api('admin/tls', { method: 'POST', body: { hosts } })); toast('Saved'); } catch (err) { toast(err.message); }
+      });
+    };
+  }
   const loadUpdate = () => api('admin/update').then(renderUpdate).catch(() => {});
 
   async function boot() {
@@ -1106,7 +1144,7 @@
     $('#ver').textContent = 'v' + me.version;
     if (!me.admin) { $('#self').hidden = false; $('#self-name').textContent = me.user; return; }
     $('#app').hidden = false;
-    await Promise.all([loadOverview(), loadUsers(), loadUpdate(), loadLibs(), loadDownloads(), loadTorrents(), loadAnn(), api('admin/settings').then(renderMeta).catch(() => {})]);
+    await Promise.all([loadOverview(), loadUsers(), loadUpdate(), loadLibs(), loadDownloads(), loadTorrents(), loadAnn(), loadTLS(), api('admin/settings').then(renderMeta).catch(() => {})]);
     clearInterval(timer);
     let n = 0;
     timer = setInterval(() => { loadOverview(); loadLibs(); loadTorrents(); if (++n % 3 === 0) loadUsers(); if (n % 12 === 0) loadUpdate(); }, 5000);

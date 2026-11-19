@@ -8,6 +8,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"embed"
 	"encoding/base64"
 	"encoding/hex"
@@ -15,6 +16,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,8 +26,10 @@ import (
 	"time"
 )
 
-//go:embed web/index.html web/admin.html web/app.js web/player-wasm.mjs web/streammkv.user.js web/manifest.webmanifest web/*.png web/vendor/*.mjs
+//go:embed web/index.html web/admin.html web/app.js web/player-wasm.mjs web/streammkv.user.js web/manifest.webmanifest web/tls.html web/*.png web/vendor/*.mjs
 var webFS embed.FS
+
+var tlsMode string
 
 type Config struct {
 	Root       string
@@ -58,6 +62,7 @@ type Server struct {
 	dl       *Downloads
 	chat     *Chat
 	avatars  *Avatars
+	tls      *TLSManager
 	ann      *Announcements
 	started  time.Time
 }
@@ -92,6 +97,7 @@ func main() {
 	flag.StringVar(&cfg.DataDir, "data", envOr("STREAMMKV_DATA", ""), "data dir for watch progress (default: cache dir)")
 	flag.StringVar(&cfg.TLSCert, "tls-cert", envOr("STREAMMKV_TLS_CERT", ""), "TLS certificate (optional)")
 	flag.StringVar(&cfg.TLSKey, "tls-key", envOr("STREAMMKV_TLS_KEY", ""), "TLS key (optional)")
+	flag.StringVar(&tlsMode, "tls", envOr("STREAMMKV_TLS", "on"), "HTTPS on the same port: on (built-in certificate unless -tls-cert is set) or off")
 	flag.StringVar(&exts, "ext", envOr("STREAMMKV_EXT", defaultVideoExts), "comma-separated video file extensions")
 	flag.IntVar(&maxStreams, "max-streams", envInt("STREAMMKV_MAX_STREAMS", 3), "default max concurrent transcodes (re-encoding); adjustable in /admin")
 	flag.Parse()
@@ -188,6 +194,10 @@ func main() {
 	s.chat = NewChat(s)
 	s.avatars = NewAvatars(cfg.DataDir)
 	s.ann = NewAnnouncements(s)
+	if s.tls, err = NewTLSManager(cfg, tlsMode); err != nil {
+		log.Printf("tls: %v — HTTPS disabled", err)
+		s.tls = &TLSManager{mode: "off"}
+	}
 	go s.index.Loop()
 	s.updater = NewUpdater(s, s.settings)
 	go s.updater.Loop()
@@ -197,7 +207,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.auth(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "editor": s.canEdit(r), "downloader": s.users.IsDownloader(userOf(r)), "offline": s.users.IsOffline(userOf(r)), "avatar": s.avatars.Version(userOf(r)), "version": version})
+		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "editor": s.canEdit(r), "downloader": s.users.IsDownloader(userOf(r)), "offline": s.users.IsOffline(userOf(r)), "avatar": s.avatars.Version(userOf(r)), "version": version, "https": s.tls.Enabled()})
 	}))
 	mux.HandleFunc("POST /api/me/password", s.auth(s.handleOwnPassword))
 	mux.HandleFunc("GET /admin", s.handleAdminPage)
@@ -220,6 +230,7 @@ func main() {
 	s.torrentRoutes(mux)
 	s.avatarRoutes(mux)
 	s.announcementRoutes(mux)
+	s.tlsRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
@@ -227,10 +238,18 @@ func main() {
 		ReadHeaderTimeout: 15 * time.Second,
 	}
 	log.Printf("StreamMKV %s on %s (%d libraries, %d users)", version, cfg.Listen, len(libs.List()), users.Count())
-	if cfg.TLSCert != "" {
-		log.Fatal(srv.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey))
+	ln, err := net.Listen("tcp", cfg.Listen)
+	if err != nil {
+		log.Fatal(err)
 	}
-	log.Fatal(srv.ListenAndServe())
+	if !s.tls.Enabled() {
+		log.Fatal(srv.Serve(ln))
+	}
+	sn := newSniffListener(ln)
+	srv.TLSConfig = &tls.Config{GetCertificate: s.tls.GetCertificate, MinVersion: tls.VersionTLS12, NextProtos: []string{"h2", "http/1.1"}}
+	log.Printf("HTTP and HTTPS (%s certificate) on the same port", s.tls.mode)
+	go func() { log.Fatal(srv.ServeTLS(sn.tls, "", "")) }()
+	log.Fatal(srv.Serve(sn.plain))
 }
 
 func logRequests(h http.Handler) http.Handler {
@@ -332,6 +351,9 @@ func (s *Server) adminOnly(h http.HandlerFunc) http.HandlerFunc {
 		if !isAdmin(r) {
 			httpErr(w, http.StatusForbidden, "admin only")
 			return
+		}
+		if s.tls != nil {
+			s.tls.Learn(r.Host)
 		}
 		h(w, r)
 	})

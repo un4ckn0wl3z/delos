@@ -186,6 +186,7 @@ The web app plays the **original file** itself, like mpv does in the app:
 - [Mediabunny](https://mediabunny.dev) demuxes the MKV/MP4 in the browser; video is decoded by the device's own decoder through **WebCodecs** (usually hardware: H.264, HEVC, AV1, VP9).
 - **AC-3, E-AC-3 (DD+), DTS and TrueHD** audio — which browsers can't play — are decoded by FFmpeg compiled to **WebAssembly** (downloaded only when a file needs them; ~0.2–0.4 MB each, gzipped), so you get **any audio track** and the original channels.
 - Video is drawn on a canvas and kept in sync with the audio clock; text subtitles use the same overlay as before.
+- Browsers only offer WebCodecs on a **secure page** (https or localhost) — see [HTTPS](#https-built-in); on plain http the web app offers a one-click switch.
 - It falls back to the server **automatically** when the browser can't do it — e.g. a video codec the device can't decode (old DivX, HEVC 10-bit without hardware support), image subtitles (PGS/VobSub, burned in by the server), or a browser without WebCodecs. The player's badge says which is used: **direct · in browser**, **remux · server** or **transcode**. *Video* lets you pick, and ⚙ Settings → *Playback* can make the server the default.
 
 ### Playing through the server
@@ -282,12 +283,22 @@ To keep it running with no systemd: `nohup ... > streammkv.log 2>&1 &` or `scree
 | `-cache` | `STREAMMKV_CACHE` | `~/.cache/streammkv` | WebVTT cache |
 | `-data` | `STREAMMKV_DATA` | same as cache | `users.json`, `progress.json`, `settings.json`, `libraries.json`, `secret.key`, `index/`, `covers/` |
 | | `STREAMMKV_UPDATE_REPO` | `un4ckn0wl3z/streammkv` | GitHub repo to update from (forks) |
-| `-tls-cert` / `-tls-key` | `STREAMMKV_TLS_CERT` / `_KEY` | — | serve HTTPS directly |
+| `-tls` | `STREAMMKV_TLS` | `on` | https on the same port as http (`off` to disable) |
+| `-tls-cert` / `-tls-key` | `STREAMMKV_TLS_CERT` / `_KEY` | — (built-in certificate) | use your own certificate (reloaded when the file changes) |
+| | `STREAMMKV_TLS_HOSTS` | — | extra names/IPs for the built-in certificate, comma-separated |
 | `-max-streams` | `STREAMMKV_MAX_STREAMS` | `3` | starting value for the transcode limit (change it later in /admin) |
 
-### HTTPS / reverse proxy (recommended)
+### HTTPS (built in)
 
-The password is sent at login, so use HTTPS. If the seedbox already has nginx, you can mount StreamMKV under a subpath:
+The server answers **http and https on the same port** — `http://box:port` and `https://box:port` both work, and the apps don't need any change. Browsers need https for in-browser playback (WebCodecs), so on an http page the web app shows a **Switch to https** button (your login carries over).
+
+- With no certificate configured, the server makes its own small certificate authority in `<data>/tls`. The first visit shows a browser warning — click *Advanced → Proceed* once — or install the certificate from **`/tls`** (a help page with a download button and steps for Windows, macOS, iPhone/iPad, Android, Linux and Firefox) so the warning never appears.
+- That certificate is **name-constrained** to this server's own names/IPs, so it can't be misused for any other website. The names are learned from the address you open **/admin** with, and can be edited in the dashboard's *HTTPS* section (changing them makes a new certificate that devices must install again).
+- Have a real certificate (Let's Encrypt, Cloudflare origin cert, …)? Set `STREAMMKV_TLS_CERT` / `STREAMMKV_TLS_KEY`.
+
+### Reverse proxy
+
+If the seedbox already has nginx with a real certificate, you can also mount StreamMKV under a subpath:
 
 ```nginx
 location /streammkv/ {

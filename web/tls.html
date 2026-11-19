@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StreamMKV · Secure connection</title>
+<link rel="icon" href="favicon.png">
+<style>
+  :root{color-scheme:dark;--bg:#0d1015;--panel:#161a21;--line:#2a313c;--dim:#8b95a5;--accent:#4a9eff}
+  body{margin:0;background:var(--bg);color:#d7dce4;font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+  main{max-width:760px;margin:0 auto;padding:28px 18px 60px}
+  h1{font-size:22px;color:#fff;margin:0 0 6px}
+  h2{font-size:16px;color:#fff;margin:28px 0 8px}
+  .dim{color:var(--dim)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin:16px 0}
+  .ok{border-color:#1f6f43;background:#12241a}
+  .btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+  a.btn{display:inline-block;padding:9px 16px;border-radius:8px;background:#222833;border:1px solid var(--line);color:#fff;text-decoration:none;font-weight:600}
+  a.btn.primary{background:#2b6fd6;border-color:#2b6fd6}
+  details{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:8px 0;padding:0 16px}
+  details[open]{padding-bottom:6px}
+  summary{cursor:pointer;padding:12px 0;font-weight:600;color:#fff}
+  ol{margin:0 0 8px;padding-left:22px}
+  li{margin:3px 0}
+  code{background:#0b0d11;border-radius:5px;padding:1px 6px;font-size:13px;word-break:break-all}
+  .fp{font:12px/1.5 ui-monospace,monospace;color:var(--dim);word-break:break-all}
+</style>
+</head>
+<body>
+<main>
+  <h1>🔒 Secure connection</h1>
+  <div class="dim">Browsers only allow direct in-browser playback (WebCodecs) on a secure <b>https://</b> page.
+    This server speaks both http and https on the same port — the apps keep working either way.</div>
+
+  <div class="card" id="state"></div>
+
+  <div id="ca">
+    <h2>Remove the browser warning (optional)</h2>
+    <div class="dim">The server makes its own certificate, so browsers warn the first time — you can click
+      <b>Advanced → Proceed</b> and playback works. To get rid of the warning for good, install this server's
+      certificate once on each device:</div>
+    <div class="btns"><a class="btn" href="tls/ca.crt" download="streammkv-ca.crt">⬇ Download certificate</a></div>
+    <div class="fp" id="fp"></div>
+    <p class="dim" style="font-size:13px">The certificate is limited to this server's own address
+      (<span id="hosts"></span>), so it can't be used to impersonate any other website.</p>
+
+    <details><summary>Windows (Chrome, Edge)</summary><ol>
+      <li>Open the downloaded <code>streammkv-ca.crt</code> → <b>Install Certificate…</b></li>
+      <li>Choose <b>Current User</b> → <b>Place all certificates in the following store</b> → <b>Browse</b> → <b>Trusted Root Certification Authorities</b>.</li>
+      <li>Finish, confirm the security prompt, then restart the browser.</li></ol></details>
+    <details><summary>macOS (Safari, Chrome)</summary><ol>
+      <li>Double-click the file — it opens Keychain Access and adds it to <b>login</b>.</li>
+      <li>Double-click the <b>StreamMKV … CA</b> entry → <b>Trust</b> → <b>When using this certificate: Always Trust</b>.</li>
+      <li>Close the window (enter your password), then reload this page.</li></ol></details>
+    <details><summary>iPhone / iPad</summary><ol>
+      <li>Open this page in <b>Safari</b>, tap <b>Download certificate</b> → <b>Allow</b>.</li>
+      <li>Settings → <b>Profile Downloaded</b> → <b>Install</b>.</li>
+      <li>Settings → General → About → <b>Certificate Trust Settings</b> → turn on <b>StreamMKV … CA</b>.</li></ol></details>
+    <details><summary>Android (Chrome)</summary><ol>
+      <li>Download the certificate.</li>
+      <li>Settings → Security (and privacy) → More security settings → Encryption &amp; credentials → <b>Install a certificate</b> → <b>CA certificate</b> → pick the file.</li>
+      <li>Restart Chrome.</li></ol></details>
+    <details><summary>Linux (Chrome) · Firefox (any system)</summary><ol>
+      <li>Chrome: open <code>chrome://certificate-manager</code> → Local certificates → Custom → <b>Import</b>.</li>
+      <li>Firefox: Settings → Privacy &amp; Security → Certificates → <b>View Certificates</b> → Authorities → <b>Import</b> → tick “Trust this CA to identify websites”.</li></ol></details>
+  </div>
+</main>
+<script>
+(async () => {
+  const secure = location.protocol === 'https:';
+  const https = 'https://' + location.host + location.pathname.replace(/tls\/?$/, '');
+  const st = document.getElementById('state');
+  let info = {};
+  try { info = await (await fetch('tls/info')).json(); } catch { /* ignore */ }
+  if (secure) {
+    st.className = 'card ok';
+    st.innerHTML = `✅ You're on the secure address — in-browser playback is available.<div class="btns"><a class="btn primary" href="./">Open StreamMKV</a></div>`;
+  } else if (info.mode && info.mode !== 'off') {
+    st.innerHTML = `You're on <b>http</b>. Open the secure address — your login carries over.
+      <div class="btns"><a class="btn primary" href="${https}">🔒 Open ${https.replace(/^https:\/\//, '').replace(/\/$/, '')}</a></div>`;
+  } else {
+    st.innerHTML = 'HTTPS is turned off on this server (STREAMMKV_TLS=off). Ask the admin to turn it on.';
+  }
+  if (info.mode !== 'builtin') document.getElementById('ca').hidden = true;
+  else {
+    document.getElementById('fp').textContent = 'SHA-256 ' + (info.fingerprint || '');
+    document.getElementById('hosts').textContent = (info.hosts || []).join(', ');
+  }
+})();
+</script>
+</body>
+</html>

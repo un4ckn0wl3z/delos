@@ -24,6 +24,7 @@ var staticFiles = map[string]string{ // URL path → embedded file
 	"/favicon.png":           "web/favicon.png",
 	"/favicon.ico":           "web/favicon.png",
 	"/streammkv.user.js":     "web/streammkv.user.js",
+	"/tls":                   "web/tls.html",
 }
 
 type staticEntry struct {

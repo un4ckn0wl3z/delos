@@ -54,6 +54,7 @@
           <option value="auto">In this browser when possible (original file, any audio track)</option>
           <option value="server">Always through the server (remux / transcode)</option></select>
         <div class="hint">In-browser playback decodes the original file here (AC-3, E-AC-3, DTS, TrueHD audio via WebAssembly) — the server only sends the file. It falls back to the server automatically.</div>
+        ${window.isSecureContext ? '' : `<div class="hint" style="color:#f0c674">This page is plain http, so the browser doesn't allow it — open <a style="color:#7cc4ff" href="${'https://' + location.host + location.pathname}">the https address</a> (<a style="color:#7cc4ff" href="tls" target="_blank">help</a>).</div>`}
         <label>Preferred audio languages</label><input name="audioLang" placeholder="jpn,eng">
         <label>Preferred subtitle languages</label><input name="subLang" placeholder="tha,eng">
         <div class="hint">Comma-separated ISO codes, first match wins. Per-file choices are remembered.</div>
@@ -2096,6 +2097,25 @@
       subsEl.style.fontSize = Math.max(14, Math.round(h * 0.048)) + 'px';
     }).observe(player);
 
+    // ------------------------------------------------------------ https hint
+    // On plain http the browser hides WebCodecs, so in-browser playback can't work. The server
+    // also speaks https on the same port: offer a one-click switch (the login cookie carries over).
+    function drawSecBar() {
+      const bar = $('#smkv-secbar');
+      const later = +lsGet('secbarLater', 0);
+      const show = location.protocol === 'http:' && !window.isSecureContext && BR.me && BR.me.https
+        && getSettings().engine !== 'server' && Date.now() > later;
+      bar.hidden = !show;
+      if (!show) return;
+      const url = 'https://' + location.host + location.pathname + location.search + location.hash;
+      bar.innerHTML = `<span>🔒</span><div><b>Play original files right in this browser</b>
+        <div>Browsers only allow it on a secure page. Switch to https — the first time, the browser may warn: choose <i>Advanced → Proceed</i>,
+        or <a href="${esc(new URL('tls', BASE).href)}" target="_blank">install the certificate</a> to skip the warning.</div></div>
+        <button data-a="go" class="smkv-primary">Switch to https</button><button data-a="later" title="Hide for 30 days">✕</button>`;
+      bar.querySelector('[data-a=go]').onclick = () => { location.href = url; };
+      bar.querySelector('[data-a=later]').onclick = () => { lsSet('secbarLater', Date.now() + 30 * 864e5); bar.hidden = true; };
+    }
+
     // ------------------------------------------------------------ start
     (async () => {
       await ensureLogin();
@@ -2103,6 +2123,7 @@
         BR.me = await api('me');
         $('#smkv-admin').hidden = !BR.me.admin;
         $('#smkv-side header b').title = `Signed in as ${BR.me.user} · server ${BR.me.version || '?'}`;
+        drawSecBar();
       } catch { /* old server */ }
       await loadLibs();
       route();
@@ -2128,6 +2149,7 @@
   </aside>
   <section id="smkv-chat"></section>
   <main id="smkv-browse">
+    <div id="smkv-secbar" hidden></div>
     <div id="smkv-annbar" hidden></div>
     <div id="smkv-toolbar"></div>
     <div id="smkv-view"></div>
@@ -2420,6 +2442,9 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 #smkv-ann{position:relative}#smkv-ann i{position:absolute;top:-5px;right:-5px;background:#e5484d;color:#fff;font-style:normal;font-size:10px;border-radius:9px;padding:0 5px;font-weight:700;line-height:15px}
 #smkv-annbar{display:flex;gap:12px;align-items:flex-start;margin:12px 24px 0;padding:10px 12px;border-radius:10px;background:#16263d;border:1px solid #234066;color:#d7e6fb;font-size:13.5px}
 #smkv-annbar[hidden]{display:none}
+#smkv-secbar{display:flex;gap:12px;align-items:center;margin:12px 24px 0;padding:10px 12px;border-radius:10px;background:#12241a;border:1px solid #1f6f43;color:#cfe9d9;font-size:13.5px}
+#smkv-secbar[hidden]{display:none}#smkv-secbar>div{flex:1;min-width:0}#smkv-secbar b{color:#fff}#smkv-secbar a{color:#7cc4ff}
+#smkv-secbar button{flex:none;font-size:12px!important}#smkv-secbar .smkv-primary{background:#2b6fd6!important;border-color:#2b6fd6!important;color:#fff!important;font-weight:600}
 #smkv-annbar.lvl-warning{background:#2e2514;border-color:#5a4520;color:#f6e3bd}
 #smkv-annbar>div{flex:1;min-width:0;word-break:break-word}#smkv-annbar b{color:#fff}
 #smkv-annbar a,.smkv-ann-b a{color:#7cc4ff}
@@ -2431,7 +2456,7 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 .smkv-ann-item.lvl-warning{border-left-color:#d9a43b}.smkv-ann-item.lvl-important{border-left-color:#e5484d}
 .smkv-ann-item.read{opacity:.7}.smkv-ann-item .smkv-ann-h{font-size:15px}
 .smkv-new{font-style:normal;font-size:10px;background:#e5484d;color:#fff;border-radius:8px;padding:0 6px;vertical-align:2px}
-@media (max-width:820px){#smkv-annbar{margin:10px 12px 0}}
+@media (max-width:820px){#smkv-annbar,#smkv-secbar{margin:10px 12px 0}#smkv-secbar{flex-wrap:wrap}}
 #smkv-player.engine #smkv-canvas{display:block}
 #smkv-player.engine #smkv-video{visibility:hidden}
 #smkv-player:not(.ctl) #smkv-canvas{cursor:none}
