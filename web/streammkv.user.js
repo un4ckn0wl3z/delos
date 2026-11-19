@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         StreamMKV
 // @namespace    https://github.com/un4ckn0wl3z/streammkv
-// @version      1.8.1
+// @version      1.9.0
 // @description  Watch MKV files from your seedbox in the browser — pick audio tracks and subtitles.
 // @author       un4ckn0wl3z
 // @homepageURL  https://github.com/un4ckn0wl3z/streammkv
