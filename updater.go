@@ -57,6 +57,7 @@ type UpdateStatus struct {
 	Error      string       `json:"error,omitempty"`
 	Installing bool         `json:"installing"`
 	Supported  bool         `json:"supported"` // self-replace + re-exec works on this platform
+	Docker     bool         `json:"docker,omitempty"`
 }
 
 type Updater struct {
@@ -137,7 +138,7 @@ func (u *Updater) Status() UpdateStatus {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	st := UpdateStatus{Current: version, Latest: u.latest, AutoUpdate: u.settings.Get().AutoUpdate,
-		Error: u.lastErr, Installing: u.installing, Supported: selfUpdateSupported()}
+		Error: u.lastErr, Installing: u.installing, Supported: selfUpdateSupported(), Docker: os.Getenv("STREAMMKV_DOCKER") != ""}
 	if !u.lastCheck.IsZero() {
 		st.LastCheck = u.lastCheck.Unix()
 	}

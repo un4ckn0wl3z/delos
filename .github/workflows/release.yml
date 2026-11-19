@@ -98,6 +98,15 @@ jobs:
       version: ${{ needs.meta.outputs.version }}
     secrets: inherit
 
+  docker:
+    needs: [meta, server]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker.yml
+    with:
+      version: ${{ needs.meta.outputs.version }}
+
   publish:
     needs: [meta, android, ios, desktop]
     runs-on: ubuntu-latest

@@ -197,6 +197,38 @@ The web app plays the **original file** itself, like mpv does in the app:
 - **Image subtitles** (PGS/VobSub): burned into the video, which forces transcode mode.
 - **The UI is served by the server itself** (same origin as the media), so there are no CORS, mixed-content or CSP problems.
 
+## Run with Docker
+
+The image has the server, ffmpeg and a built-in rtorrent (for downloads), for `linux/amd64` and `linux/arm64`:
+
+```bash
+curl -O https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/docker-compose.yml
+# edit: /path/to/media → your media folder, PUID/PGID → your user (`id`)
+docker compose up -d
+docker compose logs streammkv      # first start prints the admin password
+```
+
+Then open `http://<host>:8090`. Or without compose:
+
+```bash
+docker run -d --name streammkv -p 8090:8090 -p 50000:50000 -p 6881:6881/udp \
+  -e PUID=$(id -u) -e PGID=$(id -g) -e TZ=Asia/Bangkok \
+  -v ./data:/data -v /path/to/media:/media ghcr.io/un4ckn0wl3z/streammkv:latest
+```
+
+| | |
+|---|---|
+| `/media` | your library — the first library points here; more can be added in /admin (anywhere under `/media`, or mount more folders) |
+| `/data` | users, settings, watch progress, chat, caches and the built-in rtorrent's session |
+| `PUID` / `PGID` | files StreamMKV and rtorrent write (downloads, personal libraries in `/media/personal`) belong to this user |
+| `STREAMMKV_USER` / `STREAMMKV_PASS` | the first admin (only used when there are no users yet; otherwise a random password is printed in the log) |
+| `RTORRENT=0` | don't run the built-in rtorrent; `STREAMMKV_RTORRENT=scgi://host:5000` (or a socket path / http URL) uses another one |
+| ports | `8090` web app + API · `50000` + `6881/udp` incoming peers / DHT for the built-in rtorrent |
+
+Torrents download to `/media/downloads` by default (or to the library you pick). The built-in rtorrent's settings are in `/data/rtorrent/rtorrent.rc` — edit and restart the container to change them.
+
+**Updating:** `docker compose pull && docker compose up -d` (the dashboard's self-update is turned off inside Docker). Put it behind a reverse proxy with HTTPS for access from the internet.
+
 ## Install on the seedbox (no root, no package manager needed)
 
 **From your PC (easiest):** download and run the deploy script. It asks for the seedbox host, SSH user/port, your movie folder and an optional port, then installs or upgrades over SSH. You only type the SSH password. It remembers your answers for next time.

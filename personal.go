@@ -22,6 +22,9 @@ func (s *Server) userLibRoot() string {
 	if v := strings.TrimSpace(s.settings.Get().UserLibRoot); v != "" {
 		return v
 	}
+	if v := strings.TrimSpace(os.Getenv("STREAMMKV_USER_LIBS")); v != "" {
+		return v
+	}
 	home, _ := os.UserHomeDir()
 	if home == "" {
 		home = s.cfg.DataDir

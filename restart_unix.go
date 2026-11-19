@@ -7,7 +7,8 @@ import (
 	"syscall"
 )
 
-func selfUpdateSupported() bool { return true }
+// selfUpdateSupported: not inside the Docker image — there the image is updated instead.
+func selfUpdateSupported() bool { return os.Getenv("STREAMMKV_DOCKER") == "" }
 
 // restartSelf replaces the current process image with the (new) binary at exe.
 // The PID stays the same; the listening socket is closed on exec (CLOEXEC) and re-bound.

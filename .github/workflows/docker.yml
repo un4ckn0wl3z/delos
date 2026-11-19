@@ -1,0 +1,63 @@
+# Builds the server image and smoke-tests it. On release (called by release.yml)
+# it also publishes linux/amd64 + linux/arm64 images to ghcr.io/<owner>/streammkv.
+name: docker
+on:
+  push:
+    branches: [main]
+    paths: ['Dockerfile', '.dockerignore', 'deploy/docker/**', 'tools/docker-smoke.sh', '.github/workflows/docker.yml']
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+permissions:
+  contents: read
+  packages: write
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Version
+        id: v
+        run: echo "version=${{ inputs.version || 'dev' }}" >> "$GITHUB_OUTPUT"
+      - name: Build (amd64, for the test)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: streammkv:test
+          build-args: VERSION=${{ steps.v.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test
+        run: bash tools/docker-smoke.sh streammkv:test
+      - name: Log in to GHCR
+        if: inputs.version != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image name
+        id: n
+        run: echo "image=ghcr.io/$(echo '${{ github.repository_owner }}' | tr 'A-Z' 'a-z')/streammkv" >> "$GITHUB_OUTPUT"
+      - name: Publish (amd64 + arm64)
+        if: inputs.version != ''
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: VERSION=${{ steps.v.outputs.version }}
+          tags: |
+            ${{ steps.n.outputs.image }}:${{ steps.v.outputs.version }}
+            ${{ steps.n.outputs.image }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.v.outputs.version }}
+            org.opencontainers.image.title=StreamMKV
+          cache-from: type=gha

@@ -432,6 +432,9 @@ func (d *Downloads) rt() (*RTorrent, error) {
 	d.rtMu.Lock()
 	defer d.rtMu.Unlock()
 	want := strings.TrimSpace(d.s.settings.Get().RTorrent)
+	if want == "" {
+		want = strings.TrimSpace(os.Getenv("STREAMMKV_RTORRENT")) // e.g. the Docker image's built-in rtorrent
+	}
 	if want != "" {
 		d.rtEP = want
 	} else if d.rtEP == "" && time.Since(d.rtChecked) > 30*time.Second {

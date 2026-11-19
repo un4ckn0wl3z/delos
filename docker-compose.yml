@@ -1,0 +1,27 @@
+# StreamMKV with Docker
+#   1. Set the media path below (the folder with your movies / TV / music).
+#   2. docker compose up -d
+#   3. Open http://<host>:8090 — on first start the admin password is in `docker compose logs streammkv`
+#      (or set STREAMMKV_USER / STREAMMKV_PASS below before the first start).
+# Update: docker compose pull && docker compose up -d
+services:
+  streammkv:
+    image: ghcr.io/un4ckn0wl3z/streammkv:latest
+    container_name: streammkv
+    restart: unless-stopped
+    ports:
+      - "8090:8090"          # web app + API
+      - "50000:50000"        # built-in rtorrent: incoming peers
+      - "6881:6881/udp"      # built-in rtorrent: DHT
+    environment:
+      PUID: "1000"           # files in /media are written as this user/group (see `id` on the host)
+      PGID: "1000"
+      TZ: Asia/Bangkok
+      # STREAMMKV_USER: admin
+      # STREAMMKV_PASS: change-me
+      # RTORRENT: "0"                              # don't run the built-in rtorrent
+      # STREAMMKV_RTORRENT: scgi://rtorrent:5000   # …or use another rtorrent (SCGI socket / host:port / http URL)
+      # STREAMMKV_MAX_STREAMS: "3"                 # default max transcodes
+    volumes:
+      - ./data:/data                 # users, settings, progress, chat, rtorrent session
+      - /path/to/media:/media        # your library; first library = /media, torrents → /media/downloads
