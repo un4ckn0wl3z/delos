@@ -1,7 +1,7 @@
 name: streammkv
 description: StreamMKV — watch MKV files from your seedbox.
 publish_to: 'none'
-version: 1.6.4
+version: 1.7.0
 
 environment:
   sdk: ^3.5.0
