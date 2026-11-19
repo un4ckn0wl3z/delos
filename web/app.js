@@ -1,5 +1,5 @@
 /*
- * StreamMKV web app — served by the StreamMKV server at its own address
+ * Delos web app (formerly StreamMKV) — served by the Delos server at its own address
  * (no browser extension needed). Movies, TV, music, chat, downloads, player.
  * Small per-browser settings live in localStorage; sign-in is the server's
  * session cookie.
@@ -1344,7 +1344,7 @@
       $('#smkv-watch').classList.remove('show');
       document.body.classList.remove('smkv-watching');
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-      document.title = 'StreamMKV';
+      document.title = 'Delos';
       route();
       heartbeat(true); // no longer watching
     }
@@ -1905,7 +1905,7 @@
         navigator.mediaSession.metadata = new MediaMetadata({ title: t.title || t.name, artist: t.artist || '', album: t.album || '', artwork: img ? [{ src: img, sizes: '512x512' }] : [] });
       }
       document.querySelectorAll('.smkv-tracks tr').forEach((tr) => tr.classList.remove('on'));
-      document.title = `♪ ${t.title || t.name} — StreamMKV`;
+      document.title = `♪ ${t.title || t.name} — Delos`;
       drawNow.scrolled = false;
       drawNow(); drawMini();
     }
@@ -2061,7 +2061,7 @@
       renderSubs(true); updateSubDelay();
       $('#smkv-title').textContent = f.name;
       $('#smkv-meta').textContent = 'Probing…';
-      document.title = f.name + ' — StreamMKV';
+      document.title = f.name + ' — Delos';
       spinner(true);
       let info, server = null;
       try {
@@ -2510,7 +2510,7 @@
 <div id="smkv-app">
   <aside id="smkv-side">
     <header>
-      <b>StreamMKV</b><span class="smkv-sp"></span>
+      <b title="Delos — Artemis for films, Apollo for music">Delos</b><span class="smkv-sp"></span>
       <a id="smkv-admin" class="smkv-hb" href="admin" target="_blank" title="Admin dashboard" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 8.4-7 10-4-1.6-7-5.4-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></a>
       <button id="smkv-refresh" class="smkv-hb" title="Reload libraries" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>
       <button id="smkv-ann" class="smkv-hb" title="Announcements"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4a1 1 0 0 0 1 1h2l6 4V5L7 9H5a1 1 0 0 0-1 1z"/><path d="M17 9.5a3.5 3.5 0 0 1 0 5"/><path d="M19.5 7a7 7 0 0 1 0 10"/></svg><i hidden></i></button>
@@ -2582,7 +2582,7 @@
 <div id="smkv-detail"></div>
 <div id="smkv-toast"></div>
 <div id="smkv-login"><form>
-  <h2>Sign in to StreamMKV</h2>
+  <h2>Sign in to Delos</h2><div class="smkv-tagline">🌙 Artemis for films · ☀️ Apollo for music</div>
   <input name="username" placeholder="Username" autocomplete="username">
   <input name="password" type="password" placeholder="Password" autocomplete="current-password">
   <button type="submit">Sign in</button>
@@ -2720,6 +2720,7 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 #smkv-chat .smkv-msg:hover .smkv-rxadd,#smkv-chat .smkv-msg.act .smkv-rxadd{visibility:visible}
 @media (hover:none){#smkv-chat .smkv-rxadd{visibility:visible;opacity:.55}}
 .smkv-from{color:#9db7d8}
+.smkv-tagline{color:#8b95a5;font-size:13px;margin:-4px 0 14px}
 .smkv-plpop{display:flex;flex-direction:column;min-width:220px;max-height:min(60vh,420px);overflow:auto;padding:6px}
 .smkv-plpop .smkv-plh{font:600 11px system-ui,sans-serif;color:#7d8696;text-transform:uppercase;letter-spacing:.5px;padding:6px 10px 4px}
 .smkv-pop.smkv-plpop button{font-size:14px;text-align:left;padding:8px 10px;display:flex;justify-content:space-between;gap:12px}

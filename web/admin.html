@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="favicon.png">
-<title>StreamMKV · Admin</title>
+<title>Delos · Admin</title>
 <style>
   :root{--bg:#0d0f13;--panel:#151920;--line:#252b35;--text:#d4d9e1;--dim:#7d8696;--accent:#4a9eff;--ok:#5fd38d;--warn:#ffc163;--bad:#ff7a7a}
   *{box-sizing:border-box}
@@ -86,7 +86,7 @@
 </head>
 <body>
 <header>
-  <h1><a href="./" title="Open StreamMKV" style="color:inherit;text-decoration:none">StreamMKV</a> <span class="dim" style="font-weight:normal">Admin</span></h1>
+  <h1><a href="./" title="Open Delos" style="color:inherit;text-decoration:none">Delos</a> <span class="dim" style="font-weight:normal">Admin</span></h1>
   <span class="ver" id="ver"></span>
   <span class="sp"></span>
   <span class="dim" id="who"></span>
@@ -168,7 +168,7 @@
     </div>
     <div id="tor-list"></div>
     <form class="add" id="seed-form" style="font-size:13px;flex-wrap:wrap">
-      <span class="dim" title="For torrents added through StreamMKV. Each download can override it.">Seeding rule</span>
+      <span class="dim" title="For torrents added through Delos. Each download can override it.">Seeding rule</span>
       stop at ratio <input type="number" name="ratio" min="0" step="0.1" style="width:80px" placeholder="∞">
       or after <input type="number" name="hours" min="0" step="1" style="width:80px" placeholder="∞"> hours seeding, then
       <select name="action"><option value="stop">stop seeding</option><option value="remove">remove the torrent (keep files)</option></select>
@@ -239,7 +239,7 @@
 </main>
 
 <div id="login"><form class="box" id="login-form">
-  <h3>Sign in to StreamMKV</h3>
+  <h3>Sign in to Delos</h3>
   <input type="text" name="username" placeholder="Username" autocomplete="username" required>
   <input type="password" name="password" placeholder="Password" autocomplete="current-password" required>
   <div class="err"></div>
@@ -259,7 +259,7 @@
   const ago = (t) => { if (!t) return '—'; const d = Date.now() / 1000 - t; if (d < 60) return 'just now'; if (d < 3600) return Math.floor(d / 60) + ' min ago'; if (d < 86400) return Math.floor(d / 3600) + ' h ago'; return Math.floor(d / 86400) + ' d ago'; };
   const dur = (t) => { const d = Date.now() / 1000 - t; if (d < 3600) return Math.floor(d / 60) + 'm'; if (d < 86400) return Math.floor(d / 3600) + 'h ' + Math.floor(d % 3600 / 60) + 'm'; return Math.floor(d / 86400) + 'd ' + Math.floor(d % 86400 / 3600) + 'h'; };
   const base = (p) => String(p).split('/').pop();
-  const agent = (a) => /StreamMKV|mpv|libmpv|Lavf/i.test(a) ? 'app' : /Firefox/.test(a) ? 'Firefox' : /Edg\//.test(a) ? 'Edge' : /Chrome/.test(a) ? 'Chrome' : /Safari/.test(a) ? 'Safari' : (a || '').slice(0, 24);
+  const agent = (a) => /Delos|StreamMKV|mpv|libmpv|Lavf/i.test(a) ? 'app' : /Firefox/.test(a) ? 'Firefox' : /Edg\//.test(a) ? 'Edge' : /Chrome/.test(a) ? 'Chrome' : /Safari/.test(a) ? 'Safari' : (a || '').slice(0, 24);
 
   let toastT = 0;
   function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
@@ -330,7 +330,7 @@
     el.className = 'update' + (u.available ? ' avail' : '');
     let msg;
     if (u.installing) msg = `<b>Installing update…</b> the server restarts by itself.`;
-    else if (u.available) msg = `<b>StreamMKV ${esc(u.latest.version)} is available</b> <span class="dim">· you run ${esc(u.current)}</span>`;
+    else if (u.available) msg = `<b>Delos ${esc(u.latest.version)} is available</b> <span class="dim">· you run ${esc(u.current)}</span>`;
     else if (u.latest) msg = `<b>Up to date</b> <span class="dim">· ${esc(u.current)} · checked ${ago(u.lastCheck)}</span>`;
     else msg = `<b>Version ${esc(u.current)}</b> <span class="dim">· not checked yet</span>`;
     if (u.error) msg += `<div style="color:var(--bad);font-size:12px">${esc(u.error)}</div>`;
@@ -346,7 +346,7 @@
     };
     el.querySelector('#chk').onclick = async () => { try { renderUpdate(await api('admin/update/check', { method: 'POST' })); } catch (x) { toast(x.message); } };
     const n = el.querySelector('#notes');
-    if (n) n.onclick = () => modal(`<h3>StreamMKV ${esc(u.latest.version)}</h3><div class="dim">${esc((u.latest.date || '').slice(0, 10))} · <a href="${esc(u.latest.url)}" target="_blank" rel="noopener">GitHub</a></div><pre class="notes">${esc(u.latest.notes || '—')}</pre><div class="row"><button data-close>Close</button></div>`);
+    if (n) n.onclick = () => modal(`<h3>Delos ${esc(u.latest.version)}</h3><div class="dim">${esc((u.latest.date || '').slice(0, 10))} · <a href="${esc(u.latest.url)}" target="_blank" rel="noopener">GitHub</a></div><pre class="notes">${esc(u.latest.notes || '—')}</pre><div class="row"><button data-close>Close</button></div>`);
     const i = el.querySelector('#inst');
     if (i) i.onclick = () => confirmBox(`Update to ${u.latest.version} now? Active streams will stop for a few seconds.`, 'Update', installUpdate, false);
     sec.hidden = false;
@@ -1003,7 +1003,7 @@
   }
 
   let torData = null, torFilter = 'all', torTimer = null;
-  const torFilters = [['all', 'All'], ['downloading', 'Downloading'], ['seeding', 'Seeding'], ['paused', 'Paused'], ['stopped', 'Stopped'], ['smkv', 'From StreamMKV']];
+  const torFilters = [['all', 'All'], ['downloading', 'Downloading'], ['seeding', 'Seeding'], ['paused', 'Paused'], ['stopped', 'Stopped'], ['smkv', 'From Delos']];
   function renderTorrents(d) {
     torData = d;
     seedRule = d.seed || seedRule;

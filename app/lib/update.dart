@@ -9,7 +9,7 @@ import 'settings.dart';
 
 /// Set by CI: flutter build apk --dart-define=APP_VERSION=1.2.0
 const appVersion = String.fromEnvironment('APP_VERSION', defaultValue: 'dev');
-const _repo = 'un4ckn0wl3z/streammkv';
+const _repo = 'un4ckn0wl3z/delos';
 
 class AppRelease {
   AppRelease(this.version, this.notes, this.pageUrl, this.apkUrl);
@@ -89,7 +89,7 @@ Future<void> checkForUpdate(BuildContext context, Settings settings, {bool manua
   await showDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: Text('StreamMKV ${rel.version}'),
+      title: Text('Delos ${rel.version}'),
       content: SingleChildScrollView(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
           Text('You have $appVersion.'),
@@ -102,9 +102,9 @@ Future<void> checkForUpdate(BuildContext context, Settings settings, {bool manua
               Platform.isIOS
                   ? 'Update it in SideStore / AltStore (My Apps → refresh sources), or download the IPA and open it with SideStore.'
                   : Platform.isMacOS
-                  ? 'Download the new build, quit StreamMKV and replace StreamMKV.app in Applications.'
+                  ? 'Download the new build, quit Delos and replace Delos.app (or the old StreamMKV.app) in Applications.'
                   : Platform.isWindows || Platform.isLinux
-                  ? 'Download the new build, close StreamMKV and replace the old folder with the new one.'
+                  ? 'Download the new build, close Delos and replace the old folder with the new one.'
                   : 'The APK downloads in your browser — open it to install. If Android says "App not installed", uninstall the old version first (your progress is kept on the server).',
               style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))),
         ]),

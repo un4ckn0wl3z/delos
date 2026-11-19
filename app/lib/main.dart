@@ -30,7 +30,7 @@ class StreamMkvApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = ColorScheme.fromSeed(seedColor: const Color(0xFF4A9EFF), brightness: Brightness.dark);
     return MaterialApp(
-      title: 'StreamMKV',
+      title: 'Delos',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: scheme,

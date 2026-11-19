@@ -158,7 +158,7 @@ func fetchSmall(src string, allowPrivate bool, max int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (StreamMKV/"+version+")")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Delos/"+version+")")
 	c := httpClientFor(allowPrivate)
 	c.Timeout = 30 * time.Second
 	resp, err := c.Do(req)
@@ -188,7 +188,7 @@ func probeName(src string, allowPrivate bool) (string, int64) {
 		if err != nil {
 			return "", -1
 		}
-		req.Header.Set("User-Agent", "Mozilla/5.0 (StreamMKV/"+version+")")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Delos/"+version+")")
 		if m == "GET" {
 			req.Header.Set("Range", "bytes=0-0")
 		}

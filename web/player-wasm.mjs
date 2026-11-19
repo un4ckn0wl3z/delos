@@ -1,5 +1,5 @@
 /*
- * StreamMKV in-browser player engine.
+ * Delos in-browser player engine.
  *
  * Reads the original file straight from the server (HTTP Range on api/raw),
  * demuxes it in the browser (Mediabunny), decodes video with the device's

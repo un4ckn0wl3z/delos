@@ -191,7 +191,7 @@ func fetchTo(ctx context.Context, src, dst string, mode os.FileMode) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, "GET", src, nil)
-	req.Header.Set("User-Agent", "StreamMKV/"+version)
+	req.Header.Set("User-Agent", "Delos/"+version)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err

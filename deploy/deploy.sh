@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Deploy / upgrade StreamMKV on your seedbox over SSH (Linux / macOS).
+# Deploy / upgrade Delos on your seedbox over SSH (Linux / macOS).
 # Asks for the connection details; answers are remembered for next time.
 set -euo pipefail
 
-URL="https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/deploy/install.sh"
+URL="https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/deploy/install.sh"
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}/streammkv-deploy.env"
 
 SSH_HOST="${SSH_HOST:-}" SSH_USER="${SSH_USER:-}" SSH_PORT="${SSH_PORT:-22}"
@@ -17,7 +17,7 @@ ask() { # var prompt
   if [ -n "$in" ]; then printf -v "$1" '%s' "$in"; fi
 }
 
-echo "StreamMKV — deploy / upgrade on a seedbox over SSH"
+echo "Delos — deploy / upgrade on a seedbox over SSH"
 echo "(press Enter to keep the value in [brackets])"
 echo
 ask SSH_HOST "Seedbox host"
@@ -25,7 +25,7 @@ ask SSH_USER "SSH username"
 ask SSH_PORT "SSH port"
 [ -n "$MEDIA_ROOT" ] || MEDIA_ROOT="/home/$SSH_USER/torrents"
 ask MEDIA_ROOT "Folder with your videos — mkv, mp4, … (on the seedbox)"
-ask APP_PORT "StreamMKV port (blank = random free port, or keep the current one)"
+ask APP_PORT "Delos port (blank = random free port, or keep the current one)"
 
 [ -n "$SSH_HOST" ] && [ -n "$SSH_USER" ] || { echo "Host and username are required." >&2; exit 1; }
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>StreamMKV · Secure connection</title>
+<title>Delos · Secure connection</title>
 <link rel="icon" href="favicon.png">
 <style>
   :root{color-scheme:dark;--bg:#0d1015;--panel:#161a21;--line:#2a313c;--dim:#8b95a5;--accent:#4a9eff}
@@ -50,12 +50,12 @@
       <li>Finish, confirm the security prompt, then restart the browser.</li></ol></details>
     <details><summary>macOS (Safari, Chrome)</summary><ol>
       <li>Double-click the file — it opens Keychain Access and adds it to <b>login</b>.</li>
-      <li>Double-click the <b>StreamMKV … CA</b> entry → <b>Trust</b> → <b>When using this certificate: Always Trust</b>.</li>
+      <li>Double-click the <b>Delos … CA</b> entry (older servers: <b>StreamMKV … CA</b>) → <b>Trust</b> → <b>When using this certificate: Always Trust</b>.</li>
       <li>Close the window (enter your password), then reload this page.</li></ol></details>
     <details><summary>iPhone / iPad</summary><ol>
       <li>Open this page in <b>Safari</b>, tap <b>Download certificate</b> → <b>Allow</b>.</li>
       <li>Settings → <b>Profile Downloaded</b> → <b>Install</b>.</li>
-      <li>Settings → General → About → <b>Certificate Trust Settings</b> → turn on <b>StreamMKV … CA</b>.</li></ol></details>
+      <li>Settings → General → About → <b>Certificate Trust Settings</b> → turn on <b>Delos … CA</b> (or <b>StreamMKV … CA</b>).</li></ol></details>
     <details><summary>Android (Chrome)</summary><ol>
       <li>Download the certificate.</li>
       <li>Settings → Security (and privacy) → More security settings → Encryption &amp; credentials → <b>Install a certificate</b> → <b>CA certificate</b> → pick the file.</li>
@@ -74,7 +74,7 @@
   try { info = await (await fetch('tls/info')).json(); } catch { /* ignore */ }
   if (secure) {
     st.className = 'card ok';
-    st.innerHTML = `✅ You're on the secure address — in-browser playback is available.<div class="btns"><a class="btn primary" href="./">Open StreamMKV</a></div>`;
+    st.innerHTML = `✅ You're on the secure address — in-browser playback is available.<div class="btns"><a class="btn primary" href="./">Open Delos</a></div>`;
   } else if (info.mode && info.mode !== 'off') {
     st.innerHTML = `You're on <b>http</b>. Open the secure address — your login carries over.
       <div class="btns"><a class="btn primary" href="${https}">🔒 Open ${https.replace(/^https:\/\//, '').replace(/\/$/, '')}</a></div>`;

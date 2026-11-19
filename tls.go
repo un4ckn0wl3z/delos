@@ -334,7 +334,7 @@ func (m *TLSManager) issue(newCA bool) error {
 		if err != nil {
 			return err
 		}
-		name := "StreamMKV"
+		name := "Delos"
 		for _, h := range dns {
 			if h != "localhost" {
 				name += " " + h
@@ -343,7 +343,7 @@ func (m *TLSManager) issue(newCA bool) error {
 		}
 		tpl := &x509.Certificate{
 			SerialNumber:                serial(),
-			Subject:                     pkix.Name{CommonName: name + " CA", Organization: []string{"StreamMKV"}},
+			Subject:                     pkix.Name{CommonName: name + " CA", Organization: []string{"Delos"}},
 			NotBefore:                   now,
 			NotAfter:                    now.AddDate(10, 0, 0),
 			IsCA:                        true,

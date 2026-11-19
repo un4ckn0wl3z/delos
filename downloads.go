@@ -334,7 +334,7 @@ func (d *Downloads) fetch(ctx context.Context, j *DownloadJob) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (StreamMKV/"+version+")")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Delos/"+version+")")
 	if have > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", have))
 	}

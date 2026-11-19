@@ -4,9 +4,9 @@
 // @version      2.5.0
 // @description  StreamMKV is now a website: open your server's address in any browser. You can remove this userscript.
 // @author       un4ckn0wl3z
-// @homepageURL  https://github.com/un4ckn0wl3z/streammkv
-// @updateURL    https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/web/streammkv.user.js
-// @downloadURL  https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/web/streammkv.user.js
+// @homepageURL  https://github.com/un4ckn0wl3z/delos
+// @updateURL    https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/web/streammkv.user.js
+// @downloadURL  https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/web/streammkv.user.js
 // @match        *://*/*
 // @grant        GM_getValue
 // @grant        GM_setValue

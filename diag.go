@@ -73,7 +73,7 @@ func testTMDB(key, lang string) checkResult {
 func testMusicBrainz() checkResult {
 	t0 := time.Now()
 	req, _ := http.NewRequest("GET", mbBase()+"/release-group?fmt=json&limit=1&query="+url.QueryEscape(`releasegroup:"Abbey Road"`), nil)
-	req.Header.Set("User-Agent", "StreamMKV/"+version+" ( https://github.com/un4ckn0wl3z/streammkv )")
+	req.Header.Set("User-Agent", "Delos/"+version+" ( https://github.com/un4ckn0wl3z/delos )")
 	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	r := checkResult{MS: time.Since(t0).Milliseconds()}
 	if err != nil {

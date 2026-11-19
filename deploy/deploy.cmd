@@ -1,9 +1,9 @@
 @echo off
-rem Deploy / upgrade StreamMKV on your seedbox over SSH (Windows 10/11, built-in OpenSSH).
+rem Deploy / upgrade Delos on your seedbox over SSH (Windows 10/11, built-in OpenSSH).
 rem Asks for the connection details; answers are remembered in %USERPROFILE%\.streammkv-deploy.cmd
 setlocal EnableExtensions
-title StreamMKV deploy
-set "URL=https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/deploy/install.sh"
+title Delos deploy
+set "URL=https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/deploy/install.sh"
 set "CFG=%USERPROFILE%\.streammkv-deploy.cmd"
 
 set "SSH_HOST="
@@ -19,7 +19,7 @@ where ssh >nul 2>nul || (
   exit /b 1
 )
 
-echo StreamMKV - deploy / upgrade on a seedbox over SSH
+echo Delos - deploy / upgrade on a seedbox over SSH
 echo (press Enter to keep the value in [brackets])
 echo.
 call :ask SSH_HOST "Seedbox host"
@@ -27,7 +27,7 @@ call :ask SSH_USER "SSH username"
 call :ask SSH_PORT "SSH port"
 if not defined MEDIA_ROOT set "MEDIA_ROOT=/home/%SSH_USER%/torrents"
 call :ask MEDIA_ROOT "Folder with your videos — mkv, mp4, … (on the seedbox)"
-call :ask APP_PORT "StreamMKV port (blank = random free port, or keep the current one)"
+call :ask APP_PORT "Delos port (blank = random free port, or keep the current one)"
 
 if not defined SSH_HOST goto :missing
 if not defined SSH_USER goto :missing

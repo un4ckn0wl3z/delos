@@ -20,7 +20,7 @@ if "android.permission.INTERNET" not in m:
     m = re.sub(r"(<manifest[^>]*>)", r'\1\n    <uses-permission android:name="android.permission.INTERNET"/>', m, count=1)
 if "usesCleartextTraffic" not in m:
     m = m.replace("<application", '<application\n        android:usesCleartextTraffic="true"', 1)
-m = re.sub(r'android:label="[^"]*"', 'android:label="StreamMKV"', m, count=1)
+m = re.sub(r'android:label="[^"]*"', 'android:label="Delos"', m, count=1)
 # url_launcher: allow resolving browsers for https links (Android 11+ package visibility)
 if 'android.intent.action.VIEW' not in m:
     m = m.replace("</manifest>", """    <queries>

@@ -1,6 +1,6 @@
-# StreamMKV server image: the Go binary + ffmpeg + (optional) a built-in rtorrent.
+# Delos server image: the Go binary + ffmpeg + (optional) a built-in rtorrent.
 #   docker compose up -d        (see docker-compose.yml)
-# Multi-arch (amd64, arm64) images are published to ghcr.io/un4ckn0wl3z/streammkv.
+# Multi-arch (amd64, arm64) images are published to ghcr.io/un4ckn0wl3z/delos.
 
 FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS build
 ARG TARGETOS TARGETARCH VERSION=dev

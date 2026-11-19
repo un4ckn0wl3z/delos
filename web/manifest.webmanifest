@@ -1,6 +1,6 @@
 {
-  "name": "StreamMKV",
-  "short_name": "StreamMKV",
+  "name": "Delos",
+  "short_name": "Delos",
   "description": "Movies, TV and music from your seedbox",
   "start_url": "./",
   "scope": "./",

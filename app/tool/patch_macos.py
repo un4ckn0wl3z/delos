@@ -13,7 +13,7 @@ if not mac.exists():
 
 cfg = mac / "Runner/Configs/AppInfo.xcconfig"
 s = cfg.read_text()
-s = re.sub(r"^PRODUCT_NAME = .*$", "PRODUCT_NAME = StreamMKV", s, flags=re.M)
+s = re.sub(r"^PRODUCT_NAME = .*$", "PRODUCT_NAME = Delos", s, flags=re.M)
 cfg.write_text(s)
 
 for name in ("DebugProfile.entitlements", "Release.entitlements"):

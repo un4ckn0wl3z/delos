@@ -40,7 +40,7 @@ class AudioController extends ChangeNotifier {
   }
 
   final Api api;
-  final player = Player(configuration: const PlayerConfiguration(title: 'StreamMKV music'));
+  final player = Player(configuration: const PlayerConfiguration(title: 'Delos music'));
   final _subs = <StreamSubscription>[];
   List<Item> queue = [];
   int index = -1;

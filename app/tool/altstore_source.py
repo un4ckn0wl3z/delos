@@ -3,21 +3,21 @@
 
 usage: altstore_source.py VERSION BUILD IPA_PATH > altstore-source.json
 Add the source in SideStore/AltStore with:
-  https://github.com/un4ckn0wl3z/streammkv/releases/latest/download/altstore-source.json
+  https://github.com/un4ckn0wl3z/delos/releases/latest/download/altstore-source.json
 """
 import datetime
 import json
 import os
 import sys
 
-REPO = os.environ.get("GITHUB_REPOSITORY", "un4ckn0wl3z/streammkv")
+REPO = os.environ.get("GITHUB_REPOSITORY", "un4ckn0wl3z/delos")
 version, build, ipa = sys.argv[1], sys.argv[2], sys.argv[3]
 icon = f"https://raw.githubusercontent.com/{REPO}/main/app/assets/icon.png"
-desc = ("Watch MKV movies from your StreamMKV seedbox server: original quality playback with every "
+desc = ("Watch MKV movies from your Delos seedbox server: original quality playback with every "
         "audio track and subtitle (ASS, PGS, SRT), or server-side transcoding to save data. "
         "Watch progress syncs with the browser userscript and other devices.")
 src = {
-    "name": "StreamMKV",
+    "name": "Delos",
     "identifier": "dev.un4ckn0wl3z.streammkv.source",
     "subtitle": "Your seedbox, on your phone.",
     "description": desc,
@@ -25,7 +25,7 @@ src = {
     "website": f"https://github.com/{REPO}",
     "tintColor": "#4A9EFF",
     "apps": [{
-        "name": "StreamMKV",
+        "name": "Delos",
         "bundleIdentifier": "dev.un4ckn0wl3z.streammkv",
         "developerName": "un4ckn0wl3z",
         "subtitle": "Watch MKV from your seedbox",
@@ -38,7 +38,7 @@ src = {
             "version": version,
             "buildVersion": build,
             "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "localizedDescription": f"StreamMKV {version}. See https://github.com/{REPO}/releases/tag/v{version}",
+            "localizedDescription": f"Delos {version}. See https://github.com/{REPO}/releases/tag/v{version}",
             "downloadURL": f"https://github.com/{REPO}/releases/download/v{version}/streammkv-ios.ipa",
             "size": os.path.getsize(ipa),
             "minOSVersion": "13.0",

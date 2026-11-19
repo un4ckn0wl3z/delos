@@ -227,7 +227,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(children: [
             const Icon(Icons.movie_filter_rounded, color: Color(0xFF4A9EFF)),
             const SizedBox(width: 10),
-            Text('StreamMKV', style: Theme.of(context).textTheme.titleLarge),
+            Text('Delos', style: Theme.of(context).textTheme.titleLarge),
           ]),
         ),
         ListTile(

@@ -17,7 +17,7 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
-/// Client for the StreamMKV server API.
+/// Client for the Delos server API.
 class Api {
   Api(this.settings);
   final Settings settings;

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# StreamMKV installer for seedboxes — no root, no package manager.
+# Delos installer for seedboxes — no root, no package manager.
 #
-#   curl -fsSL https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/deploy/install.sh \
+#   curl -fsSL https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/deploy/install.sh \
 #     | MEDIA_ROOT=$HOME/torrents bash
 #
 # Env (all optional):
@@ -16,7 +16,7 @@
 # Re-running upgrades the binary and keeps port / password / secret.
 set -euo pipefail
 
-REPO="un4ckn0wl3z/streammkv"
+REPO="un4ckn0wl3z/delos"
 DIR="${SMKV_DIR:-$HOME/streammkv}"
 BIN="$DIR/bin"
 ENVF="$DIR/streammkv.env"
@@ -170,7 +170,7 @@ HOST="$(hostname -f 2>/dev/null || hostname)"
 URL="http://$HOST:$PORT/"
 G=$(printf '\033[1;32m'); N=$(printf '\033[0m')
 echo
-echo "${G}StreamMKV $("$BIN/streammkv" version | cut -d' ' -f2) is running${N}"
+echo "${G}Delos $("$BIN/streammkv" version | cut -d' ' -f2) is running${N}"
 echo "  URL       : $URL"
 if [ "$FIRST_INSTALL" = 1 ]; then
   echo "  Admin     : $USER_NAME"

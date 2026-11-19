@@ -1,4 +1,4 @@
-// StreamMKV — stream MKV files from a seedbox to a browser.
+// Delos (formerly StreamMKV) — films and music from a seedbox, in the browser and the apps.
 // The UI is a web app the server serves itself (web/app.js); the player can
 // decode the original file in the browser (web/player-wasm.mjs).
 package main
@@ -240,7 +240,7 @@ func main() {
 		Handler:           logRequests(mux),
 		ReadHeaderTimeout: 15 * time.Second,
 	}
-	log.Printf("StreamMKV %s on %s (%d libraries, %d users)", version, cfg.Listen, len(libs.List()), users.Count())
+	log.Printf("Delos %s on %s (%d libraries, %d users)", version, cfg.Listen, len(libs.List()), users.Count())
 	ln, err := net.Listen("tcp", cfg.Listen)
 	if err != nil {
 		log.Fatal(err)

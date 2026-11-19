@@ -1,4 +1,6 @@
-# StreamMKV
+# Delos
+
+*Formerly StreamMKV.* Named after the island where the twins Artemis and Apollo were born — 🌙 **Artemis** for films and series, ☀️ **Apollo** for music.
 
 ดูหนัง MKV จาก seedbox ผ่านเบราว์เซอร์ เลือก audio track / subtitle ได้ — พร้อมหลาย library (หนัง / ซีรีส์ / เพลง / วิดีโออื่น), ดึง metadata จาก TMDB + MusicBrainz, จัดกลุ่มตามแนว ศิลปิน อัลบั้ม และสตรีมเพลง (mp3/flac/…)
 
@@ -42,20 +44,20 @@ Admins can add as many libraries as they like from **/admin → Libraries**. Pic
 Use **/admin → Downloads** to paste a link, then pick a library and an optional folder:
 
 - **http(s):// links** — the server downloads these itself. If the server restarts, the download resumes. The server checks free disk space first, and the library is rescanned when the download finishes.
-- **magnet:… links, `.torrent` URLs and `.torrent` uploads** — these are handed to the seedbox's **rtorrent**, which downloads straight into the library folder and keeps seeding as usual. They are labelled `StreamMKV` in ruTorrent.
+- **magnet:… links, `.torrent` URLs and `.torrent` uploads** — these are handed to the seedbox's **rtorrent**, which downloads straight into the library folder and keeps seeding as usual. They are labelled `StreamMKV` in ruTorrent (the label is kept from the old name).
 - **YouTube / YouTube Music links and playlists** — downloaded with [yt-dlp](https://github.com/yt-dlp/yt-dlp). Into a **music** library you get the audio (m4a, tagged with title / artist / album, cover art embedded); into a video library, the video (up to 1080p, mkv). A playlist link downloads every entry into a folder named after the playlist (the album tag is the playlist name); for a video link that's part of a playlist you can tick **Whole playlist**. **Update** on a finished playlist fetches only what was added since. yt-dlp and Deno (the JavaScript runtime YouTube now needs) are used from PATH, or set with `STREAMMKV_YTDLP` / `STREAMMKV_YTDLP_JS`, or else downloaded into `<data>/bin` the first time and kept up to date. Only download what you have the right to.
-- **Finding rtorrent:** StreamMKV looks in `~/.rtorrent.rc` / `~/.config/rtorrent/rtorrent.rc` for `network.scgi.open_local` / `scgi_port` and checks common socket paths. If that doesn't find it, enter the address under **Downloads → rtorrent**: a socket path, `127.0.0.1:5000`, or a ruTorrent URL like `https://user:pass@host/rutorrent/plugins/httprpc/action.php` or `/RPC2`. Then press **Test**.
+- **Finding rtorrent:** Delos looks in `~/.rtorrent.rc` / `~/.config/rtorrent/rtorrent.rc` for `network.scgi.open_local` / `scgi_port` and checks common socket paths. If that doesn't find it, enter the address under **Downloads → rtorrent**: a socket path, `127.0.0.1:5000`, or a ruTorrent URL like `https://user:pass@host/rutorrent/plugins/httprpc/action.php` or `/RPC2`. Then press **Test**.
 - **On your own VPS:** install rtorrent (`apt install rtorrent`), add `network.scgi.open_local = ~/.rtorrent.sock` to `~/.rtorrent.rc` and keep it running (tmux or systemd). HTTP downloads work without rtorrent.
-- **Duplicates:** before downloading, StreamMKV checks for three kinds:
+- **Duplicates:** before downloading, Delos checks for three kinds:
   - **The same torrent** (by info hash, for magnets, .torrent files and .torrent links). If it's already in rtorrent, the download is refused and you're told where it is.
   - **The same file or link.** For http(s) links the file name is checked first.
   - **The same movie or episode** already in a library of that type, even under a different file name.
 
   For the last two you can choose **Download anyway**. After a download finishes and is matched, other versions of the same title are listed on it ("⚠ Also in the library").
 - **Managing torrents:** every torrent download shows its state (Downloading / Seeding / Paused / Stopped / Finished / Checking), ratio, uploaded amount, speeds and peers. Its owner or an admin can **Pause / Resume**, **Stop seeding** and **Seed** again, **Recheck** the files, see **trackers & files**, and **Remove** — either the torrent only (files stay in the library) or the torrent **and its files**. This works in the dashboard, the web app and the app (⋮ menu).
-- **Seeding limits:** in **/admin → Torrents → Seeding rule**, set a ratio and/or hours of seeding after which StreamMKV's torrents stop seeding (or are removed from rtorrent, keeping the files). Each torrent can override it (server default / no limit / its own ratio or hours). Starting a torrent again by hand after it was auto-stopped keeps it seeding.
-- **All of rtorrent (admins):** **/admin → Torrents** lists every torrent in rtorrent, including ones added outside StreamMKV, with filters (downloading / seeding / paused / stopped / from StreamMKV), the same actions, and global **speed limits** (these last until rtorrent restarts; put `throttle.global_down.max_rate` / `throttle.global_up.max_rate` in `.rtorrent.rc` to keep them). *Remove with data* only deletes the torrent's own file/folder, never a library root or your home folder.
-- **🧹 Unused files (admins):** **/admin → Torrents → Find unused files** scans rtorrent's download folder (or any folder you type) for files and folders that no torrent in rtorrent uses any more, e.g. left behind after removing torrents, with their size. Pick what to delete; each item is checked again just before it's removed. Libraries, StreamMKV's own folders and anything containing them are never offered whole; their contents are listed one by one, and items still in a library are marked.
+- **Seeding limits:** in **/admin → Torrents → Seeding rule**, set a ratio and/or hours of seeding after which Delos's torrents stop seeding (or are removed from rtorrent, keeping the files). Each torrent can override it (server default / no limit / its own ratio or hours). Starting a torrent again by hand after it was auto-stopped keeps it seeding.
+- **All of rtorrent (admins):** **/admin → Torrents** lists every torrent in rtorrent, including ones added outside Delos, with filters (downloading / seeding / paused / stopped / from Delos), the same actions, and global **speed limits** (these last until rtorrent restarts; put `throttle.global_down.max_rate` / `throttle.global_up.max_rate` in `.rtorrent.rc` to keep them). *Remove with data* only deletes the torrent's own file/folder, never a library root or your home folder.
+- **🧹 Unused files (admins):** **/admin → Torrents → Find unused files** scans rtorrent's download folder (or any folder you type) for files and folders that no torrent in rtorrent uses any more, e.g. left behind after removing torrents, with their size. Pick what to delete; each item is checked again just before it's removed. Libraries, Delos's own folders and anything containing them are never offered whole; their contents are listed one by one, and items still in a library are marked.
 - **Who can add downloads:** admins, plus users given **Make downloader** in Users. Downloaders only see libraries they have access to, and only they or an admin can cancel or remove their downloads. They can't download from private or loopback addresses.
 
 ## Stream limits
@@ -109,11 +111,11 @@ Admins post messages to users from **/admin → 📣 Announcements**: a title an
 The app can play things **without the server**, in two clearly separate places (📥 Offline tab):
 
 - **☁️ Downloaded from server** — users with the **Offline downloads** permission (admins always; dashboard → Users → *Allow offline*) long-press a movie/episode → *Download to this device*. Downloads run in the background with a notification, can be paused/resumed, and can be removed from the device (the file stays on the server). Downloaded posters get a 📥 badge, and playing them uses the local copy — progress is synced back to the server when it's reachable.
-- **📁 My folders** — add any folder of your own videos on the device (Movies / TV series / Other videos). Files are named-parsed like the server does and scraped from TMDB: through the server when signed in (no key needed), or with your own TMDB key (⚙ Offline settings) when not. On iOS the folder is the app's own *Files → On My iPhone → StreamMKV → My Videos*.
+- **📁 My folders** — add any folder of your own videos on the device (Movies / TV series / Other videos). Files are named-parsed like the server does and scraped from TMDB: through the server when signed in (no key needed), or with your own TMDB key (⚙ Offline settings) when not. On iOS the folder is the app's own *Files → On My iPhone → Delos → My Videos*.
 
 The player shows where a video comes from: **LOCAL** (green: downloaded / my folder) or **STREAM** (blue: Direct / Transcode).
 
-**Where downloads go** (⚙ Offline settings): inside the app (private, default), or on Android the app's folder on device storage / SD card (`Android/data/dev.un4ckn0wl3z.streammkv/files/StreamMKV`, visible over USB and in file managers; Android removes it when the app is uninstalled), on iOS the app's Files folder, and on Windows/Linux/macOS any folder. New downloads use the new place; earlier ones stay where they are.
+**Where downloads go** (⚙ Offline settings): inside the app (private, default), or on Android the app's folder on device storage / SD card (`Android/data/dev.un4ckn0wl3z.streammkv/files/Delos`, visible over USB and in file managers; Android removes it when the app is uninstalled), on iOS the app's Files folder, and on Windows/Linux/macOS any folder. New downloads use the new place; earlier ones stay where they are.
 
 **Offline mode:** on the sign-in screen choose *Use offline — without a server*; the app opens straight to the offline library next time. If the server can't be reached while signed in, the error screen has an *Offline library* button.
 
@@ -121,7 +123,7 @@ Notes: the permission controls the app's download feature — anyone who can str
 
 ## Users & admin dashboard
 
-StreamMKV supports several users. Each user has their own watch progress, resume positions and track choices. Admins choose which libraries each user can see.
+Delos supports several users. Each user has their own watch progress, resume positions and track choices. Admins choose which libraries each user can see.
 
 - **Dashboard:** `http://<server>/admin`. Admins can add users, reset passwords, promote users to admin, sign a user out on every device, and view or clear a user's history. The dashboard also shows who is watching now, the open streams and whether each one is direct or transcode, library and disk stats, and update status. A user who is not an admin only gets a "change password" page there.
 - **CLI on the seedbox:** `~/streammkv/run.sh user list | add NAME [--admin] [--password P] | passwd NAME | admin NAME on|off | revoke NAME | del NAME`. If you leave out the password, a random one is generated. The running server picks up changes within 2 seconds.
@@ -137,7 +139,7 @@ StreamMKV supports several users. Each user has their own watch progress, resume
 
 ## Apps: Android, iOS, Windows, Linux, macOS
 
-The app is written in Flutter with [media_kit](https://github.com/media-kit/media-kit) (libmpv) and is the same on every platform. Download it from [Releases](https://github.com/un4ckn0wl3z/streammkv/releases/latest).
+The app is written in Flutter with [media_kit](https://github.com/media-kit/media-kit) (libmpv) and is the same on every platform. Download it from [Releases](https://github.com/un4ckn0wl3z/delos/releases/latest).
 
 The app browses libraries the same way the web app does: Home (continue watching / recently added), movies with posters and genre filters, TV shows with seasons and Next up, and music by album, artist, genre or song. It has a mini player and background audio. **Long-press** a poster or episode to open a menu (on desktop, right-click). It offers Play/Resume, **Start over** and **Remove from Continue watching**. Admins and editors also get **Identify…**, which lets you search TMDB, pick the right title or type a TMDB ID; **Re-detect** returns the title to automatic matching. Other metadata edits are only in the web app.
 
@@ -145,9 +147,9 @@ The app browses libraries the same way the web app does: Home (continue watching
 |---|---|---|
 | Android | `streammkv-android-arm64-v8a.apk` | Open the APK. When an update fails with "App not installed", uninstall the old app first; your watch progress is kept on the server. |
 | iOS / iPadOS | `streammkv-ios.ipa` (unsigned) | Install with [SideStore](https://sidestore.io) or [AltStore](https://altstore.io) using a free Apple ID. See below. |
-| Windows 10/11 | `streammkv-windows-x64.zip` | Unzip and run `StreamMKV.exe`. |
-| Linux x64 | `streammkv-linux-x64.tar.gz` | Install libmpv first (`sudo apt install libmpv2`), then unpack and run `StreamMKV/streammkv`. A `.desktop` file is included. |
-| macOS 11+ (Intel & Apple Silicon) | `streammkv-macos.zip` | Unzip and move `StreamMKV.app` to Applications. The app is not notarized, so run `xattr -dr com.apple.quarantine /Applications/StreamMKV.app` once, or allow it under System Settings → Privacy & Security → Open Anyway. |
+| Windows 10/11 | `streammkv-windows-x64.zip` | Unzip and run `Delos.exe`. |
+| Linux x64 | `streammkv-linux-x64.tar.gz` | Install libmpv first (`sudo apt install libmpv2`), then unpack and run `Delos/streammkv`. A `.desktop` file is included. |
+| macOS 11+ (Intel & Apple Silicon) | `streammkv-macos.zip` | Unzip and move `Delos.app` to Applications. The app is not notarized, so run `xattr -dr com.apple.quarantine /Applications/Delos.app` once, or allow it under System Settings → Privacy & Security → Open Anyway. |
 
 On Windows, Linux and macOS: press **F** or double-click the middle of the video for fullscreen. Other keys: space play/pause, ←/→ ±10s, J/L ±30s, ↑/↓ volume, A cycles audio, C cycles subtitles, Z/X adjust subtitle delay, Esc leaves fullscreen.
 
@@ -155,15 +157,15 @@ On Windows, Linux and macOS: press **F** or double-click the middle of the video
 
 1. Set up SideStore or AltStore once, following their guides. The first setup needs a computer.
 2. In SideStore/AltStore open **Sources → +** and add
-   `https://github.com/un4ckn0wl3z/streammkv/releases/latest/download/altstore-source.json`
-3. Install **StreamMKV** from that source. Once a new release is out, the source shows the update.
-4. Apps signed with a free Apple ID expire after **7 days**, and you can have at most 3 sideloaded apps. Refresh StreamMKV in SideStore before it expires; SideStore can do this on the phone, or set up the auto-refresh Shortcut.
+   `https://github.com/un4ckn0wl3z/delos/releases/latest/download/altstore-source.json`
+3. Install **Delos** from that source. Once a new release is out, the source shows the update.
+4. Apps signed with a free Apple ID expire after **7 days**, and you can have at most 3 sideloaded apps. Refresh Delos in SideStore before it expires; SideStore can do this on the phone, or set up the auto-refresh Shortcut.
 
 With a paid Apple Developer account, the same CI could upload to TestFlight instead.
 
 ### Android details
 
-The `app/` folder holds a Flutter app that uses [media_kit](https://github.com/media-kit/media-kit) (libmpv). Install the APK from [Releases](https://github.com/un4ckn0wl3z/streammkv/releases): `streammkv-android-arm64-v8a.apk` works on most phones.
+The `app/` folder holds a Flutter app that uses [media_kit](https://github.com/media-kit/media-kit) (libmpv). Install the APK from [Releases](https://github.com/un4ckn0wl3z/delos/releases): `streammkv-android-arm64-v8a.apk` works on most phones.
 
 - **Direct**: mpv streams the original MKV through `/api/raw`, which supports HTTP Range. It plays every codec (HEVC, DTS, TrueHD…), switches between the file's audio and subtitle tracks, and renders full ASS styling and PGS. Seeking is native and accurate, and the server uses almost no CPU, but this mode needs enough bandwidth for the original bitrate.
 - **Transcode 1080/720/480p**: plays the stream from `/api/stream`. Use it to save data on a mobile network.
@@ -208,7 +210,7 @@ The web app plays the **original file** itself, like mpv does in the app:
 The image has the server, ffmpeg and a built-in rtorrent (for downloads), for `linux/amd64` and `linux/arm64`:
 
 ```bash
-curl -O https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/docker-compose.yml
+curl -O https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/docker-compose.yml
 # edit: /path/to/media → your media folder, PUID/PGID → your user (`id`)
 docker compose up -d
 docker compose logs streammkv      # first start prints the admin password
@@ -219,14 +221,14 @@ Then open `http://<host>:8090`. Or without compose:
 ```bash
 docker run -d --name streammkv -p 8090:8090 -p 50000:50000 -p 6881:6881/udp \
   -e PUID=$(id -u) -e PGID=$(id -g) -e TZ=Asia/Bangkok \
-  -v ./data:/data -v /path/to/media:/media ghcr.io/un4ckn0wl3z/streammkv:latest
+  -v ./data:/data -v /path/to/media:/media ghcr.io/un4ckn0wl3z/delos:latest
 ```
 
 | | |
 |---|---|
 | `/media` | your library — the first library points here; more can be added in /admin (anywhere under `/media`, or mount more folders) |
 | `/data` | users, settings, watch progress, chat, caches and the built-in rtorrent's session |
-| `PUID` / `PGID` | files StreamMKV and rtorrent write (downloads, personal libraries in `/media/personal`) belong to this user |
+| `PUID` / `PGID` | files Delos and rtorrent write (downloads, personal libraries in `/media/personal`) belong to this user |
 | `STREAMMKV_USER` / `STREAMMKV_PASS` | the first admin (only used when there are no users yet; otherwise a random password is printed in the log) |
 | `RTORRENT=0` | don't run the built-in rtorrent; `STREAMMKV_RTORRENT=scgi://host:5000` (or a socket path / http URL) uses another one |
 | ports | `8090` web app + API · `50000` + `6881/udp` incoming peers / DHT for the built-in rtorrent |
@@ -247,7 +249,7 @@ At the end it prints the URL, username and password to open in a browser or put 
 **Or, on the seedbox itself** (one-liner; downloads the release binary + static ffmpeg, picks a free port, generates a password, starts the server and adds an autostart cron):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/deploy/install.sh | MEDIA_ROOT=~/torrents bash
+curl -fsSL https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/deploy/install.sh | MEDIA_ROOT=~/torrents bash
 ```
 
 Re-running it upgrades to the latest release and keeps the port/password. Manage with `~/streammkv/run.sh {start|stop|restart|status}`; config lives in `~/streammkv/streammkv.env`.
@@ -287,7 +289,7 @@ To keep it running with no systemd: `nohup ... > streammkv.log 2>&1 &` or `scree
 | `-ext` | `STREAMMKV_EXT` | `.mkv,.mp4,.m4v,.avi,.webm,.mov,.ts,…` | video extensions for video libraries |
 | `-cache` | `STREAMMKV_CACHE` | `~/.cache/streammkv` | WebVTT cache |
 | `-data` | `STREAMMKV_DATA` | same as cache | `users.json`, `progress.json`, `settings.json`, `libraries.json`, `secret.key`, `index/`, `covers/` |
-| | `STREAMMKV_UPDATE_REPO` | `un4ckn0wl3z/streammkv` | GitHub repo to update from (forks) |
+| | `STREAMMKV_UPDATE_REPO` | `un4ckn0wl3z/delos` | GitHub repo to update from (forks) |
 | `-tls` | `STREAMMKV_TLS` | `on` | https on the same port as http (`off` to disable) |
 | `-tls-cert` / `-tls-key` | `STREAMMKV_TLS_CERT` / `_KEY` | — (built-in certificate) | use your own certificate (reloaded when the file changes) |
 | | `STREAMMKV_TLS_HOSTS` | — | extra names/IPs for the built-in certificate, comma-separated |
@@ -303,7 +305,7 @@ The server answers **http and https on the same port** — `http://box:port` and
 
 ### Reverse proxy
 
-If the seedbox already has nginx with a real certificate, you can also mount StreamMKV under a subpath:
+If the seedbox already has nginx with a real certificate, you can also mount Delos under a subpath:
 
 ```nginx
 location /streammkv/ {
@@ -324,7 +326,7 @@ Then open `https://your.box/streammkv/`.
 
 The left sidebar lists your libraries. **Home** shows *Continue watching* and *Recently added*. Movies and shows can be filtered by genre. Music has Albums / Artists / Genres / Songs tabs and a player bar at the bottom with a queue, shuffle and repeat. Admins get a 🛡 link to the dashboard.
 
-> **Upgrading from the userscript (≤ 1.9):** the web app replaces it — remove *StreamMKV* from Tampermonkey. Until you do, the userscript stays out of the way (and on servers older than 2.0 it keeps working as before).
+> **Upgrading from the userscript (≤ 1.9):** the web app replaces it — remove *Delos* from Tampermonkey. Until you do, the userscript stays out of the way (and on servers older than 2.0 it keeps working as before).
 
 ### Keyboard
 

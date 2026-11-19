@@ -71,34 +71,34 @@ jobs:
         working-directory: app
         run: |
           $out = "build/windows/x64/runner/Release"
-          Rename-Item "$out/streammkv.exe" "StreamMKV.exe"
-          New-Item -ItemType Directory -Force ../dist/StreamMKV | Out-Null
-          Copy-Item -Recurse "$out/*" ../dist/StreamMKV/
-          Compress-Archive -Path ../dist/StreamMKV -DestinationPath ../dist/streammkv-windows-x64.zip
-          Remove-Item -Recurse ../dist/StreamMKV
+          Rename-Item "$out/streammkv.exe" "Delos.exe"
+          New-Item -ItemType Directory -Force ../dist/Delos | Out-Null
+          Copy-Item -Recurse "$out/*" ../dist/Delos/
+          Compress-Archive -Path ../dist/Delos -DestinationPath ../dist/streammkv-windows-x64.zip
+          Remove-Item -Recurse ../dist/Delos
           Get-ChildItem ../dist
       - name: Package (Linux)
         if: matrix.platform == 'linux'
         run: |
-          cp -r build/linux/x64/release/bundle ../dist/StreamMKV
-          cp assets/icon.png ../dist/StreamMKV/streammkv.png
-          cat > ../dist/StreamMKV/streammkv.desktop <<DESK
+          cp -r build/linux/x64/release/bundle ../dist/Delos
+          cp assets/icon.png ../dist/Delos/streammkv.png
+          cat > ../dist/Delos/streammkv.desktop <<DESK
           [Desktop Entry]
           Type=Application
-          Name=StreamMKV
-          Comment=Watch MKV files from your seedbox
+          Name=Delos
+          Comment=Films and music from your seedbox
           Exec=sh -c '"\$(dirname "%k")/streammkv"'
           Icon=streammkv
           Categories=AudioVideo;Video;Player;
           DESK
-          sed -i 's/^ *//' ../dist/StreamMKV/streammkv.desktop
-          (cd ../dist && tar czf streammkv-linux-x64.tar.gz StreamMKV && rm -rf StreamMKV && ls -la)
+          sed -i 's/^ *//' ../dist/Delos/streammkv.desktop
+          (cd ../dist && tar czf streammkv-linux-x64.tar.gz Delos && rm -rf Delos && ls -la)
       - name: Package (macOS)
         if: matrix.platform == 'macos'
         run: |
-          APP=build/macos/Build/Products/Release/StreamMKV.app
+          APP=build/macos/Build/Products/Release/Delos.app
           codesign --force --deep --sign - "$APP"   # ad-hoc signature (required on Apple Silicon)
-          lipo -info "$APP/Contents/MacOS/StreamMKV" || true
+          lipo -info "$APP/Contents/MacOS/Delos" || true
           ditto -c -k --sequesterRsrc --keepParent "$APP" ../dist/streammkv-macos.zip
           ls -la ../dist
       - uses: actions/upload-artifact@v4

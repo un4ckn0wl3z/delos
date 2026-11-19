@@ -139,7 +139,7 @@ func (s *Server) handleDownloadZip(w http.ResponseWriter, r *http.Request) {
 	}
 	name := sanitizeFileName(strings.TrimSpace(r.PostForm.Get("name")))
 	if name == "" {
-		name = "StreamMKV"
+		name = "Delos"
 	}
 	defer s.conns.Add(user, r, name+".zip", "download")()
 	w.Header().Set("Content-Type", "application/zip")

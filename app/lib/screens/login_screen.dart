@@ -65,7 +65,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     const Icon(Icons.movie_filter_rounded, size: 56, color: Color(0xFF4A9EFF)),
                     const SizedBox(height: 12),
-                    Text('StreamMKV', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall),
+                    Text('Delos', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall),
+                    const Text('🌙 Artemis for films · ☀️ Apollo for music', textAlign: TextAlign.center, style: TextStyle(fontSize: 12.5, color: Color(0xFF8B95A5))),
                     const SizedBox(height: 28),
                     TextField(
                       controller: _server,

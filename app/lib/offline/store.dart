@@ -439,7 +439,7 @@ class OfflineStore extends ChangeNotifier {
         }
       } else if (Platform.isIOS) {
         final d = await getApplicationDocumentsDirectory();
-        out.add(('Files app (On My iPhone → StreamMKV → Downloads)', '${d.path}/Downloads'));
+        out.add(('Files app (On My iPhone → Delos → Downloads)', '${d.path}/Downloads'));
       }
     } catch (_) {}
     return out;

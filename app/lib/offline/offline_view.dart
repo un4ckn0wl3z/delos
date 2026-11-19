@@ -63,7 +63,7 @@ class _OfflineViewState extends State<OfflineView> {
         child: Text(
           done.isEmpty && active.isEmpty
               ? (widget.api == null
-                  ? 'Movies you save from a StreamMKV server appear here. Sign in to a server to download.'
+                  ? 'Movies you save from a Delos server appear here. Sign in to a server to download.'
                   : 'Long-press a movie or episode → "Download to this device" to watch it without internet.')
               : '${done.length} saved · ${fmtSize(store.downloadedBytes)} on this device${active.isNotEmpty ? ' · ${active.length} in progress' : ''}',
           style: const TextStyle(color: Color(0xFF8B95A5)),
@@ -171,14 +171,14 @@ class _OfflineViewState extends State<OfflineView> {
     final messenger = ScaffoldMessenger.of(context);
     String? path;
     if (Platform.isIOS) {
-      // iOS: the app's own folder, visible in the Files app (On My iPhone → StreamMKV)
+      // iOS: the app's own folder, visible in the Files app (On My iPhone → Delos)
       final docs = await getApplicationDocumentsDirectory();
       final d = Directory('${docs.path}/My Videos');
       await d.create(recursive: true);
       path = d.path;
       messenger.showSnackBar(const SnackBar(
         duration: Duration(seconds: 8),
-        content: Text('Put videos in Files → On My iPhone → StreamMKV → My Videos, then rescan.'),
+        content: Text('Put videos in Files → On My iPhone → Delos → My Videos, then rescan.'),
       ));
     } else {
       if (Platform.isAndroid) {

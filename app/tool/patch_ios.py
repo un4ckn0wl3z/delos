@@ -16,11 +16,11 @@ if not info.exists():
 with info.open("rb") as f:
     p = plistlib.load(f)
 
-p["CFBundleDisplayName"] = "StreamMKV"
-p["CFBundleName"] = "StreamMKV"
+p["CFBundleDisplayName"] = "Delos"
+p["CFBundleName"] = "Delos"
 # Seedboxes are often plain HTTP.
 p["NSAppTransportSecurity"] = {"NSAllowsArbitraryLoads": True}
-p["NSLocalNetworkUsageDescription"] = "StreamMKV connects to your media server, which may be on your local network."
+p["NSLocalNetworkUsageDescription"] = "Delos connects to your media server, which may be on your local network."
 # The player locks to landscape; the list screens rotate freely.
 orient = ["UIInterfaceOrientationPortrait", "UIInterfaceOrientationLandscapeLeft", "UIInterfaceOrientationLandscapeRight"]
 p["UISupportedInterfaceOrientations"] = orient
@@ -28,7 +28,7 @@ p["UISupportedInterfaceOrientations~ipad"] = orient + ["UIInterfaceOrientationPo
 p["UIRequiresFullScreen"] = True          # needed for orientation locking on iPad
 p["UIStatusBarHidden"] = False
 p["UIViewControllerBasedStatusBarAppearance"] = True
-# offline library: the app's Documents folder shows in the Files app (On My iPhone → StreamMKV → My Videos)
+# offline library: the app's Documents folder shows in the Files app (On My iPhone → Delos → My Videos)
 p["UIFileSharingEnabled"] = True
 p["LSSupportsOpeningDocumentsInPlace"] = True
 p["ITSAppUsesNonExemptEncryption"] = False

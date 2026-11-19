@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs StreamMKV (and, unless RTORRENT=0, a built-in rtorrent) as PUID:PGID,
+# Runs Delos (and, unless RTORRENT=0, a built-in rtorrent) as PUID:PGID,
 # so files written to /media belong to your user on the host.
 set -e
 
@@ -20,7 +20,7 @@ if [ ! -s /data/users.json ] && [ -z "${STREAMMKV_PASS:-}" ]; then
   STREAMMKV_PASS="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)"
   export STREAMMKV_PASS
   echo "=================================================================="
-  echo " StreamMKV first start — admin user: $STREAMMKV_USER"
+  echo " Delos first start — admin user: $STREAMMKV_USER"
   echo "                        password : $STREAMMKV_PASS"
   echo " (change it in the dashboard → My account)"
   echo "=================================================================="
@@ -31,7 +31,7 @@ if [ "${RTORRENT:-1}" != "0" ] && [ -z "${STREAMMKV_RTORRENT:-}" ]; then
   mkdir -p "$RT/session" "${RTORRENT_DIR:-/media/downloads}"
   if [ ! -f "$RT/rtorrent.rc" ]; then
     cat > "$RT/rtorrent.rc" <<RC
-# StreamMKV's built-in rtorrent (edit freely; kept across restarts)
+# Delos's built-in rtorrent (edit freely; kept across restarts)
 session.path.set = $RT/session/
 directory.default.set = ${RTORRENT_DIR:-/media/downloads}
 network.scgi.open_local = $RT/rpc.socket
