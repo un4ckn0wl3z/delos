@@ -58,6 +58,7 @@ type Server struct {
 	dl       *Downloads
 	chat     *Chat
 	avatars  *Avatars
+	ann      *Announcements
 	started  time.Time
 }
 
@@ -186,6 +187,7 @@ func main() {
 	s.dl = NewDownloads(s)
 	s.chat = NewChat(s)
 	s.avatars = NewAvatars(cfg.DataDir)
+	s.ann = NewAnnouncements(s)
 	go s.index.Loop()
 	s.updater = NewUpdater(s, s.settings)
 	go s.updater.Loop()
@@ -217,6 +219,7 @@ func main() {
 	s.offlineRoutes(mux)
 	s.torrentRoutes(mux)
 	s.avatarRoutes(mux)
+	s.announcementRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

@@ -20,7 +20,7 @@
   button.primary{background:#2b6fd6;border-color:#2b6fd6;color:#fff}
   button.danger{color:var(--bad)}
   button:disabled{opacity:.5;cursor:default}
-  input[type=text],input[type=password]{background:#0b0d11;border:1px solid #2c3440;border-radius:7px;color:#fff;padding:7px 10px;font:inherit}
+  input[type=text],input[type=password],input:not([type]),textarea{background:#0b0d11;border:1px solid #2c3440;border-radius:7px;color:#fff;padding:7px 10px;font:inherit}
   input:focus{outline:none;border-color:var(--accent)}
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:22px}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
@@ -56,6 +56,7 @@
   .badge.ts-seeding{background:#23402a;color:#8fe0a0}.badge.ts-downloading{background:#1e3352;color:#9cc8ff}
   .badge.ts-paused{background:#4a3a1c;color:#ffcf7a}.badge.ts-stopped,.badge.ts-finished,.badge.ts-removed{background:#2c3440;color:#c9cfd8}
   .badge.ts-checking{background:#3a2a4a;color:#d6b4ff}
+  .badge.ann-info{background:#1e3352;color:#9cc8ff}.badge.ann-warning{background:#4a3a1c;color:#ffcf7a}.badge.ann-important{background:#4a1f22;color:#ff9a9a}
   .chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}.chips button{font-size:12px;padding:3px 10px;border-radius:12px}.chips button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .tstat{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;margin:2px 0 8px}
   .badge.t-music{background:#4a2a35;color:#ffb3c7}.badge.t-videos{background:#2c3440;color:#c9cfd8}
@@ -91,6 +92,11 @@
   <section id="update-sec"><div class="update" id="update"></div></section>
 
   <div class="cards" id="cards"></div>
+
+  <section id="ann-sec">
+    <h2>📣 Announcements <span class="count" id="n-ann">0</span><span class="sp"></span><button id="ann-new" class="primary" style="font-size:12px">+ New announcement</button></h2>
+    <div id="ann-list"></div>
+  </section>
 
   <section>
     <h2>Watching now <span class="count" id="n-watch">0</span></h2>
@@ -375,6 +381,67 @@
         <td>${w.pos ? `<span class="mini"><i style="width:${w.duration ? (w.pos / w.duration * 100).toFixed(1) : 0}%"></i></span>${tm(w.pos)} / ${tm(w.duration)}` : '<span class="dim">finished</span>'}</td>
         <td class="h-m dim">${ago(w.updated)}</td></tr>`).join('')}</table>` : '<div class="empty">Nothing yet.</div>';
   }
+
+  // ---------------------------------------------------------- announcements
+  let annUsers = [];
+  const annLevel = { info: 'ℹ️ Info', warning: '⚠️ Warning', important: '🔴 Important (pops up)' };
+  function renderAnn(d) {
+    const items = d.items || [];
+    $('#n-ann').textContent = items.filter((a) => a.active).length;
+    $('#ann-list').innerHTML = items.length ? `<table>${items.map((a) => `<tr data-id="${esc(a.id)}" style="${a.active ? '' : 'opacity:.55'}">
+      <td><b>${esc(a.title || '(no title)')}</b> <span class="badge ann-${esc(a.level)}" style="margin-left:6px">${esc(a.level)}</span>${a.pinned ? ' 📌' : ''}
+        ${a.body ? `<div class="dim" style="font-size:12.5px;white-space:pre-wrap;max-height:4.5em;overflow:hidden">${esc(a.body)}</div>` : ''}
+        <div class="dim" style="font-size:12px">${esc(a.author)} · ${ago(a.updated || a.created)}${a.updated ? ' (edited)' : ''} · ${a.users && a.users.length ? 'to ' + a.users.map(esc).join(', ') : 'to everyone'}${a.expires ? (a.active ? ' · until ' + new Date(a.expires * 1000).toLocaleString() : ' · expired') : ''}</div></td>
+      <td class="h-m dim" style="font-size:12px;white-space:nowrap" title="${esc(a.readBy.join(', ') || 'nobody yet')}">read by <b>${a.readBy.length}</b> / ${a.audience}</td>
+      <td><div class="actions"><button data-a="edit">Edit</button><button data-a="del" class="danger">Delete</button></div></td></tr>`).join('')}</table>`
+      : '<div class="empty">No announcements yet. Post one to show a message to everyone (or to chosen users) in the web app and the apps.</div>';
+    $('#ann-list').querySelectorAll('button[data-a]').forEach((b) => {
+      const a = items.find((x) => x.id === b.closest('tr').dataset.id);
+      b.onclick = () => b.dataset.a === 'edit' ? annEditor(a)
+        : confirmBox(`Delete “${a.title || 'this announcement'}”? It disappears for everyone.`, 'Delete', async () => { await api(`admin/announcements/${a.id}`, { method: 'DELETE' }); loadAnn(); });
+    });
+  }
+  const loadAnn = () => api('admin/announcements').then(renderAnn).catch(() => {});
+  async function annEditor(a) {
+    try { annUsers = (await api('admin/users')).users.map((u) => u.name); } catch { /* keep */ }
+    const sel = new Set(a?.users || []);
+    const exp = a?.expires ? Math.max(0, Math.round((a.expires * 1000 - Date.now()) / 3600000)) : 0;
+    modal(`<h3>${a ? 'Edit announcement' : 'New announcement'}</h3>
+      <form id="af" style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+        <input name="title" placeholder="Title" maxlength="200" value="${esc(a?.title || '')}">
+        <textarea name="body" rows="6" maxlength="5000" placeholder="Message (links are clickable)" style="resize:vertical">${esc(a?.body || '')}</textarea>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <select name="level">${Object.entries(annLevel).map(([k, v]) => `<option value="${k}" ${(a?.level || 'info') === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+          <select name="exp"><option value="0">Never expires</option>${[[24, '1 day'], [72, '3 days'], [168, '7 days'], [720, '30 days']].map(([h, l]) => `<option value="${h}">Expires in ${l}</option>`).join('')}${exp && ![24, 72, 168, 720].includes(exp) ? `<option value="${exp}" selected>Expires in ${exp} h</option>` : ''}</select>
+          <label class="dim" style="display:flex;gap:6px;align-items:center" title="Keep it in everyone's 📣 list after they read it"><input type="checkbox" name="pinned" ${a?.pinned ? 'checked' : ''}> Pin</label>
+        </div>
+        <div><label class="dim" style="display:flex;gap:6px;align-items:center"><input type="radio" name="aud" value="all" ${sel.size ? '' : 'checked'}> Everyone</label>
+          <label class="dim" style="display:flex;gap:6px;align-items:center"><input type="radio" name="aud" value="some" ${sel.size ? 'checked' : ''}> Only:</label>
+          <div id="au" style="display:flex;gap:6px 14px;flex-wrap:wrap;margin:4px 0 0 22px">${annUsers.map((u) => `<label style="display:flex;gap:5px;align-items:center;font-size:13px"><input type="checkbox" value="${esc(u)}" ${sel.has(u) ? 'checked' : ''}>${esc(u)}</label>`).join('')}</div></div>
+        ${a ? '<label class="dim" style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="resend"> Show it again to everyone (marks it unread)</label>' : ''}
+        <div class="msg" style="color:var(--bad);font-size:13px"></div>
+      </form>
+      <div class="row"><button data-close>Cancel</button><button class="primary" id="ok">${a ? 'Save' : 'Send'}</button></div>`,
+      (b, close) => {
+        b.style.cssText = 'width:min(640px,94vw);max-width:none';
+        const f = b.querySelector('#af');
+        if (exp && [24, 72, 168, 720].includes(exp)) f.exp.value = String(exp);
+        const syncAud = () => b.querySelectorAll('#au input').forEach((x) => { x.disabled = f.aud.value !== 'some'; });
+        f.querySelectorAll('input[name=aud]').forEach((x) => x.onchange = syncAud); syncAud();
+        b.querySelector('#ok').onclick = async () => {
+          const users = f.aud.value === 'some' ? [...b.querySelectorAll('#au input:checked')].map((x) => x.value) : [];
+          if (f.aud.value === 'some' && !users.length) { b.querySelector('.msg').textContent = 'Pick at least one user'; return; }
+          const h = +f.exp.value;
+          const body = { title: f.title.value, body: f.body.value, level: f.level.value, users, pinned: f.pinned.checked,
+            expires: h ? Math.floor(Date.now() / 1000) + h * 3600 : 0, resend: !!(f.resend && f.resend.checked) };
+          try {
+            await api(a ? `admin/announcements/${a.id}` : 'admin/announcements', { method: a ? 'PUT' : 'POST', body });
+            close(); toast(a ? 'Saved' : 'Announcement sent'); loadAnn();
+          } catch (x) { b.querySelector('.msg').textContent = x.message; }
+        };
+      });
+  }
+  $('#ann-new').onclick = () => annEditor(null);
 
   function renderUsers(d) {
     $('#n-users').textContent = d.users.length;
@@ -971,7 +1038,7 @@
     $('#ver').textContent = 'v' + me.version;
     if (!me.admin) { $('#self').hidden = false; $('#self-name').textContent = me.user; return; }
     $('#app').hidden = false;
-    await Promise.all([loadOverview(), loadUsers(), loadUpdate(), loadLibs(), loadDownloads(), loadTorrents(), api('admin/settings').then(renderMeta).catch(() => {})]);
+    await Promise.all([loadOverview(), loadUsers(), loadUpdate(), loadLibs(), loadDownloads(), loadTorrents(), loadAnn(), api('admin/settings').then(renderMeta).catch(() => {})]);
     clearInterval(timer);
     let n = 0;
     timer = setInterval(() => { loadOverview(); loadLibs(); loadTorrents(); if (++n % 3 === 0) loadUsers(); if (n % 12 === 0) loadUpdate(); }, 5000);

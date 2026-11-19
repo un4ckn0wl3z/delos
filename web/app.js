@@ -1184,6 +1184,69 @@
     }
     $('#smkv-close').onclick = closeVideo;
 
+    // ------------------------------------------------------------ announcements
+    const AN = { items: [], shown: new Set() };
+    const linkify = (t) => esc(t).replace(/https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"]/g, (u) => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`).replace(/\n/g, '<br>');
+    const annIcon = { info: 'ℹ️', warning: '⚠️', important: '🔴' };
+    async function loadAnnouncements() {
+      let d;
+      try { d = await api('announcements'); } catch { return; }
+      AN.items = d.items || [];
+      const unread = AN.items.filter((a) => !a.read);
+      const badge = $('#smkv-ann i');
+      badge.hidden = !unread.length; badge.textContent = unread.length;
+      // important ones pop up (one at a time); the rest go to the banner
+      const imp = unread.find((a) => a.level === 'important' && !AN.shown.has(a.id));
+      if (imp && !$('#smkv-detail').classList.contains('show')) { AN.shown.add(imp.id); annDialog(imp); }
+      drawAnnBar();
+    }
+    function annMarkRead(a) {
+      a.read = true;
+      apiPost(`announcements/${encodeURIComponent(a.id)}/read`, {}).catch(() => {});
+      const n = AN.items.filter((x) => !x.read).length, badge = $('#smkv-ann i');
+      badge.hidden = !n; badge.textContent = n;
+      drawAnnBar();
+    }
+    function drawAnnBar() {
+      const bar = $('#smkv-annbar');
+      const unread = AN.items.filter((a) => !a.read && a.level !== 'important');
+      const a = unread[0];
+      bar.hidden = !a;
+      if (!a) return;
+      bar.className = 'lvl-' + a.level;
+      bar.innerHTML = `<span>${annIcon[a.level] || 'ℹ️'}</span><div><b>${esc(a.title)}</b>${a.body ? `<div>${linkify(a.body)}</div>` : ''}</div>
+        ${unread.length > 1 ? `<button data-a="all">+${unread.length - 1} more</button>` : ''}<button data-a="ok" title="Mark as read">✕</button>`;
+      bar.querySelector('[data-a=ok]').onclick = () => annMarkRead(a);
+      const all = bar.querySelector('[data-a=all]'); if (all) all.onclick = annList;
+    }
+    function annDialog(a) {
+      detailModal(`<div class="smkv-ann-d lvl-${esc(a.level)}"><div class="smkv-ann-h">${annIcon[a.level] || 'ℹ️'} ${esc(a.title || 'Announcement')}</div>
+        ${a.body ? `<div class="smkv-ann-b">${linkify(a.body)}</div>` : ''}
+        <div class="smkv-dim2">From ${esc(a.author)} · ${new Date(a.created * 1000).toLocaleString()}</div>
+        <div style="text-align:right;margin-top:16px"><button class="smkv-primary" id="smkv-annok">OK</button></div></div>`,
+        (root, close) => {
+          root.querySelector('.smkv-dbox').classList.add('smkv-ann-box');
+          const done = () => { close(); annMarkRead(a); setTimeout(loadAnnouncements, 200); };
+          root.querySelector('#smkv-annok').onclick = done;
+          root.querySelector('.smkv-x').onclick = done;
+        });
+    }
+    async function annList() {
+      let d; try { d = await api('announcements', { all: 1 }); } catch (e) { toast(e.message); return; }
+      const items = d.items || [];
+      detailModal(`<h2 style="margin:24px 0 12px">📣 Announcements</h2>
+        ${items.length ? items.map((a) => `<div class="smkv-ann-item lvl-${esc(a.level)} ${a.read ? 'read' : ''}"><div class="smkv-ann-h">${annIcon[a.level] || 'ℹ️'} ${esc(a.title || 'Announcement')}${a.pinned ? ' 📌' : ''}${a.read ? '' : ' <i class="smkv-new">new</i>'}</div>
+          ${a.body ? `<div class="smkv-ann-b">${linkify(a.body)}</div>` : ''}<div class="smkv-dim2">${esc(a.author)} · ${new Date(a.created * 1000).toLocaleString()}</div></div>`).join('')
+          : '<div class="smkv-dim2">Nothing right now.</div>'}
+        ${items.some((a) => !a.read) ? '<div style="text-align:right;margin-top:12px"><button id="smkv-annall">Mark all as read</button></div>' : ''}`,
+        (root, close) => {
+          root.querySelector('.smkv-dbox').classList.add('smkv-ann-box');
+          const b = root.querySelector('#smkv-annall');
+          if (b) b.onclick = async () => { await apiPost('announcements/read-all', {}).catch(() => {}); close(); loadAnnouncements(); };
+        });
+    }
+    $('#smkv-ann').onclick = annList;
+
     // ------------------------------------------------------------ people & chat
     const SO = { people: [], convs: [], open: null, msgs: [], es: null, hb: null, lastAct: '', hide: false };
     function myActivity() {
@@ -1274,6 +1337,8 @@
       if (SO.es || !BR.me || !window.EventSource) return;
       const es = SO.es = new EventSource(new URL('api/events', BASE), { withCredentials: true });
       es.addEventListener('people', (e) => { SO.people = JSON.parse(e.data); drawPeople(); });
+      es.addEventListener('announcement', () => loadAnnouncements());
+      es.addEventListener('open', () => loadAnnouncements()); // also catches up after a reconnect
       es.addEventListener('conversation', (e) => {
         const c = JSON.parse(e.data);
         const i = SO.convs.findIndex((x) => x.id === c.id);
@@ -2053,6 +2118,7 @@
       <b>StreamMKV</b><span class="smkv-sp"></span>
       <a id="smkv-admin" href="admin" target="_blank" title="Admin dashboard" hidden>🛡</a>
       <button id="smkv-refresh" title="Reload libraries">⟳</button>
+      <button id="smkv-ann" title="Announcements">📣<i hidden></i></button>
       <button id="smkv-settings" title="Settings">⚙</button>
       <button id="smkv-logout" title="Log out">⏻</button>
     </header>
@@ -2062,6 +2128,7 @@
   </aside>
   <section id="smkv-chat"></section>
   <main id="smkv-browse">
+    <div id="smkv-annbar" hidden></div>
     <div id="smkv-toolbar"></div>
     <div id="smkv-view"></div>
   </main>
@@ -2350,6 +2417,21 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 #smkv-player:fullscreen{max-height:none;aspect-ratio:auto}
 #smkv-video{width:100%;height:100%;display:block;background:#000}
 #smkv-canvas{position:absolute;inset:0;width:100%;height:100%;display:none;background:#000}
+#smkv-ann{position:relative}#smkv-ann i{position:absolute;top:-5px;right:-5px;background:#e5484d;color:#fff;font-style:normal;font-size:10px;border-radius:9px;padding:0 5px;font-weight:700;line-height:15px}
+#smkv-annbar{display:flex;gap:12px;align-items:flex-start;margin:12px 24px 0;padding:10px 12px;border-radius:10px;background:#16263d;border:1px solid #234066;color:#d7e6fb;font-size:13.5px}
+#smkv-annbar[hidden]{display:none}
+#smkv-annbar.lvl-warning{background:#2e2514;border-color:#5a4520;color:#f6e3bd}
+#smkv-annbar>div{flex:1;min-width:0;word-break:break-word}#smkv-annbar b{color:#fff}
+#smkv-annbar a,.smkv-ann-b a{color:#7cc4ff}
+#smkv-annbar button{flex:none;font-size:12px!important}
+.smkv-ann-box{width:min(560px,100%)!important}
+.smkv-ann-d{padding-top:24px}.smkv-ann-h{font-size:18px;font-weight:600;color:#fff;margin-bottom:8px;padding-right:36px}
+.smkv-ann-b{color:#d0d6df;line-height:1.55;margin-bottom:10px;word-break:break-word}
+.smkv-ann-item{border:1px solid #232a34;border-left:3px solid #3b6fd6;border-radius:8px;padding:10px 12px;margin-bottom:10px}
+.smkv-ann-item.lvl-warning{border-left-color:#d9a43b}.smkv-ann-item.lvl-important{border-left-color:#e5484d}
+.smkv-ann-item.read{opacity:.7}.smkv-ann-item .smkv-ann-h{font-size:15px}
+.smkv-new{font-style:normal;font-size:10px;background:#e5484d;color:#fff;border-radius:8px;padding:0 6px;vertical-align:2px}
+@media (max-width:820px){#smkv-annbar{margin:10px 12px 0}}
 #smkv-player.engine #smkv-canvas{display:block}
 #smkv-player.engine #smkv-video{visibility:hidden}
 #smkv-player:not(.ctl) #smkv-canvas{cursor:none}
