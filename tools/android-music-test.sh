@@ -18,7 +18,8 @@ adb logcat -c
 adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null
 sleep 45
 adb exec-out screencap -p > "$OUT/1-app.png"
-adb logcat -d | grep -iE "AUTOTEST|media session|audio_service|AudioService|flutter|MediaSession|System.err|AndroidRuntime|Exception" | grep -v "^.*System.err: \s*at (android|java|com.android|kotlin)" | tail -200 > "$OUT/logcat.txt"
+APP_PID=$(adb shell pidof "$PKG" | tr -d '\r')
+adb logcat -d --pid="$APP_PID" | grep -iE "AUTOTEST|media session|audio_service|AudioService|flutter|System.err|Exception" > "$OUT/logcat.txt"
 adb shell dumpsys media_session > "$OUT/media_session.txt"
 adb shell dumpsys notification --noredact > "$OUT/notification.txt"
 adb shell cmd statusbar expand-notifications; sleep 2
