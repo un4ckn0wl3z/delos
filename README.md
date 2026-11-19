@@ -2,14 +2,17 @@
 
 ดูหนัง MKV จาก seedbox ผ่านเบราว์เซอร์ เลือก audio track / subtitle ได้ — พร้อมหลาย library (หนัง / ซีรีส์ / เพลง / วิดีโออื่น), ดึง metadata จาก TMDB + MusicBrainz, จัดกลุ่มตามแนว ศิลปิน อัลบั้ม และสตรีมเพลง (mp3/flac/…)
 
+เปิด URL ของ server ในเบราว์เซอร์ไหนก็ได้ (ติดตั้งเป็นแอปได้ — PWA) หรือใช้แอป Android / iOS / Windows / Linux / macOS
+
 ```
-┌──────────── Browser (Tampermonkey) ────────────┐        ┌────────────── Seedbox ──────────────┐
-│ streammkv.user.js                              │  HTTPS │ streammkv (Go, single binary)        │
-│  • settings: server URL / user / password      │ ─────▶ │  /api/list      list *.mkv           │
-│  • file list + search + resume                 │        │  /api/probe     ffprobe → tracks     │
-│  • player: audio / subs / sub delay / seek     │ ◀───── │  /api/stream    ffmpeg → fMP4        │
-│  • renders text subs itself (WebVTT)           │        │  /api/subtitle  track → WebVTT (cache)│
-└────────────────────────────────────────────────┘        └──────────────────────────────────────┘
+┌────────────── Browser (any) ──────────────┐            ┌────────────── Seedbox ──────────────┐
+│ web app served by the server (PWA)        │    HTTPS   │ streammkv (Go, single binary)       │
+│  • libraries · music · chat · downloads   │ ─────────▶ │  /             the web app          │
+│  • player, two engines:                   │            │  /api/raw      original file (Range)│
+│     in browser — original file, demuxed   │ ◀───────── │  /api/stream   ffmpeg → fMP4        │
+│     here, WebCodecs + WASM audio          │            │  /api/probe    ffprobe → tracks     │
+│     server — remux / transcode (fallback) │            │  /api/subtitle track → WebVTT       │
+└───────────────────────────────────────────┘            └─────────────────────────────────────┘
 ```
 
 ## Libraries & metadata
@@ -28,7 +31,7 @@ Admins can add as many libraries as they like from **/admin → Libraries**. Pic
 - **Test:** **/admin → Metadata → Test** checks four things: the TMDB key and whether the server can reach TMDB, whether MusicBrainz is reachable, whether this browser can load poster images, and how many items in each library have artwork. It also lists titles that weren't matched and warns about libraries that will never get metadata, such as type *Other videos*. You can test a key before saving it.
 - **Scanning:** every library is re-scanned every 30 minutes, or straight away with **Scan**. **Refresh metadata** re-matches everything. Results are cached in `<data>/index/` and covers in `<data>/covers/`, so a rescan only looks up new titles.
 - **Per-user access:** **/admin → Users → Libraries** chooses which libraries a user can see. The default is all of them, so a kids' account can be limited to Music, for example.
-- **Fixing wrong matches:** in the userscript, open a movie, show, episode, album or track and press **✎ Edit**. You can search TMDB and pick the correct title, enter a TMDB ID, or override fields by hand (title, year, genres, overview, poster URL; artist, album, track, cover URL…). **Reset to automatic** removes the edit. Edits are kept separately and survive rescans. Admins can always edit; to let another user edit, use **/admin → Users → Make editor**.
+- **Fixing wrong matches:** in the web app, open a movie, show, episode, album or track and press **✎ Edit**. You can search TMDB and pick the correct title, enter a TMDB ID, or override fields by hand (title, year, genres, overview, poster URL; artist, album, track, cover URL…). **Reset to automatic** removes the edit. Edits are kept separately and survive rescans. Admins can always edit; to let another user edit, use **/admin → Users → Make editor**.
 - **Music playback:** files the browser or app can play natively are streamed as they are, with Range support. Anything else (wma, ape, …) is transcoded to mp3 on the fly through `/api/audio`. Playback continues in the background, with lock-screen and media-key controls.
 - **Upgrading from ≤1.3:** your old `-root` becomes a library called `main` (type *Other videos*), and watch progress carries over. You can change its type to Movies or TV in the dashboard.
 
@@ -46,7 +49,7 @@ Use **/admin → Downloads** to paste a link, then pick a library and an optiona
   - **The same movie or episode** already in a library of that type, even under a different file name.
 
   For the last two you can choose **Download anyway**. After a download finishes and is matched, other versions of the same title are listed on it ("⚠ Also in the library").
-- **Managing torrents:** every torrent download shows its state (Downloading / Seeding / Paused / Stopped / Finished / Checking), ratio, uploaded amount, speeds and peers. Its owner or an admin can **Pause / Resume**, **Stop seeding** and **Seed** again, **Recheck** the files, see **trackers & files**, and **Remove** — either the torrent only (files stay in the library) or the torrent **and its files**. This works in the dashboard, the userscript and the app (⋮ menu).
+- **Managing torrents:** every torrent download shows its state (Downloading / Seeding / Paused / Stopped / Finished / Checking), ratio, uploaded amount, speeds and peers. Its owner or an admin can **Pause / Resume**, **Stop seeding** and **Seed** again, **Recheck** the files, see **trackers & files**, and **Remove** — either the torrent only (files stay in the library) or the torrent **and its files**. This works in the dashboard, the web app and the app (⋮ menu).
 - **Seeding limits:** in **/admin → Torrents → Seeding rule**, set a ratio and/or hours of seeding after which StreamMKV's torrents stop seeding (or are removed from rtorrent, keeping the files). Each torrent can override it (server default / no limit / its own ratio or hours). Starting a torrent again by hand after it was auto-stopped keeps it seeding.
 - **All of rtorrent (admins):** **/admin → Torrents** lists every torrent in rtorrent, including ones added outside StreamMKV, with filters (downloading / seeding / paused / stopped / from StreamMKV), the same actions, and global **speed limits** (these last until rtorrent restarts; put `throttle.global_down.max_rate` / `throttle.global_up.max_rate` in `.rtorrent.rc` to keep them). *Remove with data* only deletes the torrent's own file/folder, never a library root or your home folder.
 - **🧹 Unused files (admins):** **/admin → Torrents → Find unused files** scans rtorrent's download folder (or any folder you type) for files and folders that no torrent in rtorrent uses any more, e.g. left behind after removing torrents, with their size. Pick what to delete; each item is checked again just before it's removed. Libraries, StreamMKV's own folders and anything containing them are never offered whole; their contents are listed one by one, and items still in a library are marked.
@@ -73,7 +76,7 @@ Users with the **downloader** role can create **their own libraries** under Down
   - A **private** library is visible only to its owner and admins.
   - A **shared** one is visible to everyone and labelled with the owner, e.g. "from bob".
   - Accounts that an admin limited to specific libraries only see the ones ticked for them.
-- **Deleting:** owners can delete files in their own libraries (🗑 in the userscript, long-press → *Delete from server* in the app). The movie's folder (nfo, posters, subs) and the matching rtorrent download are removed too. Admins can delete anywhere. Nobody can delete from someone else's library.
+- **Deleting:** owners can delete files in their own libraries (🗑 in the web app, long-press → *Delete from server* in the app). The movie's folder (nfo, posters, subs) and the matching rtorrent download are removed too. Admins can delete anywhere. Nobody can delete from someone else's library.
 - **Limits:** set under **/admin → Users → Limits**, as max items and/or max GB across the user's personal libraries. Downloads that would go over the limit are refused, including magnets once their size is known. A user with a limit can only download into their own libraries. Usage shows in the dashboard and on the user's Downloads page.
 
 ## People & chat
@@ -81,8 +84,8 @@ Users with the **downloader** role can create **their own libraries** under Down
 - **Who's online:** see who is online and **what they're watching or listening to**, e.g. "▶ Children of Men · 45:12". You can press ▶ to open the same title, if you have access to its library. Anyone can switch on *Hide what I'm watching*; others will still see that they are online.
 - **Chats:** 1-to-1 chats and **group chats**. Any member can rename a group or add people; only the group's creator (or an admin) can remove people, and anyone can leave. Unread counts and new-message notifications update live (Server-Sent Events, `GET /api/events`). Admins can't read other people's chats.
 - **Send to a friend:** share a movie, episode or song into a chat as a card your friend can tap to play. If they can't open that library, you get a warning.
-- **Where:** the people list and 💬 drawer in the userscript sidebar, and the **Chat** tab in the app. Notifications appear only while the app or page is open.
-- **Profile pictures:** set or remove yours in the app (Settings → Account) or the userscript (Chats → *Change picture*). Any JPG/PNG/GIF up to 10 MB; the server crops it square and scales it to 256 px. People without one get their initial on a colour. Admins can remove a picture in /admin → Users.
+- **Where:** the people list and 💬 drawer in the web app sidebar, and the **Chat** tab in the app. Notifications appear only while the app or page is open.
+- **Profile pictures:** set or remove yours in the app (Settings → Account) or the web app (Chats → *Change picture*). Any JPG/PNG/GIF up to 10 MB; the server crops it square and scales it to 256 px. People without one get their initial on a colour. Admins can remove a picture in /admin → Users.
 - **Admins** carry an **ADMIN** tag next to their name in People and Chat.
 
 
@@ -112,16 +115,16 @@ StreamMKV supports several users. Each user has their own watch progress, resume
 
 ## Versions & updates
 
-- The `VERSION` file is the single source for the version. `tools/bump.sh X.Y.Z` updates it together with the userscript and app versions. Commit and push, and CI builds the server binaries, `SHA256SUMS` and the APKs. It uploads them to a draft release and publishes the release once everything is there.
+- The `VERSION` file is the single source for the version. `tools/bump.sh X.Y.Z` updates it together with the app version (and the retired userscript stub). Commit and push, and CI builds the server binaries, `SHA256SUMS` and the APKs. It uploads them to a draft release and publishes the release once everything is there.
 - **Server:** checks GitHub every 6 hours. With auto-update on (the default, which you can toggle in the dashboard), it downloads the new binary, checks it against `SHA256SUMS`, swaps it in and re-execs itself with the same PID. The previous binary is kept as `streammkv.old`. It only installs while nobody is streaming. You can also press **Update now** in the dashboard.
 - **App:** when it starts, it checks the latest release and offers the APK built for your phone's CPU. *Settings → Check for app updates* runs the check by hand. Android does not let sideloaded apps install updates silently, so you still have to tap Install.
-- **Userscript:** Tampermonkey updates it from GitHub through `@updateURL`.
+- **Web app:** part of the server — it updates with it.
 
 ## Apps: Android, iOS, Windows, Linux, macOS
 
 The app is written in Flutter with [media_kit](https://github.com/media-kit/media-kit) (libmpv) and is the same on every platform. Download it from [Releases](https://github.com/un4ckn0wl3z/streammkv/releases/latest).
 
-The app browses libraries the same way the userscript does: Home (continue watching / recently added), movies with posters and genre filters, TV shows with seasons and Next up, and music by album, artist, genre or song. It has a mini player and background audio. **Long-press** a poster or episode to open a menu (on desktop, right-click). It offers Play/Resume, **Start over** and **Remove from Continue watching**. Admins and editors also get **Identify…**, which lets you search TMDB, pick the right title or type a TMDB ID; **Re-detect** returns the title to automatic matching. Other metadata edits are only in the userscript.
+The app browses libraries the same way the web app does: Home (continue watching / recently added), movies with posters and genre filters, TV shows with seasons and Next up, and music by album, artist, genre or song. It has a mini player and background audio. **Long-press** a poster or episode to open a menu (on desktop, right-click). It offers Play/Resume, **Start over** and **Remove from Continue watching**. Admins and editors also get **Identify…**, which lets you search TMDB, pick the right title or type a TMDB ID; **Re-detect** returns the title to automatic matching. Other metadata edits are only in the web app.
 
 | Platform | File | Install |
 |---|---|---|
@@ -149,7 +152,7 @@ The `app/` folder holds a Flutter app that uses [media_kit](https://github.com/m
 
 - **Direct**: mpv streams the original MKV through `/api/raw`, which supports HTTP Range. It plays every codec (HEVC, DTS, TrueHD…), switches between the file's audio and subtitle tracks, and renders full ASS styling and PGS. Seeking is native and accurate, and the server uses almost no CPU, but this mode needs enough bandwidth for the original bitrate.
 - **Transcode 1080/720/480p**: plays the stream from `/api/stream`. Use it to save data on a mobile network.
-- **Watch progress and tracks** are stored on the server (`/api/progress`), so the app and every browser running the userscript can pick up where you left off.
+- **Watch progress and tracks** are stored on the server (`/api/progress`), so the app and every browser can pick up where you left off.
 - **Gestures**: double-tap the left/right side to skip back/forward 10s, double-tap the middle to play or pause. The ⚙ menu has quality, subtitle delay and subtitle size.
 
 Build it yourself:
@@ -165,12 +168,24 @@ CI (`.github/workflows/app.yml`) signs the APK with the key from the `ANDROID_DE
 
 ## How it works
 
+### Playing in the browser (default)
+
+The web app plays the **original file** itself, like mpv does in the app:
+
+- It reads the file straight from the server with HTTP Range requests (`/api/raw`) — the server only sends bytes: **no ffmpeg, no stream slot, instant seeking**.
+- [Mediabunny](https://mediabunny.dev) demuxes the MKV/MP4 in the browser; video is decoded by the device's own decoder through **WebCodecs** (usually hardware: H.264, HEVC, AV1, VP9).
+- **AC-3, E-AC-3 (DD+), DTS and TrueHD** audio — which browsers can't play — are decoded by FFmpeg compiled to **WebAssembly** (downloaded only when a file needs them; ~0.2–0.4 MB each, gzipped), so you get **any audio track** and the original channels.
+- Video is drawn on a canvas and kept in sync with the audio clock; text subtitles use the same overlay as before.
+- It falls back to the server **automatically** when the browser can't do it — e.g. a video codec the device can't decode (old DivX, HEVC 10-bit without hardware support), image subtitles (PGS/VobSub, burned in by the server), or a browser without WebCodecs. The player's badge says which is used: **direct · in browser**, **remux · server** or **transcode**. *Video* lets you pick, and ⚙ Settings → *Playback* can make the server the default.
+
+### Playing through the server
+
 - **Video**: if the browser can decode the video codec (H.264 8-bit, HEVC/AV1/VP9 when supported), it is passed through unchanged with `-c:v copy`, which uses almost no CPU. Otherwise it is transcoded to H.264 with `libx264 veryfast`, scaled down to the max height you choose.
 - **Audio**: only the selected track is sent (`-map 0:a:N`). It is always converted to stereo AAC, because browsers cannot play AC3/DTS/TrueHD.
 - **Seeking**: the client sends a new request with `?start=`. In copy mode it first asks for the nearest keyframe (`/api/keyframe`) so the seek bar and subtitles stay in sync.
-- **Text subtitles** (SRT/ASS/VTT): extracted to WebVTT and cached on the server, then drawn by the userscript in an overlay. You can adjust the subtitle delay and change subtitles without restarting the video.
+- **Text subtitles** (SRT/ASS/VTT): extracted to WebVTT and cached on the server, then drawn by the web app in an overlay. You can adjust the subtitle delay and change subtitles without restarting the video.
 - **Image subtitles** (PGS/VobSub): burned into the video, which forces transcode mode.
-- **The UI runs on the server's own page.** The userscript detects `<meta name="streammkv-app">` and draws the player there, which avoids CORS, mixed-content and page-CSP problems with `<video>`. You can open it from any website through the Tampermonkey menu.
+- **The UI is served by the server itself** (same origin as the media), so there are no CORS, mixed-content or CSP problems.
 
 ## Install on the seedbox (no root, no package manager needed)
 
@@ -179,7 +194,7 @@ CI (`.github/workflows/app.yml`) signs the APK with the key from the `ANDROID_DE
 - Windows 10/11: [`deploy/deploy.cmd`](deploy/deploy.cmd). Double-click it; it uses the built-in OpenSSH client.
 - Linux / macOS: [`deploy/deploy.sh`](deploy/deploy.sh). Run `bash deploy.sh`.
 
-At the end it prints the URL, username and password to put into the app or the Tampermonkey settings. Run it again any time to upgrade to the latest release; the port and password stay the same.
+At the end it prints the URL, username and password to open in a browser or put into the app. Run it again any time to upgrade to the latest release; the port and password stay the same.
 
 **Or, on the seedbox itself** (one-liner; downloads the release binary + static ffmpeg, picks a free port, generates a password, starts the server and adds an autostart cron):
 
@@ -241,18 +256,17 @@ location /streammkv/ {
 }
 ```
 
-Then set the Server URL in the userscript to `https://your.box/streammkv/`.
+Then open `https://your.box/streammkv/`.
 
-## Install the userscript
+## Use it in a browser
 
-1. Install Tampermonkey.
-2. Open `https://<server>/streammkv.user.js`; the server serves this file itself and Tampermonkey will offer to install it. Or copy `web/streammkv.user.js` and add it by hand.
-3. Tampermonkey menu → **⚙ StreamMKV settings**. Enter the Server URL, username, password, and your preferred languages, e.g. audio `jpn,eng` and subs `tha,eng`.
-4. Tampermonkey menu → **▶ Open StreamMKV**, or open the server URL directly.
+1. Open the server's address, e.g. `http://your-seedbox:8090/`, and sign in. Nothing to install.
+2. To get an app icon: Chrome/Edge → **Install app** (address bar or menu), Android Chrome → **Add to Home screen**, iPhone Safari → Share → **Add to Home Screen**.
+3. ⚙ Settings: preferred audio / subtitle languages (e.g. audio `jpn,eng`, subs `tha,eng`), playback engine, max height for transcoding.
 
-The left sidebar lists your libraries. **Home** shows *Continue watching* and *Recently added*. Movies and shows can be filtered by genre. Music has Albums / Artists / Genres / Songs tabs and a player bar at the bottom with a queue, shuffle and repeat.
+The left sidebar lists your libraries. **Home** shows *Continue watching* and *Recently added*. Movies and shows can be filtered by genre. Music has Albums / Artists / Genres / Songs tabs and a player bar at the bottom with a queue, shuffle and repeat. Admins get a 🛡 link to the dashboard.
 
-The script uses `@match *://*/*` so the menu shows up on every website. It does nothing on other pages except register the menu. If you only want it on the server page, change `@match` to your server URL.
+> **Upgrading from the userscript (≤ 1.9):** the web app replaces it — remove *StreamMKV* from Tampermonkey. Until you do, the userscript stays out of the way (and on servers older than 2.0 it keeps working as before).
 
 ### Keyboard
 
@@ -267,11 +281,11 @@ For each file, the server remembers your playback position and the audio/subtitl
 - The first time you open a text subtitle track, the server has to read the whole MKV to extract it (a 20 GB file can take tens of seconds). After that it is served from cache.
 - Copy mode seeks to the nearest keyframe before the point you chose (usually no more than 2–10 seconds earlier).
 - Transcoding 4K or burning in subtitles uses a lot of CPU. If the seedbox is weak, set Max height to 720p.
-- The password is stored in plain text in Tampermonkey storage.
+- In-browser playback needs WebCodecs (Chrome / Edge / Firefox / Safari, recent versions); HEVC needs a hardware decoder on the device. Otherwise the server is used.
 
 ## API
 
-All endpoints except `/`, `/streammkv.user.js` and `/api/login` need auth: the `streammkv` cookie, an `Authorization: Bearer <token>` header, or `?token=`.
+All endpoints except the web app's files (`/`, `/app.js`, `/vendor/…`, icons) and `/api/login` need auth: the `streammkv` cookie, an `Authorization: Bearer <token>` header, or `?token=`.
 
 ```
 POST /api/login        {"username","password"} → {"token","expires","user","admin"} + Set-Cookie

@@ -185,7 +185,7 @@ cat <<EOF
   Users CLI : $DIR/run.sh user {list|add NAME [--admin]|passwd NAME|del NAME}
   Log       : $DIR/streammkv.log
 
-Userscript : ${URL}streammkv.user.js
-Android app: https://github.com/$REPO/releases/latest
+Web app    : ${URL}   (open it in any browser — installable as an app)
+Apps       : https://github.com/$REPO/releases/latest
 The server updates itself from GitHub releases (toggle in the dashboard).
 EOF

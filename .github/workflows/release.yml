@@ -24,7 +24,7 @@ jobs:
           VERSION=$(tr -d ' \n' < VERSION)
           echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::VERSION must be X.Y.Z, got '$VERSION'"; exit 1; }
           US=$(grep -m1 '@version' web/streammkv.user.js | awk '{print $3}')
-          [ "$US" = "$VERSION" ] || { echo "::error::userscript @version ($US) != VERSION ($VERSION) — use tools/bump.sh"; exit 1; }
+          [ "$US" = "$VERSION" ] || { echo "::error::userscript stub @version ($US) != VERSION ($VERSION) — use tools/bump.sh"; exit 1; }
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
           if gh release view "v$VERSION" --json isDraft -q .isDraft 2>/dev/null | grep -q false; then
@@ -66,7 +66,7 @@ jobs:
           - **iOS:** add this source in SideStore / AltStore: \`https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/altstore-source.json\` (or sideload \`streammkv-ios.ipa\`).
           - **Windows / Linux:** unzip \`streammkv-windows-x64.zip\` / \`streammkv-linux-x64.tar.gz\` and run StreamMKV (Linux needs \`libmpv2\`, e.g. \`sudo apt install libmpv2\`).
           - **macOS:** unzip \`streammkv-macos.zip\`, move StreamMKV.app to Applications, then run \`xattr -dr com.apple.quarantine /Applications/StreamMKV.app\` once (the app is not notarized).
-          - **Userscript:** Tampermonkey updates it automatically.
+          - **Web app:** open the server in a browser — it updates with the server.
           NOTES
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber

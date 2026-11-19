@@ -47,7 +47,7 @@ echo.
 echo Connecting to %SSH_USER%@%SSH_HOST%:%SSH_PORT% ...
 ssh -t -o StrictHostKeyChecking=accept-new -p %SSH_PORT% %SSH_USER%@%SSH_HOST% "curl -fsSL %URL% | %ENVS% bash"
 echo.
-echo Copy the URL / Username / Password above into the app or Tampermonkey settings.
+echo Open the URL above in a browser (or put it into the app) and sign in with the Username / Password.
 pause
 exit /b 0
 

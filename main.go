@@ -1,5 +1,6 @@
 // StreamMKV — stream MKV files from a seedbox to a browser.
-// The UI lives in a Tampermonkey userscript (web/streammkv.user.js).
+// The UI is a web app the server serves itself (web/app.js); the player can
+// decode the original file in the browser (web/player-wasm.mjs).
 package main
 
 import (
@@ -23,7 +24,7 @@ import (
 	"time"
 )
 
-//go:embed web/index.html web/streammkv.user.js web/admin.html
+//go:embed web/index.html web/admin.html web/app.js web/player-wasm.mjs web/streammkv.user.js web/manifest.webmanifest web/*.png web/vendor/*.mjs
 var webFS embed.FS
 
 type Config struct {
@@ -190,8 +191,7 @@ func main() {
 	go s.updater.Loop()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.handleIndex)
-	mux.HandleFunc("GET /streammkv.user.js", s.handleUserscript)
+	s.staticRoutes(mux)
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.auth(func(w http.ResponseWriter, r *http.Request) {
@@ -252,19 +252,6 @@ func httpErr(w http.ResponseWriter, code int, msg string) {
 }
 
 // ---------- static ----------
-
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	b, _ := webFS.ReadFile("web/index.html")
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Write(b)
-}
-
-func (s *Server) handleUserscript(w http.ResponseWriter, r *http.Request) {
-	b, _ := webFS.ReadFile("web/streammkv.user.js")
-	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-	w.Write(b)
-}
 
 // ---------- auth ----------
 

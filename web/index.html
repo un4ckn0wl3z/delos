@@ -2,22 +2,29 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="streammkv-app" content="1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0f13">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="StreamMKV">
+<meta name="streammkv-web" content="{{VERSION}}">
 <title>StreamMKV</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<script type="importmap">{"imports":{"mediabunny":"./vendor/mediabunny.min.mjs?v={{VERSION}}"}}</script>
 <style>
-  html,body{margin:0;height:100%;background:#0d0f13;color:#c9cfd8;font:15px/1.5 system-ui,sans-serif}
-  #smkv-placeholder{height:100%;display:grid;place-content:center;text-align:center;gap:6px}
-  h1{margin:0;font-size:22px;color:#fff;letter-spacing:.5px}
-  a{color:#7cc4ff}
-  p{margin:0;color:#8a93a1}
+  html,body{margin:0;height:100%;background:#0d0f13;color:#c9cfd8;font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+  #smkv-boot{height:100%;display:grid;place-content:center;justify-items:center;gap:14px;color:#6f7988}
+  #smkv-boot img{width:64px;height:64px}
+  #smkv-boot i{width:28px;height:28px;border:3px solid #263040;border-top-color:#4a9eff;border-radius:50%;animation:s 0.8s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
 </style>
+<script>window.SMKV_VERSION = '{{VERSION}}';</script>
+<script src="app.js?v={{VERSION}}" defer></script>
 </head>
 <body>
-<div id="smkv-placeholder">
-  <h1>StreamMKV</h1>
-  <p>This page is driven by the StreamMKV userscript.</p>
-  <p>Install Tampermonkey, then <a href="streammkv.user.js">install the userscript</a> and reload.</p>
-</div>
+<div id="smkv-boot"><img src="icon-192.png" alt=""><i></i><noscript>StreamMKV needs JavaScript.</noscript></div>
 </body>
 </html>
