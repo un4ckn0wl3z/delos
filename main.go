@@ -213,6 +213,7 @@ func main() {
 	s.personalRoutes(mux)
 	s.chatRoutes(mux)
 	s.offlineRoutes(mux)
+	s.torrentRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

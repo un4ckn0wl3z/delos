@@ -350,15 +350,53 @@ func (rt *RTorrent) Add(src any, dir, tag string) error {
 }
 
 type rtItem struct {
-	Hash, Name, Tag, BasePath, Message string
-	Size, Done, DownRate, UpRate       int64
-	Complete, Active                   bool
+	Hash, Name, Tag, BasePath, Message, Dir, Label   string
+	Size, Done, DownRate, UpRate, UpTotal, DownTotal int64
+	Complete, Active, Started, Open, Multi           bool
+	Hashing                                          bool
+	Ratio                                            float64 // uploaded / size
+	Peers, Seeds, Files                              int
+	StartedAt, FinishedAt                            int64 // unix; FinishedAt = 0 until complete
+}
+
+// Status: checking | downloading | seeding | paused | stopped | finished (stopped and complete)
+func (it rtItem) Status() string {
+	switch {
+	case it.Hashing:
+		return "checking"
+	case !it.Started && it.Complete:
+		return "finished"
+	case !it.Started:
+		return "stopped"
+	case !it.Active:
+		return "paused"
+	case it.Complete:
+		return "seeding"
+	}
+	return "downloading"
+}
+
+var rtFields = []any{"d.hash=", "d.name=", "d.size_bytes=", "d.completed_bytes=", "d.down.rate=", "d.up.rate=",
+	"d.complete=", "d.custom2=", "d.base_path=", "d.message=", "d.is_active=",
+	"d.state=", "d.is_open=", "d.hashing=", "d.ratio=", "d.up.total=", "d.down.total=",
+	"d.peers_connected=", "d.peers_complete=", "d.size_files=", "d.directory=", "d.custom1=",
+	"d.timestamp.started=", "d.timestamp.finished=", "d.is_multi_file="}
+
+func rtInt(v any) int64 {
+	switch x := v.(type) {
+	case int64:
+		return x
+	case int:
+		return int64(x)
+	case string:
+		n, _ := strconv.ParseInt(x, 10, 64)
+		return n
+	}
+	return 0
 }
 
 func (rt *RTorrent) List() ([]rtItem, error) {
-	v, err := rt.Call("d.multicall2", "", "main",
-		"d.hash=", "d.name=", "d.size_bytes=", "d.completed_bytes=", "d.down.rate=", "d.up.rate=",
-		"d.complete=", "d.custom2=", "d.base_path=", "d.message=", "d.is_active=")
+	v, err := rt.Call("d.multicall2", append([]any{"", "main"}, rtFields...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -366,28 +404,137 @@ func (rt *RTorrent) List() ([]rtItem, error) {
 	out := []rtItem{}
 	for _, r := range rows {
 		c, _ := r.([]any)
-		if len(c) < 11 {
+		if len(c) < len(rtFields) {
 			continue
 		}
 		s := func(i int) string { return fmt.Sprint(c[i]) }
-		n := func(i int) int64 {
-			switch x := c[i].(type) {
-			case int64:
-				return x
-			case string:
-				v, _ := strconv.ParseInt(x, 10, 64)
-				return v
-			}
-			return 0
-		}
+		n := func(i int) int64 { return rtInt(c[i]) }
 		out = append(out, rtItem{Hash: s(0), Name: s(1), Size: n(2), Done: n(3), DownRate: n(4), UpRate: n(5),
-			Complete: n(6) == 1, Tag: s(7), BasePath: s(8), Message: s(9), Active: n(10) == 1})
+			Complete: n(6) == 1, Tag: s(7), BasePath: s(8), Message: s(9), Active: n(10) == 1,
+			Started: n(11) == 1, Open: n(12) == 1, Hashing: n(13) != 0, Ratio: float64(n(14)) / 1000,
+			UpTotal: n(15), DownTotal: n(16), Peers: int(n(17)), Seeds: int(n(18)), Files: int(n(19)),
+			Dir: s(20), Label: s(21), StartedAt: n(22), FinishedAt: n(23), Multi: n(24) == 1})
 	}
 	return out, nil
 }
 
 func (rt *RTorrent) Erase(hash string) error {
 	_, err := rt.Call("d.erase", hash)
+	return err
+}
+
+// Do runs a control action: start | stop | pause | resume | recheck.
+//   - stop  = stop transferring and close the files (ends seeding)
+//   - pause = keep it open but stop transferring (resume continues)
+func (rt *RTorrent) Do(hash, action string) error {
+	call := func(m string) error {
+		_, err := rt.Call(m, hash)
+		return err
+	}
+	state := func() int64 {
+		v, _ := rt.Call("d.state", hash)
+		return rtInt(v)
+	}
+	switch action {
+	case "start":
+		call("d.open")
+		if err := call("d.start"); err != nil {
+			return err
+		}
+		return call("d.resume")
+	case "stop":
+		if err := call("d.stop"); err != nil {
+			return err
+		}
+		return call("d.close")
+	case "pause":
+		if state() == 0 {
+			return errors.New("it's stopped — start it first")
+		}
+		return call("d.pause")
+	case "resume":
+		if state() == 0 {
+			return rt.Do(hash, "start")
+		}
+		return call("d.resume")
+	case "recheck":
+		return call("d.check_hash")
+	}
+	return fmt.Errorf("unknown action %q", action)
+}
+
+type rtTracker struct {
+	URL      string `json:"url"`
+	Enabled  bool   `json:"enabled"`
+	Seeds    int    `json:"seeds"`    // from the last scrape
+	Leechers int    `json:"leechers"` // from the last scrape
+	OK       int    `json:"ok"`       // successful announces
+	Failed   int    `json:"failed"`
+}
+
+type rtFile struct {
+	Path     string  `json:"path"`
+	Size     int64   `json:"size"`
+	Progress float64 `json:"progress"`
+}
+
+// Detail: trackers and files of one torrent.
+func (rt *RTorrent) Detail(hash string) ([]rtTracker, []rtFile, error) {
+	v, err := rt.Call("t.multicall", hash, "", "t.url=", "t.is_enabled=", "t.scrape_complete=", "t.scrape_incomplete=", "t.success_counter=", "t.failed_counter=")
+	if err != nil {
+		return nil, nil, err
+	}
+	trs := []rtTracker{}
+	rows, _ := v.([]any)
+	for _, r := range rows {
+		c, _ := r.([]any)
+		if len(c) < 6 {
+			continue
+		}
+		trs = append(trs, rtTracker{URL: fmt.Sprint(c[0]), Enabled: rtInt(c[1]) == 1, Seeds: int(rtInt(c[2])), Leechers: int(rtInt(c[3])), OK: int(rtInt(c[4])), Failed: int(rtInt(c[5]))})
+	}
+	v, err = rt.Call("f.multicall", hash, "", "f.path=", "f.size_bytes=", "f.completed_chunks=", "f.size_chunks=")
+	if err != nil {
+		return trs, nil, err
+	}
+	files := []rtFile{}
+	rows, _ = v.([]any)
+	for _, r := range rows {
+		c, _ := r.([]any)
+		if len(c) < 4 {
+			continue
+		}
+		p := 0.0
+		if t := rtInt(c[3]); t > 0 {
+			p = float64(rtInt(c[2])) / float64(t)
+		}
+		files = append(files, rtFile{Path: fmt.Sprint(c[0]), Size: rtInt(c[1]), Progress: p})
+		if len(files) >= 500 {
+			break
+		}
+	}
+	return trs, files, nil
+}
+
+// Throttle: global rates and limits in bytes/s (limit 0 = unlimited).
+func (rt *RTorrent) Throttle() (map[string]int64, error) {
+	out := map[string]int64{}
+	for k, m := range map[string]string{"up": "throttle.global_up.rate", "down": "throttle.global_down.rate",
+		"upMax": "throttle.global_up.max_rate", "downMax": "throttle.global_down.max_rate"} {
+		v, err := rt.Call(m, "")
+		if err != nil {
+			return nil, err
+		}
+		out[k] = rtInt(v)
+	}
+	return out, nil
+}
+
+func (rt *RTorrent) SetThrottle(up, down int64) error {
+	if _, err := rt.Call("throttle.global_up.max_rate.set", "", up); err != nil {
+		return err
+	}
+	_, err := rt.Call("throttle.global_down.max_rate.set", "", down)
 	return err
 }
 

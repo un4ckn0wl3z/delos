@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -277,6 +278,11 @@ type ServerSettings struct {
 	MaxRemux     int `json:"maxRemux,omitempty"`
 	MaxTranscode int `json:"maxTranscode,omitempty"`
 	MaxPerUser   int `json:"maxPerUser,omitempty"`
+	// Seeding rule for torrents added through StreamMKV (0 = no limit):
+	// stop seeding at this ratio / after this many hours seeding.
+	SeedRatio  float64 `json:"seedRatio,omitempty"`
+	SeedHours  float64 `json:"seedHours,omitempty"`
+	SeedAction string  `json:"seedAction,omitempty"` // "stop" (default) | "remove" (remove the torrent, keep the files)
 }
 
 type SettingsStore struct {
@@ -349,14 +355,17 @@ func (s *Server) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 // POST /api/admin/settings — partial update: {"autoUpdate"?, "tmdbKey"?, "tmdbLang"?}
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		AutoUpdate   *bool   `json:"autoUpdate"`
-		TMDBKey      *string `json:"tmdbKey"`
-		TMDBLang     *string `json:"tmdbLang"`
-		RTorrent     *string `json:"rtorrent"`
-		UserLibRoot  *string `json:"userLibRoot"`
-		MaxRemux     *int    `json:"maxRemux"`
-		MaxTranscode *int    `json:"maxTranscode"`
-		MaxPerUser   *int    `json:"maxPerUser"`
+		AutoUpdate   *bool    `json:"autoUpdate"`
+		TMDBKey      *string  `json:"tmdbKey"`
+		TMDBLang     *string  `json:"tmdbLang"`
+		RTorrent     *string  `json:"rtorrent"`
+		UserLibRoot  *string  `json:"userLibRoot"`
+		MaxRemux     *int     `json:"maxRemux"`
+		MaxTranscode *int     `json:"maxTranscode"`
+		MaxPerUser   *int     `json:"maxPerUser"`
+		SeedRatio    *float64 `json:"seedRatio"`
+		SeedHours    *float64 `json:"seedHours"`
+		SeedAction   *string  `json:"seedAction"`
 	}
 	if !decodeJSON(w, r, &b) {
 		return
@@ -389,6 +398,27 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			*v.out = *v.in
 		}
 	}
+	if b.SeedRatio != nil {
+		if *b.SeedRatio < 0 || *b.SeedRatio > 1000 {
+			httpErr(w, 400, "seed ratio must be between 0 and 1000")
+			return
+		}
+		cur.SeedRatio = *b.SeedRatio
+	}
+	if b.SeedHours != nil {
+		if *b.SeedHours < 0 || *b.SeedHours > 24*365 {
+			httpErr(w, 400, "seed time must be between 0 and 8760 hours")
+			return
+		}
+		cur.SeedHours = *b.SeedHours
+	}
+	if b.SeedAction != nil {
+		if *b.SeedAction != "" && *b.SeedAction != "stop" && *b.SeedAction != "remove" {
+			httpErr(w, 400, `seed action must be "stop" or "remove"`)
+			return
+		}
+		cur.SeedAction = *b.SeedAction
+	}
 	if b.UserLibRoot != nil {
 		v := strings.TrimSpace(*b.UserLibRoot)
 		if v != "" {
@@ -417,7 +447,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) adminSettings() map[string]any {
 	cur := s.settings.Get()
-	return map[string]any{"autoUpdate": cur.AutoUpdate, "tmdbKeySet": cur.TMDBKey != "", "tmdbLang": cur.TMDBLang, "rtorrent": cur.RTorrent, "userLibRoot": s.userLibRoot(), "streams": s.streamUsage(), "update": s.updater.Status()}
+	return map[string]any{"autoUpdate": cur.AutoUpdate, "tmdbKeySet": cur.TMDBKey != "", "tmdbLang": cur.TMDBLang, "rtorrent": cur.RTorrent, "userLibRoot": s.userLibRoot(),
+		"seed": map[string]any{"ratio": cur.SeedRatio, "hours": cur.SeedHours, "action": cmp.Or(cur.SeedAction, "stop")}, "streams": s.streamUsage(), "update": s.updater.Status()}
 }
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {

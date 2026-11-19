@@ -20,6 +20,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -56,6 +57,33 @@ type DownloadJob struct {
 	Saved    string `json:"basePath,omitempty"`
 	// Dupes: other copies of the same movie / episode found after it was matched
 	Dupes []string `json:"dupes,omitempty"`
+
+	// torrents
+	TState    string  `json:"tstate,omitempty"` // checking | downloading | seeding | paused | stopped | finished | removed
+	Ratio     float64 `json:"ratio,omitempty"`
+	Uploaded  int64   `json:"uploaded,omitempty"`
+	Peers     int     `json:"peers,omitempty"`
+	Seeds     int     `json:"seeds,omitempty"`
+	Files     int     `json:"files,omitempty"`
+	SeedSince int64   `json:"seedSince,omitempty"` // when it finished downloading
+	// SeedRatio / SeedHours: this torrent's seeding limit (0 = server default, -1 = no limit)
+	SeedRatio float64 `json:"seedRatio,omitempty"`
+	SeedHours float64 `json:"seedHours,omitempty"`
+	// AutoStopped: why the seeding rule stopped it (set once; starting it again by hand keeps it seeding)
+	AutoStopped string `json:"autoStopped,omitempty"`
+}
+
+// seedLimits: the ratio / hours this job seeds to (0 = no limit).
+func (d *Downloads) seedLimits(j *DownloadJob) (ratio, hours float64) {
+	st := d.s.settings.Get()
+	ratio, hours = st.SeedRatio, st.SeedHours
+	if j.SeedRatio != 0 {
+		ratio = j.SeedRatio
+	}
+	if j.SeedHours != 0 {
+		hours = j.SeedHours
+	}
+	return max(ratio, 0), max(hours, 0)
 }
 
 type Downloads struct {
@@ -472,7 +500,7 @@ func (d *Downloads) pollLoop() {
 		d.mu.Lock()
 		active := false
 		for _, j := range d.jobs {
-			if j.Kind == "torrent" && (j.State == JobQueued || j.State == JobDownloading || j.Seeding) {
+			if j.Kind == "torrent" && (j.State == JobQueued || j.State == JobDownloading || (j.State == JobDone && j.TState != "removed")) {
 				active = true
 			}
 		}
@@ -499,7 +527,7 @@ func (d *Downloads) syncTorrents() {
 			byTag[strings.TrimPrefix(it.Tag, "smkv:")] = it
 		}
 	}
-	var finished, finishedIDs []string
+	var finished, finishedIDs, limitHit []string
 	d.mu.Lock()
 	for id, j := range d.jobs {
 		if j.Kind != "torrent" || j.State == JobCanceled || j.State == JobFailed {
@@ -510,7 +538,10 @@ func (d *Downloads) syncTorrents() {
 			if j.State != JobDone && time.Since(time.Unix(j.Created, 0)) > time.Minute {
 				j.State, j.Error = JobFailed, "removed from rtorrent"
 			}
-			j.Seeding = false
+			if j.State == JobDone {
+				j.TState = "removed"
+			}
+			j.Seeding, j.Rate, j.Up, j.Peers = false, 0, 0, 0
 			continue
 		}
 		if j.Size <= 0 && it.Size > 0 && !it.Complete {
@@ -529,8 +560,32 @@ func (d *Downloads) syncTorrents() {
 				}
 			}
 		}
-		j.Hash, j.Name, j.Size, j.Done, j.Rate, j.Up, j.BasePath = it.Hash, it.Name, it.Size, it.Done, it.DownRate, it.UpRate, it.BasePath
+		j.Hash, j.Name, j.Size, j.Done, j.Rate, j.Up = it.Hash, it.Name, it.Size, it.Done, it.DownRate, it.UpRate
+		if p := it.dataPath(); p != "" {
+			j.BasePath = p
+		}
 		j.Seeding = it.Complete && it.Active
+		j.TState, j.Ratio, j.Uploaded, j.Peers, j.Seeds, j.Files = it.Status(), it.Ratio, it.UpTotal, it.Peers, it.Seeds, it.Files
+		if it.Complete && j.SeedSince == 0 {
+			j.SeedSince = it.FinishedAt
+			if j.SeedSince == 0 {
+				j.SeedSince = time.Now().Unix()
+			}
+		}
+		// seeding rule: stop (or remove, keeping the files) once the limit is reached
+		if j.Seeding && j.AutoStopped == "" {
+			ratio, hours := d.seedLimits(j)
+			why := ""
+			if ratio > 0 && it.Ratio >= ratio {
+				why = fmt.Sprintf("ratio %.2f reached", it.Ratio)
+			} else if hours > 0 && j.SeedSince > 0 && time.Since(time.Unix(j.SeedSince, 0)).Hours() >= hours {
+				why = fmt.Sprintf("seeded for %s", fmtHours(hours))
+			}
+			if why != "" {
+				j.AutoStopped = why
+				limitHit = append(limitHit, it.Hash)
+			}
+		}
 		if it.Message != "" && !it.Complete {
 			j.Error = it.Message
 		} else {
@@ -550,6 +605,16 @@ func (d *Downloads) syncTorrents() {
 	}
 	d.saveLocked()
 	d.mu.Unlock()
+	if len(limitHit) > 0 {
+		remove := d.s.settings.Get().SeedAction == "remove"
+		for _, h := range limitHit {
+			if remove {
+				rt.Erase(h) // the files stay in the library
+			} else {
+				rt.Do(h, "stop")
+			}
+		}
+	}
 	for _, lib := range finished {
 		d.s.index.Queue(lib, false)
 	}
@@ -922,4 +987,11 @@ func (s *Server) handleRTorrentTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, s.dl.TorrentStatus(true))
+}
+
+func fmtHours(h float64) string {
+	if h >= 48 && h == float64(int(h)) && int(h)%24 == 0 {
+		return fmt.Sprintf("%d days", int(h)/24)
+	}
+	return strconv.FormatFloat(h, 'f', -1, 64) + " h"
 }
