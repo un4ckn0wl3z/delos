@@ -269,19 +269,19 @@ func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
 	writeJSON(w, 200, map[string]any{
-		"version":    version,
-		"started":    s.started.Unix(),
-		"libraries":  len(s.libs.List()),
-		"scan":       s.index.Status(),
-		"ffmpeg":     s.ffmpegVersion(),
-		"streams":    s.streamUsage(),
-		"library":    lib,
-		"disk":       disk,
-		"memory":     ms.Sys,
-		"users":      s.users.Count(),
-		"conns":      s.conns.List(),
-		"watching":   s.progress.Recent(90 * time.Second),
-		"recent":     s.progress.Recent(7 * 24 * time.Hour),
+		"version":   version,
+		"started":   s.started.Unix(),
+		"libraries": len(s.libs.List()),
+		"scan":      s.index.Status(),
+		"ffmpeg":    s.ffmpegVersion(),
+		"streams":   s.streamUsage(),
+		"library":   lib,
+		"disk":      disk,
+		"memory":    ms.Sys,
+		"users":     s.users.Count(),
+		"conns":     s.conns.List(),
+		"watching":  s.progress.Recent(90 * time.Second),
+		"recent":    s.progress.Recent(7 * 24 * time.Hour),
 	})
 }
 
