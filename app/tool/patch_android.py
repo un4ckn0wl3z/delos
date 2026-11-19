@@ -77,6 +77,18 @@ for act in root.glob("android/app/src/main/**/MainActivity.kt"):
         act.write_text(k)
         print("patched", act)
 
+# Release builds shrink resources, and audio_service looks its notification / lock-screen
+# button icons up by name — so they were stripped and every media-session update failed
+# ("You must specify an icon resource id to build a CustomAction"): no notification, no
+# lock-screen controls. Keep them (and the notification icon).
+keep = root / "android/app/src/main/res/raw/keep.xml"
+keep.parent.mkdir(parents=True, exist_ok=True)
+keep.write_text("""<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/audio_service_*,@mipmap/ic_launcher,@drawable/ic_launcher*" />
+""")
+print("wrote", keep)
+
 # flutter create adds a counter-app widget test that doesn't match this app
 test = root / "test/widget_test.dart"
 if test.exists():
