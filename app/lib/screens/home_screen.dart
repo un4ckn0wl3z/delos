@@ -8,6 +8,7 @@ import '../item_menu.dart';
 import '../library.dart';
 import '../media_session.dart';
 import '../offline/local_player.dart';
+import 'announcements.dart';
 import '../offline/offline_view.dart';
 import '../offline/store.dart';
 import '../social.dart';
@@ -89,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 0 = Videos, 1 = Music, 2 = Chat, 3 = Downloads, 4 = Offline — separate sides with their own menus
   static int section = 0;
   int _lastMedia = 0;
-  StreamSubscription? _incoming;
+  StreamSubscription? _incoming, _announce;
   int sel = 0; // Videos: 0 = home, i + 1 = videoLibs[i]
   String? error;
   bool loading = true;
@@ -121,15 +122,37 @@ class _HomeScreenState extends State<HomeScreen> {
         action: SnackBarAction(label: 'Open', onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(app: app, convId: conv)))),
       ));
     });
+    // announcements: important ones pop up, others show as a SnackBar (📣 lists them all)
+    _announce = app.social!.newAnnouncements.stream.listen((a) {
+      if (!mounted) return;
+      if (a['level'] == 'important') {
+        showAnnouncementDialog(context, app.social!, a);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          duration: const Duration(seconds: 8),
+          content: Text('${a['level'] == 'warning' ? '⚠️' : '📣'} ${a['title'] ?? ''}${'${a['body'] ?? ''}'.isNotEmpty ? ' — ${a['body']}' : ''}',
+              maxLines: 3, overflow: TextOverflow.ellipsis),
+          action: SnackBarAction(label: 'View', onPressed: _openAnnouncements),
+        ));
+      }
+    });
     if (!_updateChecked) {
       _updateChecked = true;
       WidgetsBinding.instance.addPostFrameCallback((_) => checkForUpdate(context, widget.api.settings));
     }
   }
 
+  Future<void> _openAnnouncements() async {
+    final s = app.social;
+    if (s == null) return;
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => AnnouncementsScreen(social: s)));
+    s.loadAnnouncements();
+  }
+
   @override
   void dispose() {
     _incoming?.cancel();
+    _announce?.cancel();
     app.social?.dispose();
     NowWatching.onChange = null;
     app.audio.dispose();
@@ -288,6 +311,18 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Text(title),
         automaticallyImplyLeading: !wide && section == 0,
         actions: [
+          if (app.social != null)
+            ListenableBuilder(
+              listenable: app.social!,
+              builder: (_, __) {
+                final n = app.social!.annUnread;
+                return IconButton(
+                  tooltip: 'Announcements',
+                  icon: Badge(isLabelVisible: n > 0, label: Text('$n'), child: const Icon(Icons.campaign_outlined)),
+                  onPressed: _openAnnouncements,
+                );
+              },
+            ),
           // music keeps playing on the Videos side: a shortcut back to it
           if (section != 1)
             ListenableBuilder(

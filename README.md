@@ -89,6 +89,16 @@ Users with the **downloader** role can create **their own libraries** under Down
 - **Admins** carry an **ADMIN** tag next to their name in People and Chat.
 
 
+
+## Announcements
+
+Admins post messages to users from **/admin → 📣 Announcements**: a title and a message (links are clickable), a level, who gets it (everyone or chosen users), an optional expiry, and *Pin* to keep it in the list after it's read.
+
+- **Info / Warning** show as a banner at the top of the web app (and a SnackBar in the app). **Important** pops up as a dialog.
+- They arrive **live** to everyone who has the web app or the app open, and to the rest the next time they open it.
+- The **📣** button (web app sidebar, app top bar) lists the active ones with an unread count; reading or dismissing marks them read.
+- The dashboard shows how many of the audience have read each one (hover for names). Editing can **show it again to everyone**; deleting removes it everywhere.
+
 ## Offline library (app)
 
 The app can play things **without the server**, in two clearly separate places (📥 Offline tab):

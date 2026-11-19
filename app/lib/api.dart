@@ -206,6 +206,12 @@ class Api {
   Future<Map> people() async => await _req('GET', 'people') as Map;
   Future<void> setHideActivity(bool hide) => _req('POST', 'me/privacy', body: {'hideActivity': hide});
   Future<List<Map>> chats() async => List<Map>.from((await _req('GET', 'chat') as Map)['conversations'] as List? ?? const []);
+  // ---------------------------------------------------------------- announcements
+  /// Active announcements for me: unread + pinned (all: also the read ones).
+  Future<Map> announcements({bool all = false}) async => await _req('GET', 'announcements', q: all ? {'all': '1'} : null) as Map;
+  Future<void> announcementRead(String id) => _req('POST', 'announcements/${Uri.encodeComponent(id)}/read', body: {});
+  Future<void> announcementsReadAll() => _req('POST', 'announcements/read-all', body: {});
+
   Future<Map> chatDM(String user) async => await _req('POST', 'chat/dm', body: {'user': user}) as Map;
   Future<Map> chatGroup(String name, List<String> members) async => await _req('POST', 'chat/groups', body: {'name': name, 'members': members}) as Map;
   Future<Map> chatUpdate(String id, {String? name, List<String> add = const [], List<String> remove = const []}) async =>

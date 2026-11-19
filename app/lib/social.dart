@@ -37,6 +37,29 @@ class Social extends ChangeNotifier {
   /// A message arrived for a chat that isn't open (for a SnackBar).
   final incoming = StreamController<(String conv, Map msg)>.broadcast();
 
+  /// Announcements from the admins (unread + pinned), and new unread ones to show.
+  List<Map> announcements = [];
+  final newAnnouncements = StreamController<Map>.broadcast();
+  final _annShown = <String>{};
+  int get annUnread => announcements.where((a) => a['read'] != true).length;
+
+  Future<void> loadAnnouncements() async {
+    try {
+      final d = await api.announcements();
+      announcements = List<Map>.from(d['items'] as List? ?? const []);
+      for (final a in announcements) {
+        if (a['read'] != true && _annShown.add('${a['id']}')) newAnnouncements.add(a);
+      }
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  void markAnnouncementRead(Map a) {
+    a['read'] = true;
+    api.announcementRead('${a['id']}').catchError((_) {});
+    notifyListeners();
+  }
+
   StreamSubscription<String>? _sub;
   Timer? _hb, _retry;
   String _lastAct = '';
@@ -78,6 +101,7 @@ class Social extends ChangeNotifier {
     try {
       final res = await api.events();
       connected = true;
+      loadAnnouncements(); // catch up after (re)connecting
       _backoff = 2;
       notifyListeners();
       var event = '';
@@ -112,6 +136,8 @@ class Social extends ChangeNotifier {
     switch (event) {
       case 'people':
         people = List<Map>.from(v as List);
+      case 'announcement':
+        loadAnnouncements();
       case 'conversation':
         final c = Map.from(v as Map);
         convs.removeWhere((x) => x['id'] == c['id']);
@@ -203,6 +229,7 @@ class Social extends ChangeNotifier {
     _hb?.cancel();
     _retry?.cancel();
     incoming.close();
+    newAnnouncements.close();
     super.dispose();
   }
 }
