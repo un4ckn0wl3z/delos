@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../autotest.dart';
 import '../audio.dart';
 import '../item_menu.dart';
 import '../library.dart';
@@ -111,6 +112,18 @@ class _HomeScreenState extends State<HomeScreen> {
     }).catchError((_) {});
     OfflineStore.instance.api = widget.api;
     MusicSession.attach(app.audio);
+    if (AutoTest.config?['play'] == 'music') {
+      Future.delayed(const Duration(seconds: 3), () async {
+        try {
+          final d = await app.repo.lib(LibraryRepo.allMusic);
+          debugPrint('AUTOTEST: ${d.items.length} tracks');
+          if (d.items.isNotEmpty) await app.audio.playQueue(d.items, 0);
+          debugPrint('AUTOTEST: playing=${app.audio.playing}');
+        } catch (e) {
+          debugPrint('AUTOTEST: play failed: $e');
+        }
+      });
+    }
     app.social = Social(widget.api, app.audio)..start();
     _incoming = app.social!.incoming.stream.listen((e) {
       if (!mounted) return;

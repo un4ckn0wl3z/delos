@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart';
 
 import 'audio.dart';
 
@@ -16,6 +17,9 @@ class MusicSession extends BaseAudioHandler with QueueHandler, SeekHandler {
   bool? _lastPlaying;
   int _lastIndex = -2;
   DateTime _lastPush = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Why the media session couldn't start (shown in Settings → About).
+  static String? error;
 
   static bool get supported => Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
 
@@ -34,8 +38,10 @@ class MusicSession extends BaseAudioHandler with QueueHandler, SeekHandler {
             androidStopForegroundOnPause: true,
           ),
         );
-      } catch (_) {
+      } catch (e) {
         // no media session on this device — music still plays in the foreground
+        error = '$e';
+        debugPrint('media session: $e');
       } finally {
         _starting = false;
       }
