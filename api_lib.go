@@ -124,6 +124,11 @@ func (s *Server) handleAudio(w http.ResponseWriter, r *http.Request) {
 	} else {
 		args = append(args, "-c:a", "libmp3lame", "-b:a", "256k", "-f", "mp3", "pipe:1")
 	}
+	release, ok := s.startStream(w, r, ClassRemux) // light: audio only
+	if !ok {
+		return
+	}
+	defer release()
 	cmd := exec.CommandContext(r.Context(), s.cfg.FFmpeg, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &limitedWriter{buf: &stderr, max: 4096}

@@ -123,9 +123,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ));
         }
       }),
-      _player.stream.error.listen((e) {
+      _player.stream.error.listen((e) async {
         if (!mounted || e.isEmpty) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Playback error: $e')));
+        // a stream limit (busy server / too many videos at once)? show the server's reason
+        var msg = 'Playback error: $e';
+        try {
+          final burn = _sub != null && _info != null && !_info!.subs[_sub!].text;
+          await api.streamCheck(path, _transcode || burn ? 'transcode' : 'direct');
+        } on ApiException catch (x) {
+          if (x.status == 429 || x.status == 503) msg = x.message;
+        } catch (_) {}
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(duration: const Duration(seconds: 8), content: Text(msg)));
       }),
     ]);
     _init();

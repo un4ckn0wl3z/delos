@@ -48,6 +48,18 @@ Use **/admin → Downloads** to paste a link, then pick a library and an optiona
   For the last two you can choose **Download anyway**. After a download finishes and is matched, other versions of the same title are listed on it ("⚠ Also in the library").
 - **Who can add downloads:** admins, plus users given **Make downloader** in Users. Downloaders only see libraries they have access to, and only they or an admin can cancel or remove their downloads. They can't download from private or loopback addresses.
 
+## Stream limits
+
+Set these under **/admin → Connections → Limits**. Changes apply straight away, with no restart.
+
+| limit | what counts | default |
+|---|---|---|
+| **Transcodes** | re-encoding video: Transcode mode and PGS burn-in. Heavy on the CPU; a typical seedbox manages 1–2 at 1080p | `-max-streams` (3) |
+| **Light streams** | ffmpeg work that doesn't re-encode video: browser playback that only changes the container, and music converted on the fly (wma/ape → mp3) | 10 |
+| **Per user** | different videos one person can watch at once, in any mode including the app's Direct play. Music doesn't count, and admins are never limited | 0 = unlimited |
+
+The app's Direct play doesn't use ffmpeg, so it only counts toward the per-user limit. When a limit is reached, the player shows why, e.g. "The server is busy: 2 of 2 transcodes running — try Direct mode" or "You're already watching 1 video at once".
+
 ## Personal libraries & limits
 
 Users with the **downloader** role can create **their own libraries** under Downloads → *My libraries*. They give it a name and a type (Movies / TV / Music / Other videos), and choose whether to **share it with everyone**.
@@ -192,7 +204,7 @@ To keep it running with no systemd: `nohup ... > streammkv.log 2>&1 &` or `scree
 | `-data` | `STREAMMKV_DATA` | same as cache | `users.json`, `progress.json`, `settings.json`, `libraries.json`, `secret.key`, `index/`, `covers/` |
 | | `STREAMMKV_UPDATE_REPO` | `un4ckn0wl3z/streammkv` | GitHub repo to update from (forks) |
 | `-tls-cert` / `-tls-key` | `STREAMMKV_TLS_CERT` / `_KEY` | — | serve HTTPS directly |
-| `-max-streams` | | `3` | max number of ffmpeg processes at once |
+| `-max-streams` | `STREAMMKV_MAX_STREAMS` | `3` | starting value for the transcode limit (change it later in /admin) |
 
 ### HTTPS / reverse proxy (recommended)
 

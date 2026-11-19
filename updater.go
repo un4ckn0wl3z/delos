@@ -272,6 +272,11 @@ type ServerSettings struct {
 	RTorrent string `json:"rtorrent,omitempty"`
 	// UserLibRoot: where personal libraries are created (<root>/<user>/<name>).
 	UserLibRoot string `json:"userLibRoot,omitempty"`
+	// Stream limits (0 = default): remux = light ffmpeg work, transcode =
+	// re-encoding, per user = videos one user may watch at once (0 = unlimited).
+	MaxRemux     int `json:"maxRemux,omitempty"`
+	MaxTranscode int `json:"maxTranscode,omitempty"`
+	MaxPerUser   int `json:"maxPerUser,omitempty"`
 }
 
 type SettingsStore struct {
@@ -344,11 +349,14 @@ func (s *Server) handleUpdateInstall(w http.ResponseWriter, r *http.Request) {
 // POST /api/admin/settings — partial update: {"autoUpdate"?, "tmdbKey"?, "tmdbLang"?}
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		AutoUpdate  *bool   `json:"autoUpdate"`
-		TMDBKey     *string `json:"tmdbKey"`
-		TMDBLang    *string `json:"tmdbLang"`
-		RTorrent    *string `json:"rtorrent"`
-		UserLibRoot *string `json:"userLibRoot"`
+		AutoUpdate   *bool   `json:"autoUpdate"`
+		TMDBKey      *string `json:"tmdbKey"`
+		TMDBLang     *string `json:"tmdbLang"`
+		RTorrent     *string `json:"rtorrent"`
+		UserLibRoot  *string `json:"userLibRoot"`
+		MaxRemux     *int    `json:"maxRemux"`
+		MaxTranscode *int    `json:"maxTranscode"`
+		MaxPerUser   *int    `json:"maxPerUser"`
 	}
 	if !decodeJSON(w, r, &b) {
 		return
@@ -368,6 +376,18 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if b.RTorrent != nil {
 		cur.RTorrent = strings.TrimSpace(*b.RTorrent)
+	}
+	for _, v := range []struct {
+		in  *int
+		out *int
+	}{{b.MaxRemux, &cur.MaxRemux}, {b.MaxTranscode, &cur.MaxTranscode}, {b.MaxPerUser, &cur.MaxPerUser}} {
+		if v.in != nil {
+			if *v.in < 0 || *v.in > 100 {
+				httpErr(w, 400, "limits must be between 0 and 100")
+				return
+			}
+			*v.out = *v.in
+		}
 	}
 	if b.UserLibRoot != nil {
 		v := strings.TrimSpace(*b.UserLibRoot)
@@ -397,7 +417,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) adminSettings() map[string]any {
 	cur := s.settings.Get()
-	return map[string]any{"autoUpdate": cur.AutoUpdate, "tmdbKeySet": cur.TMDBKey != "", "tmdbLang": cur.TMDBLang, "rtorrent": cur.RTorrent, "userLibRoot": s.userLibRoot(), "update": s.updater.Status()}
+	return map[string]any{"autoUpdate": cur.AutoUpdate, "tmdbKeySet": cur.TMDBKey != "", "tmdbLang": cur.TMDBLang, "rtorrent": cur.RTorrent, "userLibRoot": s.userLibRoot(), "streams": s.streamUsage(), "update": s.updater.Status()}
 }
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {

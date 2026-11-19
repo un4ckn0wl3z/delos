@@ -216,6 +216,9 @@ class Api {
   Future<void> metaMatch(String lib, {String? path, String? show, required int tmdbId}) =>
       _req('POST', 'meta/match', body: {'lib': lib, if (path != null) 'path': path, if (show != null) 'show': show, 'tmdbId': tmdbId});
 
+  /// Throws ApiException with the server's reason when a stream limit is hit.
+  Future<void> streamCheck(String path, String kind) => _req('GET', 'stream/check', q: {'path': path, 'kind': kind});
+
   Future<String> subtitle(String path, int index) async =>
       await _req('GET', 'subtitle', q: {'path': path, 'sub': '$index'}) as String;
 

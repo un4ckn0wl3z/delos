@@ -1706,6 +1706,9 @@
       if (S.errCount > 3) { spinner(false); toast('Playback failed: ' + (video.error?.message || 'unknown error'), 8000); return; }
       const me = await fetch(new URL('api/me', BASE), { credentials: 'same-origin' });
       if (!me.ok) { await ensureLogin(); return playAt(t, true); }
+      // a stream limit? show the server's reason instead of retrying
+      try { await api('stream/check', { path: S.file.path, kind: S.sub && !S.sub.text ? 'transcode' : effectiveMode() }); }
+      catch (e) { spinner(false); S.errCount = 99; toast(e.message, 12000); return; }
       if (effectiveMode() === 'copy' && S.vmode === 'auto') {
         S.forceTranscode = true;
         toast('Direct play failed — switching to transcode');

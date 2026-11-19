@@ -22,7 +22,6 @@ import (
 
 type Media struct {
 	cfg   *Config
-	sem   chan struct{}
 	mu    sync.Mutex
 	probe map[string]*ProbeInfo // key: path|mtime
 	locks map[string]*sync.Mutex
@@ -31,7 +30,6 @@ type Media struct {
 func NewMedia(cfg *Config) *Media {
 	return &Media{
 		cfg:   cfg,
-		sem:   make(chan struct{}, cfg.MaxStreams),
 		probe: map[string]*ProbeInfo{},
 		locks: map[string]*sync.Mutex{},
 	}
@@ -332,17 +330,16 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		"-avoid_negative_ts", "make_zero", "-max_muxing_queue_size", "4096",
 		"-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof", "pipe:1")
 
-	// limit concurrent ffmpeg processes (wait briefly: an aborted request from a
-	// seek may still be shutting down)
-	select {
-	case s.media.sem <- struct{}{}:
-	case <-time.After(10 * time.Second):
-		httpErr(w, 503, "too many active streams")
-		return
-	case <-r.Context().Done():
+	// limit concurrent ffmpeg processes: copy (remux) is light, re-encoding is heavy
+	class := ClassTranscode
+	if mode == "copy" {
+		class = ClassRemux
+	}
+	release, ok := s.startStream(w, r, class)
+	if !ok {
 		return
 	}
-	defer func() { <-s.media.sem }()
+	defer release()
 
 	cmd := exec.CommandContext(r.Context(), s.cfg.FFmpeg, args...)
 	var stderr bytes.Buffer

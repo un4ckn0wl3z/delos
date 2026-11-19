@@ -49,6 +49,7 @@ type Server struct {
 	progress *ProgressStore
 	users    *UserStore
 	conns    *ConnRegistry
+	limiter  *StreamLimiter
 	settings *SettingsStore
 	updater  *Updater
 	libs     *LibraryStore
@@ -89,7 +90,7 @@ func main() {
 	flag.StringVar(&cfg.TLSCert, "tls-cert", envOr("STREAMMKV_TLS_CERT", ""), "TLS certificate (optional)")
 	flag.StringVar(&cfg.TLSKey, "tls-key", envOr("STREAMMKV_TLS_KEY", ""), "TLS key (optional)")
 	flag.StringVar(&exts, "ext", envOr("STREAMMKV_EXT", defaultVideoExts), "comma-separated video file extensions")
-	flag.IntVar(&maxStreams, "max-streams", 3, "max concurrent ffmpeg streams")
+	flag.IntVar(&maxStreams, "max-streams", envInt("STREAMMKV_MAX_STREAMS", 3), "default max concurrent transcodes (re-encoding); adjustable in /admin")
 	flag.Parse()
 
 	root, err := filepath.Abs(cfg.Root)
@@ -174,7 +175,7 @@ func main() {
 		log.Fatal(err)
 	}
 	s := &Server{cfg: cfg, media: NewMedia(&cfg), progress: NewProgressStore(cfg.DataDir, legacy),
-		users: users, conns: NewConnRegistry(), started: time.Now(), settings: NewSettingsStore(cfg.DataDir), libs: libs}
+		users: users, conns: NewConnRegistry(), limiter: NewStreamLimiter(), started: time.Now(), settings: NewSettingsStore(cfg.DataDir), libs: libs}
 	if migrated {
 		s.progress.PrefixKeys("main/") // paths are now "<library>/<relative path>"
 		log.Printf("created library \"main\" for %s; add more in /admin", cfg.Root)
@@ -201,6 +202,7 @@ func main() {
 	mux.HandleFunc("GET /api/probe", s.auth(s.handleProbe))
 	mux.HandleFunc("GET /api/keyframe", s.auth(s.handleKeyframe))
 	mux.HandleFunc("GET /api/stream", s.auth(s.handleStream))
+	mux.HandleFunc("GET /api/stream/check", s.auth(s.handleStreamCheck))
 	mux.HandleFunc("GET /api/subtitle", s.auth(s.handleSubtitle))
 	mux.HandleFunc("GET /api/raw", s.auth(s.handleRaw))
 	mux.HandleFunc("GET /api/progress", s.auth(s.handleProgressGet))
@@ -426,6 +428,13 @@ func qInt(r *http.Request, k string, def int) int {
 
 func qFloat(r *http.Request, k string, def float64) float64 {
 	if v, err := strconv.ParseFloat(r.URL.Query().Get(k), 64); err == nil && v >= 0 {
+		return v
+	}
+	return def
+}
+
+func envInt(key string, def int) int {
+	if v, err := strconv.Atoi(os.Getenv(key)); err == nil && v > 0 {
 		return v
 	}
 	return def

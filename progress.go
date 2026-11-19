@@ -103,7 +103,7 @@ func (ps *ProgressStore) Recent(within time.Duration) []WatchEntry {
 	cut := time.Now().Add(-within).Unix()
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	var out []WatchEntry
+	out := []WatchEntry{} // never null in JSON (the dashboard reads .length)
 	for u, m := range ps.users {
 		for path, p := range m {
 			if p.Updated >= cut {
@@ -256,6 +256,11 @@ func (s *Server) handleRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer f.Close()
+	release, ok := s.startStream(w, r, "") // Direct play: no server work, but counts per user
+	if !ok {
+		return
+	}
+	defer release()
 	defer s.conns.Add(userOf(r), r, r.URL.Query().Get("path"), "direct")()
 	if ct, ok := mimeTypes[strings.ToLower(filepath.Ext(p))]; ok {
 		w.Header().Set("Content-Type", ct)

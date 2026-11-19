@@ -94,6 +94,13 @@
   <section>
     <h2>Connections <span class="count" id="n-conn">0</span><span class="sp"></span><span class="dim" style="font-weight:normal;font-size:12px" id="tx"></span></h2>
     <div id="conns"></div>
+    <form class="add" id="lim-form" style="font-size:13px;flex-wrap:wrap">
+      <span class="dim" title="Applies right away — no restart">Limits</span>
+      <label class="dim" title="Re-encoding video: Transcode mode and PGS burn-in. CPU heavy — a typical seedbox manages 1–2 at 1080p.">Transcodes <input type="number" name="t" min="1" max="100" style="width:64px"></label>
+      <label class="dim" title="Light ffmpeg work: browser playback that only changes the container, and on-the-fly music conversion.">Light streams <input type="number" name="r" min="1" max="100" style="width:64px"></label>
+      <label class="dim" title="Different videos one person may watch at once (every mode, including Direct; music doesn't count). 0 = unlimited. Admins are never limited.">Per user <input type="number" name="u" min="0" max="100" style="width:64px"></label>
+      <button class="primary">Save</button>
+    </form>
   </section>
 
   <section>
@@ -313,7 +320,7 @@
       ['Users', o.users, ''],
       ['Library', lib.files + ' files', size(lib.bytes)],
       ['Disk', d.total ? size(d.free) + ' free' : '—', d.total ? `of ${size(d.total)}<div class="bar"><i style="width:${(used * 100).toFixed(1)}%"></i></div>` : ''],
-      ['Streams', o.conns.length, `${o.transcodes}/${o.maxStreams} ffmpeg slots busy`],
+      ['Streams', o.conns.length, `${o.streams.transcode}/${o.streams.maxTranscode} transcodes · ${o.streams.remux}/${o.streams.maxRemux} light`],
       ['Uptime', dur(o.started), 'memory ' + size(o.memory)],
       ['ffmpeg', `<span style="font-size:15px">${esc(o.ffmpeg)}</span>`, 'subtitle cache ' + size(lib.cacheBytes)],
     ].map(([k, v, s]) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
@@ -325,7 +332,8 @@
         <td class="h-m dim">${ago(w.updated)}</td></tr>`).join('')}</table>` : '<div class="empty">Nobody is watching right now.</div>';
 
     $('#n-conn').textContent = o.conns.length;
-    $('#tx').textContent = o.transcodes ? `${o.transcodes} ffmpeg process${o.transcodes > 1 ? 'es' : ''}` : '';
+    const st = o.streams;
+    $('#tx').textContent = `transcodes ${st.transcode}/${st.maxTranscode} · light ${st.remux}/${st.maxRemux}${st.maxPerUser ? ` · ${st.maxPerUser} per user` : ''}`;
     $('#conns').innerHTML = o.conns.length ? `<table><tr><th>User</th><th>File</th><th>Mode</th><th class="h-m">Client</th><th class="h-m">Since</th></tr>${
       o.conns.map((c) => `<tr><td>${esc(c.user)}</td><td class="file" title="${esc(c.path)}">${esc(base(c.path))}</td>
         <td><span class="badge k-${esc(c.kind)}">${esc(c.kind)}</span></td>
@@ -548,6 +556,10 @@
 
   // metadata settings
   function renderMeta(st) {
+    if (st.streams) {
+      const lf = $('#lim-form');
+      lf.t.value = st.streams.maxTranscode; lf.r.value = st.streams.maxRemux; lf.u.value = st.streams.maxPerUser || 0;
+    }
     const f = $('#meta-form');
     f.key.placeholder = st.tmdbKeySet ? '•••••••• (saved — type to replace)' : 'v3 API key or v4 read token';
     f.lang.value = st.tmdbLang || 'en-US';
@@ -690,6 +702,14 @@
         await submitDownload(f, true);
       }
       f.source.value = ''; f.file.value = ''; toast('Download added'); loadDownloads();
+    } catch (x) { toast(x.message); }
+  };
+  $('#lim-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target, n = (x) => Math.max(0, parseInt(x.value, 10) || 0);
+    try {
+      const r = await api('admin/settings', { method: 'POST', body: { maxTranscode: n(f.t), maxRemux: n(f.r), maxPerUser: n(f.u) } });
+      renderMeta(r); toast('Limits saved'); loadOverview();
     } catch (x) { toast(x.message); }
   };
   $('#ulr-form').onsubmit = async (e) => {
