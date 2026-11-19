@@ -527,6 +527,7 @@
           <button class="smkv-play">${it.pos ? '▶ Resume ' + fmtTime(it.pos) : '▶ Play'}</button>
           ${it.pos ? '<button class="smkv-restart" title="Start from the beginning">↺</button>' : ''}
           <span>${esc(it.name)}<br><small>${fmtSize(it.size)}${it.dir ? ' · ' + esc(it.dir) : ''}</small></span>
+          ${BR.me && BR.me.offline ? `<a class="smkv-del smkv-save" href="${esc(new URL('api/download?path=' + encodeURIComponent(it.path), BASE).href)}" title="Save to this computer" download>⬇</a>` : ''}
           ${canDelete(lib) ? '<button class="smkv-del" title="Delete this file from the server">🗑</button>' : ''}</div>`).join('')}</div>
         ${libOf(lib).owner ? `<div class="smkv-dim2" style="margin-top:8px">📦 From ${libOf(lib).owner === BR.me.user ? 'your' : esc(libOf(lib).owner) + "'s"} library “${esc(libOf(lib).name)}”</div>` : ''}
         ${lib !== '_legacy' ? '<button class="smkv-sharebtn">📤 Send to a friend</button>' : ''}
@@ -536,7 +537,9 @@
             row.querySelector('.smkv-play').onclick = () => { close(); playVideo(row.dataset.p); };
             const r = row.querySelector('.smkv-restart');
             if (r) r.onclick = () => { close(); playVideo(row.dataset.p, { fromStart: true }); };
-            const del = row.querySelector('.smkv-del');
+            const sv = row.querySelector('.smkv-save');
+            if (sv) sv.onclick = (e) => e.stopPropagation();
+            const del = row.querySelector('.smkv-del:not(.smkv-save)');
             if (del) del.onclick = async () => { if (await deleteFiles([row.dataset.p], `“${t}” (${row.querySelector('span').firstChild.textContent})`)) close(); };
           });
           const sb = root.querySelector('.smkv-sharebtn');

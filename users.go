@@ -40,6 +40,8 @@ type User struct {
 	MaxBytes int64 `json:"maxBytes,omitempty"`
 	// HideActivity: others see you online, but not what you're playing.
 	HideActivity bool `json:"hideActivity,omitempty"`
+	// Offline: may save files to their own device (apps / browser download).
+	Offline bool `json:"offline,omitempty"`
 }
 
 type UserView struct {
@@ -53,6 +55,7 @@ type UserView struct {
 	Downloader bool      `json:"downloader"`
 	MaxItems   int       `json:"maxItems,omitempty"`
 	MaxBytes   int64     `json:"maxBytes,omitempty"`
+	Offline    bool      `json:"offline"`
 }
 
 // UserStore keeps users.json in memory. The file is re-read when it changes on
@@ -208,7 +211,7 @@ func (us *UserStore) List() []UserView {
 	defer us.mu.Unlock()
 	out := make([]UserView, 0, len(us.users))
 	for n, u := range us.users {
-		out = append(out, UserView{Name: n, Admin: u.Admin, Created: u.Created, LastSeen: us.lastSeen[n], Libraries: u.Libraries, Editor: u.Editor, Downloader: u.Downloader, MaxItems: u.MaxItems, MaxBytes: u.MaxBytes})
+		out = append(out, UserView{Name: n, Admin: u.Admin, Created: u.Created, LastSeen: us.lastSeen[n], Libraries: u.Libraries, Editor: u.Editor, Downloader: u.Downloader, MaxItems: u.MaxItems, MaxBytes: u.MaxBytes, Offline: u.Offline})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out

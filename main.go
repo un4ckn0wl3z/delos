@@ -193,7 +193,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.auth(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "editor": s.canEdit(r), "downloader": s.users.IsDownloader(userOf(r)), "version": version})
+		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "editor": s.canEdit(r), "downloader": s.users.IsDownloader(userOf(r)), "offline": s.users.IsOffline(userOf(r)), "version": version})
 	}))
 	mux.HandleFunc("POST /api/me/password", s.auth(s.handleOwnPassword))
 	mux.HandleFunc("GET /admin", s.handleAdminPage)
@@ -212,6 +212,7 @@ func main() {
 	s.downloadRoutes(mux)
 	s.personalRoutes(mux)
 	s.chatRoutes(mux)
+	s.offlineRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

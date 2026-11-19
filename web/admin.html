@@ -351,7 +351,7 @@
     $('#n-users').textContent = d.users.length;
     $('#users').innerHTML = `<table><tr><th>User</th><th class="h-m">Last seen</th><th class="h-m">Watching</th><th class="h-m">Created</th><th></th></tr>${
       d.users.map((u) => `<tr data-u="${esc(u.name)}">
-        <td><b>${esc(u.name)}</b>${u.admin ? '<span class="badge">admin</span>' : ''}${!u.admin && u.editor ? '<span class="badge t-tv">editor</span>' : ''}${!u.admin && u.downloader ? '<span class="badge t-music">downloader</span>' : ''}${u.name === d.me ? '<span class="badge you">you</span>' : ''}
+        <td><b>${esc(u.name)}</b>${u.admin ? '<span class="badge">admin</span>' : ''}${!u.admin && u.editor ? '<span class="badge t-tv">editor</span>' : ''}${!u.admin && u.downloader ? '<span class="badge t-music">downloader</span>' : ''}${!u.admin && u.offline ? '<span class="badge t-videos" title="May save files to their own device">offline</span>' : ''}${u.name === d.me ? '<span class="badge you">you</span>' : ''}
           ${u.streams ? `<span class="dim"> · ${u.streams} stream${u.streams > 1 ? 's' : ''}</span>` : ''}</td>
         <td class="h-m dim">${ago(u.lastSeen)}</td>
         <td class="h-m dim">${u.inProgress} in progress · ${u.watched} total${u.usage ? `<br>📦 ${u.usage.items}${u.maxItems ? '/' + u.maxItems : ''} items · ${size(u.usage.bytes)}${u.maxBytes ? ' / ' + size(u.maxBytes) : ''}` : ''}</td>
@@ -363,6 +363,7 @@
           ${u.admin ? '' : `<button data-a="editor" title="Editors can fix wrong movie / show / music info">${u.editor ? 'Remove editor' : 'Make editor'}</button>`}
           ${u.admin ? '' : `<button data-a="downloader" title="Downloaders can add HTTP and torrent downloads into libraries they can see">${u.downloader ? 'Remove downloader' : 'Make downloader'}</button>`}
           ${u.admin ? '' : `<button data-a="limits" title="Limit the user's personal libraries">Limits${u.maxItems || u.maxBytes ? ' ✓' : ''}</button>`}
+          ${u.admin ? '' : `<button data-a="offline" title="Let them save movies to their own device (app offline library / browser download)">${u.offline ? 'Revoke offline' : 'Allow offline'}</button>`}
           <button data-a="role">${u.admin ? 'Remove admin' : 'Make admin'}</button>
           <button data-a="revoke" title="Sign this user out on every device">Sign out</button>
           ${u.name === d.me ? '' : '<button class="danger" data-a="delete">Delete</button>'}
@@ -389,6 +390,9 @@
               r.password ? showPassword('Password reset', u.name, r.password) : toast('Password changed');
             } catch (x) { b.querySelector('#e').textContent = x.message; }
           });
+      } else if (a === 'offline') {
+        await api(`admin/users/${n}/offline`, { method: 'POST', body: { offline: !u.offline } });
+        toast(u.offline ? 'Offline downloads revoked' : 'Can now save files to their device'); loadUsers();
       } else if (a === 'limits') {
         const gb = u.maxBytes ? +(u.maxBytes / 1073741824).toFixed(1) : '';
         modal(`<h3>Limits · ${esc(u.name)}</h3>
