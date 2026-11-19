@@ -354,6 +354,10 @@ Future<void> offlineSettings(BuildContext context, Settings s) async {
   final key = TextEditingController(text: s.tmdbKey);
   final lang = TextEditingController(text: s.tmdbLang);
   var wifi = s.wifiOnly;
+  var dir = s.offlineDir;
+  final choices = await OfflineStore.downloadDirChoices();
+  final desktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  if (!context.mounted) return;
   await showDialog(
     context: context,
     builder: (ctx) => StatefulBuilder(
@@ -367,6 +371,33 @@ Future<void> offlineSettings(BuildContext context, Settings s) async {
               onChanged: (v) => set(() => wifi = v),
               title: const Text('Download on Wi-Fi only'),
             ),
+            const SizedBox(height: 4),
+            const Align(alignment: Alignment.centerLeft, child: Text('Save downloads to', style: TextStyle(fontSize: 12, color: Color(0xFF8B95A5)))),
+            for (final (label, path) in choices)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(dir == path ? Icons.radio_button_checked : Icons.radio_button_off, size: 20),
+                title: Text(label),
+                subtitle: path.isEmpty ? null : Text(path, style: const TextStyle(fontSize: 11)),
+                onTap: () => set(() => dir = path),
+              ),
+            if (desktop || (dir.isNotEmpty && !choices.any((c) => c.$2 == dir)))
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(dir.isNotEmpty && !choices.any((c) => c.$2 == dir) ? Icons.radio_button_checked : Icons.radio_button_off, size: 20),
+                title: const Text('Another folder…'),
+                subtitle: dir.isNotEmpty && !choices.any((c) => c.$2 == dir) ? Text(dir, style: const TextStyle(fontSize: 11)) : null,
+                onTap: desktop
+                    ? () async {
+                        final p = await FilePicker.platform.getDirectoryPath(dialogTitle: 'Save downloads to');
+                        if (p != null && p.isNotEmpty) set(() => dir = p);
+                      }
+                    : null,
+              ),
+            const Text('New downloads go here; ones already saved stay where they are.', style: TextStyle(fontSize: 11, color: Color(0xFF8B95A5))),
+            const SizedBox(height: 8),
             const SizedBox(height: 8),
             TextField(
               controller: key,
@@ -386,6 +417,7 @@ Future<void> offlineSettings(BuildContext context, Settings s) async {
               s.tmdbKey = key.text;
               s.tmdbLang = lang.text.isEmpty ? 'en-US' : lang.text;
               s.wifiOnly = wifi;
+              s.offlineDir = dir;
               Navigator.pop(ctx);
             },
             child: const Text('Save'),

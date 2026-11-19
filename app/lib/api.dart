@@ -157,6 +157,26 @@ class Api {
 
   Future<void> retryDownload(String id) => _req('POST', 'downloads/${Uri.encodeComponent(id)}/retry', body: const {});
 
+  // ---------------------------------------------------------------- profile picture
+  String avatarUrl(String user, int version) => _u('avatar/${Uri.encodeComponent(user)}', {'v': '$version'}).toString();
+
+  /// Upload a picture (JPG / PNG / GIF; the server crops and scales it). Returns the new version.
+  Future<int> uploadAvatar(List<int> bytes, String filename) async {
+    await ensureSession();
+    final req = http.MultipartRequest('POST', _u('me/avatar'))
+      ..headers.addAll(authHeaders)
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+    final res = await http.Response.fromStream(await _client.send(req).timeout(const Duration(seconds: 60)));
+    Map body = const {};
+    try {
+      body = jsonDecode(res.body) as Map;
+    } catch (_) {}
+    if (res.statusCode != 200) throw ApiException(res.statusCode, '${body['error'] ?? 'HTTP ${res.statusCode}'}');
+    return (body['avatar'] as num? ?? 0).toInt();
+  }
+
+  Future<void> deleteAvatar() => _req('DELETE', 'me/avatar');
+
   /// Torrent control: start | stop | pause | resume | recheck → the updated job.
   Future<Map> torrentAction(String id, String action) async =>
       await _req('POST', 'downloads/${Uri.encodeComponent(id)}/torrent', body: {'action': action}) as Map;

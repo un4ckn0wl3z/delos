@@ -378,7 +378,7 @@
     $('#n-users').textContent = d.users.length;
     $('#users').innerHTML = `<table><tr><th>User</th><th class="h-m">Last seen</th><th class="h-m">Watching</th><th class="h-m">Created</th><th></th></tr>${
       d.users.map((u) => `<tr data-u="${esc(u.name)}">
-        <td><b>${esc(u.name)}</b>${u.admin ? '<span class="badge">admin</span>' : ''}${!u.admin && u.editor ? '<span class="badge t-tv">editor</span>' : ''}${!u.admin && u.downloader ? '<span class="badge t-music">downloader</span>' : ''}${!u.admin && u.offline ? '<span class="badge t-videos" title="May save files to their own device">offline</span>' : ''}${u.name === d.me ? '<span class="badge you">you</span>' : ''}
+        <td>${u.avatar ? `<img src="${BASE}api/avatar/${encodeURIComponent(u.name)}?v=${u.avatar}" alt="" style="width:26px;height:26px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:7px">` : ''}<b>${esc(u.name)}</b>${u.admin ? '<span class="badge">admin</span>' : ''}${!u.admin && u.editor ? '<span class="badge t-tv">editor</span>' : ''}${!u.admin && u.downloader ? '<span class="badge t-music">downloader</span>' : ''}${!u.admin && u.offline ? '<span class="badge t-videos" title="May save files to their own device">offline</span>' : ''}${u.name === d.me ? '<span class="badge you">you</span>' : ''}
           ${u.streams ? `<span class="dim"> · ${u.streams} stream${u.streams > 1 ? 's' : ''}</span>` : ''}</td>
         <td class="h-m dim">${ago(u.lastSeen)}</td>
         <td class="h-m dim">${u.inProgress} in progress · ${u.watched} total${u.usage ? `<br>📦 ${u.usage.items}${u.maxItems ? '/' + u.maxItems : ''} items · ${size(u.usage.bytes)}${u.maxBytes ? ' / ' + size(u.maxBytes) : ''}` : ''}</td>
@@ -392,6 +392,7 @@
           ${u.admin ? '' : `<button data-a="limits" title="Limit the user's personal libraries">Limits${u.maxItems || u.maxBytes ? ' ✓' : ''}</button>`}
           ${u.admin ? '' : `<button data-a="offline" title="Let them save movies to their own device (app offline library / browser download)">${u.offline ? 'Revoke offline' : 'Allow offline'}</button>`}
           <button data-a="role">${u.admin ? 'Remove admin' : 'Make admin'}</button>
+          ${u.avatar ? '<button data-a="avatar" title="Remove this user\'s profile picture">Remove picture</button>' : ''}
           <button data-a="revoke" title="Sign this user out on every device">Sign out</button>
           ${u.name === d.me ? '' : '<button class="danger" data-a="delete">Delete</button>'}
         </div></td></tr>`).join('')}</table>`;
@@ -404,6 +405,7 @@
   async function userAction(a, u) {
     const n = encodeURIComponent(u.name);
     try {
+      if (a === 'avatar') return confirmBox(`Remove ${u.name}'s profile picture?`, 'Remove', async () => { await api(`admin/users/${n}/avatar`, { method: 'DELETE' }); loadUsers(); });
       if (a === 'password') {
         modal(`<h3>Reset password · ${esc(u.name)}</h3>
           <input type="password" id="p" placeholder="New password (blank = generate)" autocomplete="new-password">

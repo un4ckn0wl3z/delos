@@ -88,8 +88,8 @@ Future<void> shareSheet(BuildContext context, AppCtx app, Map ref) async {
             ListTile(leading: const CircleAvatar(child: Icon(Icons.groups, size: 20)), title: Text('${g['title']}'), onTap: () => send(conv: '${g['id']}')),
           for (final p in others)
             ListTile(
-              leading: _Avatar('${p['name']}', online: p['online'] == true),
-              title: Text('${p['name']}'),
+              leading: UserAvatar(social, '${p['name']}', online: p['online'] == true),
+              title: nameWithBadge(social, '${p['name']}'),
               subtitle: p['online'] == true ? const Text('online') : null,
               onTap: () => send(user: '${p['name']}'),
             ),
@@ -101,15 +101,31 @@ Future<void> shareSheet(BuildContext context, AppCtx app, Map ref) async {
   note.dispose();
 }
 
-class _Avatar extends StatelessWidget {
-  const _Avatar(this.name, {this.online = false, this.group = false});
+const _avColors = [Color(0xFF3B6FD6), Color(0xFF2F9E74), Color(0xFFB8569A), Color(0xFFC9752C), Color(0xFF7B5CD6), Color(0xFF2E8FA8), Color(0xFFB54A4A), Color(0xFF5F8F2E)];
+
+/// A person's profile picture (or their initial on a colour), with an
+/// optional green online dot.
+class UserAvatar extends StatelessWidget {
+  const UserAvatar(this.social, this.name, {super.key, this.online = false, this.group = false, this.radius = 20});
+  final Social social;
   final String name;
   final bool online, group;
+  final double radius;
   @override
-  Widget build(BuildContext context) => Stack(clipBehavior: Clip.none, children: [
+  Widget build(BuildContext context) {
+    final v = social.avatarOf(name);
+    var h = 0;
+    for (final c in name.codeUnits) {
+      h = (h * 31 + c) & 0x7fffffff;
+    }
+    return Stack(clipBehavior: Clip.none, children: [
         CircleAvatar(
-          backgroundColor: const Color(0xFF253043),
-          child: group ? const Icon(Icons.groups, size: 20) : Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: const TextStyle(fontWeight: FontWeight.bold)),
+          radius: radius,
+          backgroundColor: group ? const Color(0xFF253043) : _avColors[h % _avColors.length],
+          foregroundImage: !group && v > 0 ? NetworkImage(social.api.avatarUrl(name, v), headers: social.api.authHeaders) : null,
+          child: group
+              ? Icon(Icons.groups, size: radius)
+              : Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: radius * .85)),
         ),
         if (online)
           Positioned(
@@ -122,7 +138,26 @@ class _Avatar extends StatelessWidget {
             ),
           ),
       ]);
+  }
 }
+
+/// Small "ADMIN" tag next to an admin's name.
+class AdminBadge extends StatelessWidget {
+  const AdminBadge({super.key});
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(left: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+        decoration: BoxDecoration(color: const Color(0xFF4A3A1C), borderRadius: BorderRadius.circular(6)),
+        child: const Text('ADMIN', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: .5, color: Color(0xFFFFCF7A))),
+      );
+}
+
+/// A name with the ADMIN tag when that person is an admin.
+Widget nameWithBadge(Social s, String name, {TextStyle? style}) => Row(mainAxisSize: MainAxisSize.min, children: [
+      Flexible(child: Text(name, style: style, overflow: TextOverflow.ellipsis)),
+      if (s.isAdmin(name)) const AdminBadge(),
+    ]);
 
 /// The Chat tab: who's online (and what they're playing) + conversations.
 class ChatView extends StatelessWidget {
@@ -155,8 +190,8 @@ class ChatView extends StatelessWidget {
           if (online.isEmpty) const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text('Nobody else is online', style: TextStyle(color: Color(0xFF8B95A5)))),
           for (final p in online)
             ListTile(
-              leading: _Avatar('${p['name']}', online: true),
-              title: Text('${p['name']}'),
+              leading: UserAvatar(s, '${p['name']}', online: true),
+              title: nameWithBadge(s, '${p['name']}'),
               subtitle: p['activity'] == null
                   ? null
                   : Text(_actLine(p['activity'] as Map), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5)),
@@ -178,8 +213,8 @@ class ChatView extends StatelessWidget {
               children: [
                 for (final p in offline)
                   ListTile(
-                    leading: _Avatar('${p['name']}'),
-                    title: Text('${p['name']}'),
+                    leading: UserAvatar(s, '${p['name']}'),
+                    title: nameWithBadge(s, '${p['name']}'),
                     subtitle: (p['lastSeen'] as num? ?? 0) > 0 ? Text('last seen ${_ago((p['lastSeen'] as num).toInt())}', style: const TextStyle(fontSize: 12)) : null,
                     onTap: () => _openDM(context, '${p['name']}'),
                   ),
@@ -204,8 +239,10 @@ class ChatView extends StatelessWidget {
         ? 'No messages yet'
         : '${last['sys'] == true ? '' : '${last['from']}: '}${last['ref'] != null ? '📎 ${(last['ref'] as Map)['title']}' : last['text']}';
     return ListTile(
-      leading: _Avatar('${c['title']}', online: online, group: c['kind'] == 'group'),
-      title: Text('${c['title']}', style: TextStyle(fontWeight: unread > 0 ? FontWeight.bold : FontWeight.normal)),
+      leading: UserAvatar(app.social!, '${c['title']}', online: online, group: c['kind'] == 'group'),
+      title: c['kind'] == 'group'
+          ? Text('${c['title']}', style: TextStyle(fontWeight: unread > 0 ? FontWeight.bold : FontWeight.normal))
+          : nameWithBadge(app.social!, '${c['title']}', style: TextStyle(fontWeight: unread > 0 ? FontWeight.bold : FontWeight.normal)),
       subtitle: Text(preview, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: unread > 0 ? Badge(label: Text('$unread')) : null,
       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(app: app, convId: '${c['id']}'))),
@@ -246,8 +283,8 @@ Future<void> groupDialog(BuildContext context, AppCtx app, {Map? conv}) async {
                     dense: true,
                     value: members.contains(p['name']),
                     onChanged: (v) => set(() => v == true ? members.add('${p['name']}') : members.remove('${p['name']}')),
-                    title: Text('${p['name']}'),
-                    secondary: _Avatar('${p['name']}', online: p['online'] == true),
+                    title: nameWithBadge(s, '${p['name']}'),
+                    secondary: UserAvatar(s, '${p['name']}', online: p['online'] == true),
                   ),
               ]),
             ),
@@ -381,11 +418,15 @@ class _ChatScreenState extends State<ChatScreen> {
     final items = msgs.reversed.toList();
     return Scaffold(
       appBar: AppBar(
-        title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('${c?['title'] ?? ''}'),
+        titleSpacing: 0,
+        title: Row(children: [
+          if (c != null) Padding(padding: const EdgeInsets.only(right: 10), child: UserAvatar(s, '${c['title']}', group: group, radius: 17)),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          group ? Text('${c?['title'] ?? ''}') : nameWithBadge(s, '${c?['title'] ?? ''}'),
           if (group) Text('${(c?['members'] as List?)?.length ?? 0} members', style: const TextStyle(fontSize: 12, color: Color(0xFF9AA3B2))),
           if (!group && (online || activity != null))
             Text(activity != null ? _actLine(activity) : 'online', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Color(0xFF3ECF8E))),
+          ])),
         ]),
         actions: [
           if (group) IconButton(tooltip: 'Group', icon: const Icon(Icons.group_outlined), onPressed: () => groupDialog(context, widget.app, conv: c)),
@@ -449,7 +490,15 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 3),
           child: Column(crossAxisAlignment: mine ? CrossAxisAlignment.end : CrossAxisAlignment.start, children: [
-            if (!mine && group) Text('${m['from']}', style: const TextStyle(fontSize: 11, color: Color(0xFF8B95A5))),
+            if (!mine && group)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  UserAvatar(s, '${m['from']}', radius: 9),
+                  const SizedBox(width: 5),
+                  nameWithBadge(s, '${m['from']}', style: const TextStyle(fontSize: 11, color: Color(0xFF8B95A5))),
+                ]),
+              ),
             if (ref != null)
               Card(
                 margin: const EdgeInsets.only(top: 2, bottom: 2),

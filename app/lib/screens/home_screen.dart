@@ -200,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
           title: const Text('Settings'),
           onTap: () async {
             if (drawer) Navigator.pop(context);
-            final out = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => SettingsScreen(api: widget.api)));
+            final out = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => SettingsScreen(api: widget.api, social: app.social)));
             if (out == true) _signOut();
           },
         ),
@@ -307,7 +307,7 @@ class _HomeScreenState extends State<HomeScreen> {
               tooltip: 'Settings',
               icon: const Icon(Icons.settings_outlined),
               onPressed: () async {
-                final out = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => SettingsScreen(api: widget.api)));
+                final out = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => SettingsScreen(api: widget.api, social: app.social)));
                 if (out == true) _signOut();
               },
             ),

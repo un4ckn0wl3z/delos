@@ -42,6 +42,10 @@ class Settings {
   String get tmdbLang => _p.getString('tmdbLang') ?? 'en-US';
   set tmdbLang(String v) => _p.setString('tmdbLang', v.trim());
 
+  /// Where downloads to this device go: '' = inside the app (private), or an absolute folder.
+  String get offlineDir => _p.getString('offlineDir') ?? '';
+  set offlineDir(String v) => _p.setString('offlineDir', v);
+
   /// Download to this device only on Wi-Fi.
   bool get wifiOnly => _p.getBool('wifiOnly') ?? true;
   set wifiOnly(bool v) => _p.setBool('wifiOnly', v);

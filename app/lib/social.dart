@@ -46,6 +46,19 @@ class Social extends ChangeNotifier {
   int get unread => convs.fold(0, (t, c) => t + ((c['unread'] as num?)?.toInt() ?? 0));
   String get me => api.settings.username;
 
+  Map? person(String name) => people.where((p) => p['name'] == name).firstOrNull;
+
+  /// Profile picture version (0 = none: show the initial).
+  int avatarOf(String name) => (person(name)?['avatar'] as num? ?? 0).toInt();
+  bool isAdmin(String name) => person(name)?['admin'] == true;
+
+  /// After changing our own picture, before the server's "people" update arrives.
+  void setMyAvatar(int v) {
+    final p = person(me);
+    if (p != null) p['avatar'] = v;
+    notifyListeners();
+  }
+
   Future<void> start() async {
     _hb ??= Timer.periodic(const Duration(seconds: 15), (_) => heartbeat());
     heartbeat(force: true);

@@ -275,13 +275,19 @@ class OfflineStore extends ChangeNotifier {
     if (old != null && old.status != 'failed') return;
     final name = path.split('/').last;
     final taskId = _hash(id);
+    final custom = settings?.offlineDir ?? '';
+    if (custom.isNotEmpty) {
+      try {
+        await Directory(custom).create(recursive: true);
+      } catch (_) {}
+    }
     final task = DownloadTask(
       taskId: taskId,
       url: api.downloadUrl(path),
       headers: api.authHeaders,
       filename: '${taskId.substring(0, 8)}_${_safeName(name)}',
-      directory: 'offline',
-      baseDirectory: BaseDirectory.applicationSupport,
+      directory: custom.isNotEmpty ? custom : 'offline',
+      baseDirectory: custom.isNotEmpty ? BaseDirectory.root : BaseDirectory.applicationSupport,
       updates: Updates.statusAndProgress,
       allowPause: true,
       retries: 3,
@@ -366,6 +372,30 @@ class OfflineStore extends ChangeNotifier {
     }
     items.remove(it.id);
     changed();
+  }
+
+  /// The folder new downloads go to (for showing in settings).
+  Future<String> currentDownloadDir() async {
+    final custom = settings?.offlineDir ?? '';
+    if (custom.isNotEmpty) return custom;
+    return '$dir${Platform.pathSeparator}offline';
+  }
+
+  /// Where downloads can go: (label, path) — '' is inside the app.
+  static Future<List<(String, String)>> downloadDirChoices() async {
+    final out = <(String, String)>[('Inside the app (private)', '')];
+    try {
+      if (Platform.isAndroid) {
+        final dirs = await getExternalStorageDirectories() ?? const <Directory>[];
+        for (final (i, d) in dirs.indexed) {
+          out.add((i == 0 ? 'Device storage (visible over USB / file manager)' : 'SD card', '${d.path}/StreamMKV'));
+        }
+      } else if (Platform.isIOS) {
+        final d = await getApplicationDocumentsDirectory();
+        out.add(('Files app (On My iPhone → StreamMKV → Downloads)', '${d.path}/Downloads'));
+      }
+    } catch (_) {}
+    return out;
   }
 
   // ---------------------------------------------------------------- artwork

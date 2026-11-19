@@ -1,13 +1,16 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../settings.dart';
+import '../social.dart';
 import '../update.dart';
 
 /// Pops `true` when the user chose to sign out.
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, required this.api});
+  const SettingsScreen({super.key, required this.api, this.social});
   final Api api;
+  final Social? social;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -18,12 +21,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final _audio = TextEditingController(text: s.audioLang);
   late final _sub = TextEditingController(text: s.subLang);
   String _server = '…';
+  int _avatar = 0;
+  bool _avBusy = false;
 
   @override
   void initState() {
     super.initState();
     widget.api.me().then((m) {
-      if (mounted) setState(() => _server = '${m['version'] ?? 'older than 1.2'}${m['admin'] == true ? ' · you are admin' : ''}');
+      if (mounted) {
+        setState(() {
+          _server = '${m['version'] ?? 'older than 1.2'}${m['admin'] == true ? ' · you are admin' : ''}';
+          _avatar = (m['avatar'] as num? ?? 0).toInt();
+        });
+      }
     }).catchError((_) {
       if (mounted) setState(() => _server = 'unreachable');
     });
@@ -34,6 +44,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
     s.audioLang = _audio.text.trim();
     s.subLang = _sub.text.trim();
     super.dispose();
+  }
+
+  Future<void> _pickAvatar() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final r = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['jpg', 'jpeg', 'png', 'gif'], withData: true);
+    final f = r?.files.firstOrNull;
+    if (f == null || f.bytes == null) return;
+    if (f.size > 10 * 1024 * 1024) {
+      messenger.showSnackBar(const SnackBar(content: Text('Pictures can be up to 10 MB')));
+      return;
+    }
+    setState(() => _avBusy = true);
+    try {
+      final v = await widget.api.uploadAvatar(f.bytes!, f.name);
+      _avatar = v;
+      widget.social?.setMyAvatar(v);
+      messenger.showSnackBar(const SnackBar(content: Text('Profile picture updated')));
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _avBusy = false);
+    }
+  }
+
+  Future<void> _removeAvatar() async {
+    setState(() => _avBusy = true);
+    try {
+      await widget.api.deleteAvatar();
+      _avatar = 0;
+      widget.social?.setMyAvatar(0);
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } finally {
+      if (mounted) setState(() => _avBusy = false);
+    }
   }
 
   @override
@@ -116,8 +161,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () => checkForUpdate(context, s, manual: true),
           ),
           const _Section('Account'),
+          ListTile(
+            leading: CircleAvatar(
+              radius: 24,
+              backgroundColor: const Color(0xFF253043),
+              foregroundImage: _avatar > 0 ? NetworkImage(widget.api.avatarUrl(s.username, _avatar), headers: widget.api.authHeaders) : null,
+              child: _avBusy
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : Text(s.username.isNotEmpty ? s.username[0].toUpperCase() : '?', style: const TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            title: Text(s.username),
+            subtitle: const Text('Profile picture — shown in People and Chat'),
+            trailing: Wrap(spacing: 4, children: [
+              TextButton(onPressed: _avBusy ? null : _pickAvatar, child: const Text('Change')),
+              if (_avatar > 0) TextButton(onPressed: _avBusy ? null : _removeAvatar, child: const Text('Remove')),
+            ]),
+          ),
           ListTile(title: const Text('Server'), subtitle: Text(s.server)),
-          ListTile(title: const Text('User'), subtitle: Text(s.username)),
           ListTile(
             leading: const Icon(Icons.logout),
             title: const Text('Sign out'),

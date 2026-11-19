@@ -1239,6 +1239,43 @@
       const t = a.kind === 'music' ? '♪ ' : '▶ ';
       return `${t}${esc(a.title)}${a.sub ? ' · ' + esc(a.sub) : ''}${a.kind === 'video' && a.dur ? ` <span class="smkv-dim2">${fmtTime(a.pos)} / ${fmtTime(a.dur)}</span>` : ''}`;
     }
+    // profile pictures (initials when there's none) and the admin badge
+    const AV_COLORS = ['#3b6fd6', '#2f9e74', '#b8569a', '#c9752c', '#7b5cd6', '#2e8fa8', '#b54a4a', '#5f8f2e'];
+    function avatarHtml(name, size = 30, dot = null) {
+      const p = SO.people.find((x) => x.name === name) || (name === BR.me.user ? { avatar: BR.me.avatar } : {});
+      let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      const inner = p.avatar ? `<img src="${esc(new URL(`api/avatar/${encodeURIComponent(name)}?v=${p.avatar}`, BASE).href)}" alt="">`
+        : `<span style="background:${AV_COLORS[h % AV_COLORS.length]};font-size:${Math.round(size * 0.42)}px">${esc((name[0] || '?').toUpperCase())}</span>`;
+      return `<span class="smkv-pav" style="width:${size}px;height:${size}px">${inner}${dot === null ? '' : `<i class="smkv-pdot ${dot ? 'on' : ''}"></i>`}</span>`;
+    }
+    const adminBadge = (name) => (SO.people.find((x) => x.name === name) || {}).admin ? '<span class="smkv-adm" title="Admin">ADMIN</span>' : '';
+    async function changeAvatar() {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = 'image/jpeg,image/png,image/gif';
+      inp.onchange = async () => {
+        const f = inp.files[0];
+        if (!f) return;
+        if (f.size > 10 * 1024 * 1024) return toast('Pictures can be up to 10 MB');
+        const fd = new FormData(); fd.append('file', f);
+        try {
+          const r = await fetch(new URL('api/me/avatar', BASE), { method: 'POST', body: fd, credentials: 'same-origin' });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || r.statusText);
+          BR.me.avatar = j.avatar; toast('Profile picture updated');
+          const me = SO.people.find((x) => x.name === BR.me.user); if (me) me.avatar = j.avatar;
+          drawPeople(); if (!SO.open) drawConvs(); else drawMsgs();
+        } catch (x) { toast(x.message, 5000); }
+      };
+      inp.click();
+    }
+    async function removeAvatar() {
+      try {
+        const r = await fetch(new URL('api/me/avatar', BASE), { method: 'DELETE', credentials: 'same-origin' });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+        BR.me.avatar = 0; const me = SO.people.find((x) => x.name === BR.me.user); if (me) me.avatar = 0;
+        drawPeople(); if (!SO.open) drawConvs();
+      } catch (x) { toast(x.message); }
+    }
     function drawPeople() {
       const el = $('#smkv-people');
       if (!el) return;
@@ -1246,7 +1283,7 @@
       const on = others.filter((p) => p.online);
       el.innerHTML = `<div class="smkv-ph">People <span class="smkv-dim2">${on.length} online</span><button id="smkv-chat-open" title="Chats">💬<i id="smkv-unread" hidden></i></button></div>` +
         others.map((p) => `<div class="smkv-person ${p.online ? 'on' : ''}" data-u="${esc(p.name)}" title="${p.online ? 'Online' : p.lastSeen ? 'Last seen ' + new Date(p.lastSeen * 1000).toLocaleString() : 'Offline'}">
-          <span class="smkv-dot"></span><div><b>${esc(p.name)}</b>${p.activity ? `<div class="smkv-act ${p.activity.path ? 'link' : ''}" data-p="${esc(p.activity.path || '')}" data-k="${esc(p.activity.kind)}">${actLine(p.activity)}</div>` : ''}</div></div>`).join('');
+          ${avatarHtml(p.name, 30, p.online)}<div style="min-width:0"><b>${esc(p.name)}</b>${adminBadge(p.name)}${p.activity ? `<div class="smkv-act ${p.activity.path ? 'link' : ''}" data-p="${esc(p.activity.path || '')}" data-k="${esc(p.activity.kind)}">${actLine(p.activity)}</div>` : ''}</div></div>`).join('');
       el.querySelectorAll('.smkv-person').forEach((r) => r.onclick = (e) => {
         const act = e.target.closest('.smkv-act.link');
         if (act) { e.stopPropagation(); return openRef({ path: act.dataset.p, kind: act.dataset.k }); }
@@ -1300,13 +1337,17 @@
       SO.open = null;
       const c = $('#smkv-chat');
       c.innerHTML = `<div class="smkv-ch"><b>Chats</b><span class="smkv-sp"></span><button id="smkv-newgroup">＋ Group</button><button class="smkv-x">✕</button></div>
+        <div class="smkv-me">${avatarHtml(BR.me.user, 40)}<div style="flex:1;min-width:0"><b>${esc(BR.me.user)}</b>${adminBadge(BR.me.user)}
+          <div><button class="smkv-link" id="smkv-avset">Change picture</button>${BR.me.avatar ? ' · <button class="smkv-link" id="smkv-avdel">Remove</button>' : ''}</div></div></div>
         <label class="smkv-check smkv-priv"><input type="checkbox" id="smkv-hideact" ${SO.hide ? 'checked' : ''}> Hide what I'm watching from others</label>
         <div class="smkv-convs">${SO.convs.length ? SO.convs.map((v) => `<div class="smkv-conv" data-id="${esc(v.id)}">
-          <div class="smkv-av">${v.kind === 'group' ? '👥' : esc(v.title[0] || '?').toUpperCase()}</div>
-          <div class="smkv-cm"><b>${esc(v.title)}</b><span class="smkv-dim2">${v.last ? esc((v.last.sys ? '' : v.last.from + ': ') + (v.last.ref ? '📎 ' + v.last.ref.title : v.last.text)) : 'No messages yet'}</span></div>
+          ${v.kind === 'group' ? '<div class="smkv-av">👥</div>' : avatarHtml(v.title, 36, (SO.people.find((x) => x.name === v.title) || {}).online || false)}
+          <div class="smkv-cm"><b>${esc(v.title)}${v.kind === 'group' ? '' : adminBadge(v.title)}</b><span class="smkv-dim2">${v.last ? esc((v.last.sys ? '' : v.last.from + ': ') + (v.last.ref ? '📎 ' + v.last.ref.title : v.last.text)) : 'No messages yet'}</span></div>
           ${v.unread ? `<i class="smkv-badge">${v.unread}</i>` : ''}</div>`).join('') : '<div class="smkv-dim" style="padding:16px">No chats yet — click someone in People to start one.</div>'}</div>`;
       c.querySelector('.smkv-x').onclick = () => toggleChat(false);
       c.querySelector('#smkv-newgroup').onclick = () => groupDialog();
+      c.querySelector('#smkv-avset').onclick = changeAvatar;
+      const avdel = c.querySelector('#smkv-avdel'); if (avdel) avdel.onclick = removeAvatar;
       c.querySelector('#smkv-hideact').onchange = async (e) => {
         try { await apiPost('me/privacy', { hideActivity: e.target.checked }); SO.hide = e.target.checked; toast(SO.hide ? "Others won't see what you play" : "Others can see what you play"); }
         catch (x) { toast(x.message); }
@@ -1351,7 +1392,7 @@
       if (!t || !SO.open) return;
       const p = SO.people.find((x) => x.name === SO.open.title);
       t.innerHTML = SO.open.kind === 'group' ? `👥 ${esc(SO.open.title)} <span class="smkv-dim2">${SO.open.members.length}</span>`
-        : `${esc(SO.open.title)} <span class="smkv-dim2">${p && p.online ? '● online' : ''}</span>`;
+        : `${avatarHtml(SO.open.title, 26)} ${esc(SO.open.title)}${adminBadge(SO.open.title)} <span class="smkv-dim2">${p && p.online ? '● online' : ''}</span>`;
       $('#smkv-chat .smkv-cmore').hidden = SO.open.kind !== 'group';
     }
     function drawMsgs(scroll) {
@@ -1367,8 +1408,10 @@
         const ref = m.ref ? `<div class="smkv-ref" data-p="${esc(m.ref.path)}" data-k="${esc(m.ref.kind || 'video')}">
             ${m.ref.image ? `<img src="${esc(actImg(m.ref.image))}" onerror="this.remove()">` : `<span>${m.ref.kind === 'music' ? '♪' : '🎬'}</span>`}
             <div><b>${esc(m.ref.title)}</b>${m.ref.sub ? `<small>${esc(m.ref.sub)}</small>` : ''}<em>${m.ref.kind === 'music' ? '▶ Play' : '▶ Watch'}</em></div></div>` : '';
-        return sep + `<div class="smkv-msg ${mine ? 'me' : ''}">${!mine && SO.open.kind === 'group' ? `<small class="smkv-from">${esc(m.from)}</small>` : ''}
-          ${ref}${m.text ? `<div class="smkv-bubble">${esc(m.text)}</div>` : ''}<small class="smkv-time">${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></div>`;
+        const body = `${!mine && SO.open.kind === 'group' ? `<small class="smkv-from">${esc(m.from)}${adminBadge(m.from)}</small>` : ''}
+          ${ref}${m.text ? `<div class="smkv-bubble">${esc(m.text)}</div>` : ''}<small class="smkv-time">${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small>`;
+        return sep + (mine ? `<div class="smkv-msg me">${body}</div>`
+          : `<div class="smkv-mrow">${avatarHtml(m.from, 28)}<div class="smkv-msg">${body}</div></div>`);
       }).join('') || '<div class="smkv-dim" style="padding:16px">Say hi 👋</div>';
       box.querySelectorAll('.smkv-ref').forEach((r) => r.onclick = () => openRef({ path: r.dataset.p, kind: r.dataset.k }));
       if (scroll) box.scrollTop = box.scrollHeight;
@@ -2096,10 +2139,19 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-ph i,.smkv-badge{background:#e5484d;color:#fff;font-style:normal;font-size:10px;border-radius:9px;padding:1px 5px;font-weight:700}
 .smkv-ph i{position:absolute;top:-4px;right:-6px}
 .smkv-person{display:flex;gap:8px;align-items:flex-start;padding:5px 6px;border-radius:7px;cursor:pointer;opacity:.55}
-.smkv-person.on{opacity:1}.smkv-person:hover{background:#171c24}
+.smkv-person.on{opacity:1}.smkv-person{align-items:center}.smkv-person:hover{background:#171c24}
 .smkv-person b{font-size:13px;color:#dfe4ea;font-weight:600}
 .smkv-dot{width:8px;height:8px;border-radius:50%;background:#4a5260;flex:none;margin-top:6px;display:inline-block}
 .smkv-person.on .smkv-dot,.smkv-dot.on{background:#3ecf8e;box-shadow:0 0 0 2px rgba(62,207,142,.18)}
+.smkv-pav{position:relative;display:inline-block;flex:none;border-radius:50%;vertical-align:middle}
+.smkv-pav img,.smkv-pav>span{width:100%;height:100%;border-radius:50%;object-fit:cover;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700}
+.smkv-pdot{position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:#4a5260;border:2px solid #0f1217}
+.smkv-pdot.on{background:#3ecf8e}
+.smkv-adm{display:inline-block;font-size:9px;font-weight:800;letter-spacing:.5px;color:#ffcf7a;background:#4a3a1c;border-radius:6px;padding:0 5px;margin-left:6px;vertical-align:2px;font-style:normal}
+.smkv-me{display:flex;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid #1f242d}
+#smkv-chat .smkv-link{background:none!important;border:none!important;color:#7cc4ff!important;padding:0!important;min-width:0!important;cursor:pointer;font:inherit;font-size:12px}
+.smkv-mrow{display:flex;gap:7px;align-items:flex-end;max-width:88%}
+.smkv-mrow .smkv-msg{max-width:100%}
 .smkv-act{font-size:11.5px;color:#9aa3b2;line-height:1.35;margin-top:1px}
 .smkv-act.link:hover{color:#fff;text-decoration:underline}
 #smkv-chat{position:fixed;top:0;right:0;bottom:0;width:min(380px,100vw);background:#10131a;border-left:1px solid #222935;z-index:2147483600;display:none;flex-direction:column;box-shadow:-10px 0 40px rgba(0,0,0,.5)}
