@@ -249,7 +249,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _body() {
     // the offline library works even when the server can't be reached
-    if (section == 4) return OfflineView(api: widget.api, settings: widget.api.settings);
+    if (section == 4) return OfflineView(api: widget.api, settings: widget.api.settings, audio: app.audio);
     if (loading) return const Center(child: CircularProgressIndicator());
     if (error != null) {
       return Center(

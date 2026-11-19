@@ -7,8 +7,10 @@ package main
 //     the server's TMDB key (any signed-in user; rate limited, cached)
 
 import (
+	"archive/zip"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"os"
@@ -38,6 +40,7 @@ func (us *UserStore) SetOffline(name string, on bool) error {
 
 func (s *Server) offlineRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/download", s.auth(s.handleDownloadFile))
+	mux.HandleFunc("POST /api/download/zip", s.auth(s.handleDownloadZip))
 	mux.HandleFunc("POST /api/meta/lookup", s.auth(s.handleMetaLookup))
 	mux.HandleFunc("POST /api/admin/users/{name}/offline", s.adminOnly(s.handleAdminOffline))
 }
@@ -59,9 +62,13 @@ func (s *Server) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 404, err.Error())
 		return
 	}
-	// at most 3 files at once per person (a phone queueing a whole season)
+	// at most 3 videos at once per person (a phone queueing a whole season); songs are small
+	limit := 3
+	if audioExts[strings.ToLower(filepath.Ext(p))] {
+		limit = 8
+	}
 	offlineActive.Lock()
-	if offlineActive.n[user] >= 3 && !isAdmin(r) {
+	if offlineActive.n[user] >= limit && !isAdmin(r) {
 		offlineActive.Unlock()
 		httpErr(w, 429, "already downloading 3 files — wait for one to finish")
 		return
@@ -88,6 +95,76 @@ func (s *Server) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 	http.ServeContent(w, r, name, st.ModTime(), f)
+}
+
+// POST /api/download/zip (form: path=… repeated, name=…) — several files (an album, a playlist)
+// as one zip, streamed without compression (music is already compressed).
+func (s *Server) handleDownloadZip(w http.ResponseWriter, r *http.Request) {
+	user := userOf(r)
+	if !s.users.IsOffline(user) {
+		httpErr(w, 403, "you are not allowed to download files to your device — ask an admin")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<20)
+	if err := r.ParseForm(); err != nil {
+		httpErr(w, 400, "bad request")
+		return
+	}
+	paths := r.PostForm["path"]
+	if len(paths) == 0 || len(paths) > 2000 {
+		httpErr(w, 400, "choose up to 2000 files")
+		return
+	}
+	type entry struct{ abs, name string }
+	var files []entry
+	seen := map[string]int{}
+	for i, rel := range paths {
+		p, _, err := s.resolveFor(r, rel)
+		if err != nil {
+			continue
+		}
+		n := filepath.Base(p)
+		if r.PostForm.Get("numbered") == "1" {
+			n = fmt.Sprintf("%03d - %s", i+1, n)
+		}
+		if seen[n]++; seen[n] > 1 {
+			ext := filepath.Ext(n)
+			n = fmt.Sprintf("%s (%d)%s", strings.TrimSuffix(n, ext), seen[n], ext)
+		}
+		files = append(files, entry{p, n})
+	}
+	if len(files) == 0 {
+		httpErr(w, 404, "none of those files can be found")
+		return
+	}
+	name := sanitizeFileName(strings.TrimSpace(r.PostForm.Get("name")))
+	if name == "" {
+		name = "StreamMKV"
+	}
+	defer s.conns.Add(user, r, name+".zip", "download")()
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name + ".zip"}))
+	zw := zip.NewWriter(w)
+	for _, f := range files {
+		in, err := os.Open(f.abs)
+		if err != nil {
+			continue
+		}
+		st, _ := in.Stat()
+		h := &zip.FileHeader{Name: f.name, Method: zip.Store}
+		if st != nil {
+			h.Modified = st.ModTime()
+		}
+		out, err := zw.CreateHeader(h)
+		if err == nil {
+			_, err = io.Copy(out, in)
+		}
+		in.Close()
+		if err != nil {
+			return // client went away
+		}
+	}
+	zw.Close()
 }
 
 func (s *Server) handleAdminOffline(w http.ResponseWriter, r *http.Request) {

@@ -179,7 +179,7 @@ class Social extends ChangeNotifier {
   Map<String, dynamic>? _activity() {
     if (NowWatching.activity != null) return NowWatching.activity;
     final t = audio.current;
-    if (t != null && audio.playing) {
+    if (t != null && audio.playing && !t.path.startsWith('file:')) {
       return {
         'kind': 'music',
         'path': t.path,

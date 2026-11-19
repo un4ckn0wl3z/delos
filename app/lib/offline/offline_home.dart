@@ -1,14 +1,36 @@
 import 'package:flutter/material.dart';
 
+import '../api.dart';
+import '../audio.dart';
+import '../media_session.dart';
 import '../screens/login_screen.dart';
 import '../settings.dart';
 import 'offline_view.dart';
 
 /// The app without a server: only what's on this device (downloaded files and
 /// the user's own folders). No sign-in needed.
-class OfflineHome extends StatelessWidget {
+class OfflineHome extends StatefulWidget {
   const OfflineHome({super.key, required this.settings});
   final Settings settings;
+  @override
+  State<OfflineHome> createState() => _OfflineHomeState();
+}
+
+class _OfflineHomeState extends State<OfflineHome> {
+  // saved songs play from their files; the Api is only there for the player's helpers
+  late final audio = AudioController(Api(widget.settings));
+
+  @override
+  void initState() {
+    super.initState();
+    MusicSession.attach(audio); // background playback + lock-screen controls
+  }
+
+  @override
+  void dispose() {
+    audio.stop();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -19,17 +41,20 @@ class OfflineHome extends StatelessWidget {
             Text('Offline'),
           ]),
           actions: [
-            IconButton(tooltip: 'Offline settings', icon: const Icon(Icons.tune), onPressed: () => offlineSettings(context, settings)),
+            IconButton(tooltip: 'Offline settings', icon: const Icon(Icons.tune), onPressed: () => offlineSettings(context, widget.settings)),
             TextButton.icon(
               icon: const Icon(Icons.login),
               label: const Text('Sign in'),
               onPressed: () {
-                settings.offlineMode = false;
-                Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => LoginScreen(settings: settings)));
+                widget.settings.offlineMode = false;
+                Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => LoginScreen(settings: widget.settings)));
               },
             ),
           ],
         ),
-        body: OfflineView(settings: settings),
+        body: Column(children: [
+          Expanded(child: OfflineView(settings: widget.settings, audio: audio)),
+          MiniPlayer(audio: audio),
+        ]),
       );
 }

@@ -6,10 +6,12 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../api.dart';
+import '../audio.dart';
 import '../settings.dart';
 import '../util.dart';
 import '../widgets.dart';
 import 'local_player.dart';
+import 'offline_music.dart';
 import 'store.dart';
 
 const _typeNames = {'movies': 'Movies', 'tv': 'TV series', 'videos': 'Other videos'};
@@ -17,9 +19,11 @@ const _typeNames = {'movies': 'Movies', 'tv': 'TV series', 'videos': 'Other vide
 /// The offline library: ☁️ files downloaded from a server, and 📁 the user's
 /// own folders on this device — two clearly separate sections.
 class OfflineView extends StatefulWidget {
-  const OfflineView({super.key, this.api, required this.settings});
+  const OfflineView({super.key, this.api, required this.settings, this.audio});
   final Api? api;
   final Settings settings;
+  /// Plays saved songs (the app's music player when signed in).
+  final AudioController? audio;
   @override
   State<OfflineView> createState() => _OfflineViewState();
 }
@@ -31,16 +35,17 @@ class _OfflineViewState extends State<OfflineView> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(children: [
-        const TabBar(tabs: [
-          Tab(icon: Icon(Icons.cloud_download_outlined), text: 'Downloaded from server'),
+        const TabBar(isScrollable: true, tabs: [
+          Tab(icon: Icon(Icons.cloud_download_outlined), text: 'Videos from server'),
+          Tab(icon: Icon(Icons.library_music_outlined), text: 'Music'),
           Tab(icon: Icon(Icons.folder_outlined), text: 'My folders'),
         ]),
         Expanded(
           child: ListenableBuilder(
             listenable: store,
-            builder: (context, _) => TabBarView(children: [_downloaded(context), _folders(context)]),
+            builder: (context, _) => TabBarView(children: [_downloaded(context), OfflineMusicTab(audio: widget.audio), _folders(context)]),
           ),
         ),
       ]),
@@ -49,7 +54,7 @@ class _OfflineViewState extends State<OfflineView> {
 
   // ---------------------------------------------------------------- downloaded
   Widget _downloaded(BuildContext context) {
-    final all = store.downloads;
+    final all = store.downloads.where((i) => !i.isMusic).toList();
     final active = all.where((i) => i.status != 'done').toList();
     final done = all.where((i) => i.status == 'done').toList();
     return ListView(padding: const EdgeInsets.only(bottom: 32), children: [

@@ -76,7 +76,9 @@ class MusicSession extends BaseAudioHandler with QueueHandler, SeekHandler {
         artist: t.artist.isNotEmpty ? t.artist : null,
         album: t.album.isNotEmpty ? t.album : null,
         duration: t.duration > 0 ? Duration(milliseconds: (t.duration * 1000).round()) : null,
-        artUri: t.cover.isNotEmpty ? Uri.parse(c.api.coverUrl(t.cover)) : null,
+        artUri: t.cover.isEmpty
+            ? null
+            : (c.api.coverUrl(t.cover).startsWith('http') ? Uri.parse(c.api.coverUrl(t.cover)) : Uri.file(c.api.coverUrl(t.cover))),
         artHeaders: c.api.authHeaders,
       ));
       queue.add([

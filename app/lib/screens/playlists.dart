@@ -5,6 +5,7 @@ import '../audio.dart';
 import '../library.dart';
 import '../widgets.dart';
 import 'home_screen.dart';
+import 'music_save.dart';
 
 Future<String?> _askName(BuildContext context, {String title = 'New playlist', String initial = ''}) {
   final c = TextEditingController(text: initial);
@@ -251,6 +252,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     final missing = all.length - rows.length;
     return Scaffold(
       appBar: AppBar(title: Text('${pl!['name']}'), actions: [
+        if (app.offline && tracks.isNotEmpty)
+          IconButton(tooltip: 'Save to this device', icon: const Icon(Icons.download_for_offline_outlined), onPressed: () => saveMusic(context, app, tracks)),
         PopupMenuButton<String>(
           onSelected: (v) => v == 'rename' ? _rename() : _delete(),
           itemBuilder: (_) => const [

@@ -5,6 +5,8 @@ import '../library.dart';
 import '../widgets.dart';
 import 'home_screen.dart';
 import 'playlists.dart';
+import 'music_save.dart';
+import '../offline/store.dart';
 
 class MusicView extends StatefulWidget {
   const MusicView({super.key, required this.app, required this.lib});
@@ -204,7 +206,7 @@ class TrackList extends StatelessWidget {
   final bool showAlbum, shrink;
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-        listenable: app.audio,
+        listenable: Listenable.merge([app.audio, OfflineStore.instance]),
         builder: (context, _) => ListView.builder(
           shrinkWrap: shrink,
           physics: shrink ? const NeverScrollableScrollPhysics() : null,
@@ -228,6 +230,7 @@ class TrackList extends StatelessWidget {
                       maxLines: 1, overflow: TextOverflow.ellipsis)
                   : null,
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (isSaved(app, t)) const Padding(padding: EdgeInsets.only(right: 6), child: Icon(Icons.offline_pin, size: 15, color: Color(0xFF1F9D63))),
                 Text(t.duration > 0 ? fmtDur(t.duration) : '', style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))),
                 IconButton(
                   tooltip: 'Add to playlist',
@@ -237,7 +240,7 @@ class TrackList extends StatelessWidget {
                 ),
               ]),
               onTap: () => app.audio.playQueue(tracks, i),
-              onLongPress: () => addToPlaylist(context, app, [t]),
+              onLongPress: () => songMenu(context, app, t),
             );
           },
         ),
@@ -283,6 +286,8 @@ class AlbumScreen extends StatelessWidget {
                       FilledButton.icon(icon: const Icon(Icons.play_arrow), label: const Text('Play'), onPressed: () => app.audio.playQueue(album.tracks, 0)),
                       OutlinedButton.icon(icon: const Icon(Icons.shuffle), label: const Text('Shuffle'), onPressed: () => app.audio.playQueue(album.tracks, 0, shuffled: true)),
                       OutlinedButton.icon(icon: const Icon(Icons.playlist_add), label: const Text('Playlist'), onPressed: () => addToPlaylist(context, app, album.tracks)),
+                      if (app.offline)
+                        OutlinedButton.icon(icon: const Icon(Icons.download_for_offline_outlined), label: const Text('Save'), onPressed: () => saveMusic(context, app, album.tracks)),
                     ]),
                   ]),
                 ),
@@ -310,6 +315,8 @@ class ArtistScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: Text(artist), actions: [
         IconButton(tooltip: 'Add to playlist', icon: const Icon(Icons.playlist_add), onPressed: () => addToPlaylist(context, app, songs)),
+        if (app.offline)
+          IconButton(tooltip: 'Save to this device', icon: const Icon(Icons.download_for_offline_outlined), onPressed: () => saveMusic(context, app, songs)),
         IconButton(icon: const Icon(Icons.shuffle), onPressed: () => app.audio.playQueue(songs, 0, shuffled: true)),
         IconButton(icon: const Icon(Icons.play_arrow), onPressed: () => app.audio.playQueue(songs, 0)),
       ]),

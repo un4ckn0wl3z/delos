@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 
 import 'api.dart';
 import 'library.dart';
+import 'offline/store.dart';
 import 'widgets.dart';
 
 enum RepeatMode { off, all, one }
@@ -47,6 +48,16 @@ class AudioController extends ChangeNotifier {
   Duration position = Duration.zero, duration = Duration.zero;
   DateTime _lastTick = DateTime.fromMillisecondsSinceEpoch(0);
 
+  /// The copy of [t] on this device, if there is one.
+  String? localFile(Item t) {
+    if (t.path.startsWith('file:')) return t.path.substring(5);
+    try {
+      return OfflineStore.instance.downloaded(api.settings.server, t.path)?.file;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Item? get current => index >= 0 && index < queue.length ? queue[index] : null;
   bool get playing => player.state.playing;
   bool get active => current != null;
@@ -69,8 +80,13 @@ class AudioController extends ChangeNotifier {
   Future<void> _load() async {
     final t = current;
     if (t == null) return;
-    await api.ensureSession();
-    await player.open(Media(api.rawUrl(t.path)), play: true);
+    final local = localFile(t);
+    if (local != null) {
+      await player.open(Media(local), play: true); // saved on this device: no server needed
+    } else {
+      await api.ensureSession();
+      await player.open(Media(api.rawUrl(t.path)), play: true);
+    }
     notifyListeners();
   }
 

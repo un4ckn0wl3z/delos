@@ -90,7 +90,12 @@ class Api {
 
   Map<String, String> get authHeaders => {if (settings.token != null) 'Authorization': 'Bearer ${settings.token}'};
 
-  String coverUrl(String key) => key.isEmpty ? '' : _u('cover/$key').toString();
+  /// Cover art: a server cover key, or a file already on this device (offline music).
+  String coverUrl(String key) => key.isEmpty
+      ? ''
+      : (key.startsWith('/') || RegExp(r'^[A-Za-z]:[\\/]').hasMatch(key))
+          ? key
+          : _u('cover/$key').toString();
 
   Future<List<MediaFile>> list() async {
     final res = await _req('GET', 'list') as Map;

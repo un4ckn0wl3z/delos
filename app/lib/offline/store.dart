@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../api.dart';
+import '../library.dart';
 import '../settings.dart';
 import 'meta.dart';
 import 'parse.dart';
@@ -22,7 +23,10 @@ class OfflineItem {
   String file = ''; // absolute path once available
   String name = '';
   int size = 0;
-  String kind = 'video'; // movie | episode | video
+  String kind = 'video'; // movie | episode | video | music
+  // music
+  String artist = '', album = '', albumArtist = '';
+  int track = 0, disc = 0;
   String title = '', show = '', episodeTitle = '', overview = '';
   int year = 0, season = 0, episode = 0;
   List<String> genres = [];
@@ -55,7 +59,17 @@ class OfflineItem {
         'server': server, 'serverPath': serverPath, 'libName': libName, 'status': status,
         'progress': progress, 'taskId': taskId, 'error': error, 'folderId': folderId,
         'pos': pos, 'duration': duration, 'watched': watched, 'added': added,
+        'artist': artist, 'album': album, 'albumArtist': albumArtist, 'track': track, 'disc': disc,
       };
+
+  bool get isMusic => kind == 'music';
+
+  /// A song saved on this device, as something the music player can queue.
+  Item toTrack() => Item({
+        'path': 'file:$file', 'name': name, 'title': title, 'artist': artist, 'album': album,
+        'albumArtist': albumArtist, 'track': track, 'disc': disc, 'year': year, 'duration': duration,
+        'cover': poster, 'size': size, 'genres': genres,
+      });
 
   static OfflineItem fromJson(Map j) {
     String s(String k) => '${j[k] ?? ''}';
@@ -90,7 +104,12 @@ class OfflineItem {
       ..pos = d('pos')
       ..duration = d('duration')
       ..watched = i('watched')
-      ..added = i('added');
+      ..added = i('added')
+      ..artist = s('artist')
+      ..album = s('album')
+      ..albumArtist = s('albumArtist')
+      ..track = i('track')
+      ..disc = i('disc');
   }
 }
 
@@ -188,6 +207,7 @@ class OfflineStore extends ChangeNotifier {
   // ---------------------------------------------------------------- lists
 
   List<OfflineItem> get downloads => items.values.where((i) => i.isServer).toList()..sort((a, b) => b.added.compareTo(a.added));
+  List<OfflineItem> get music => downloads.where((i) => i.isMusic).toList();
   List<OfflineItem> folderItems([String? folderId]) =>
       items.values.where((i) => !i.isServer && (folderId == null || i.folderId == folderId)).toList();
   int get downloadedBytes => downloads.where((i) => i.ready).fold(0, (s, i) => s + i.size);
@@ -220,6 +240,12 @@ class OfflineStore extends ChangeNotifier {
       progressBar: true,
     );
     fd.updates.listen(_onUpdate);
+    // an album or playlist queues many files: fetch a few at a time
+    try {
+      await fd.configure(globalConfig: [(Config.holdingQueue, (3, null, null))]);
+    } catch (e) {
+      debugPrint('downloader config: $e');
+    }
     await fd.start();
   }
 
@@ -315,6 +341,11 @@ class OfflineStore extends ChangeNotifier {
       ..libName = '${info['libName'] ?? ''}'
       ..pos = (info['pos'] as num? ?? 0).toDouble()
       ..duration = (info['duration'] as num? ?? 0).toDouble()
+      ..artist = '${info['artist'] ?? ''}'
+      ..album = '${info['album'] ?? ''}'
+      ..albumArtist = '${info['albumArtist'] ?? ''}'
+      ..track = (info['track'] as num? ?? 0).toInt()
+      ..disc = (info['disc'] as num? ?? 0).toInt()
       ..scraped = true;
     items[id] = it;
     changed();
@@ -330,6 +361,22 @@ class OfflineStore extends ChangeNotifier {
     it.backdrop = await _cacheImage('${info['backdrop'] ?? ''}', headers);
     it.still = await _cacheImage('${info['still'] ?? ''}', headers);
     changed();
+  }
+
+  /// Save songs (an album, a playlist…) to this device.
+  Future<int> downloadMusic(Api api, List<Item> tracks, {String libName = ''}) async {
+    var n = 0;
+    for (final t in tracks) {
+      final old = byServer(api.settings.server, t.path);
+      if (old != null && old.status != 'failed') continue;
+      n++;
+      await download(api, t.path, {
+        'kind': 'music', 'title': t.title.isNotEmpty ? t.title : t.name, 'artist': t.artist, 'album': t.album,
+        'albumArtist': t.albumArtist, 'track': t.track, 'disc': t.disc, 'year': t.year, 'duration': t.duration,
+        'size': t.size, 'genres': t.genres, 'poster': t.cover.isEmpty ? '' : api.coverUrl(t.cover), 'libName': libName,
+      });
+    }
+    return n;
   }
 
   Future<void> pause(OfflineItem it) async {

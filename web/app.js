@@ -802,7 +802,19 @@
     function trackTable(list, showAlbum, editLib) {
       return `<table class="smkv-tracks">${list.map((t, i) => `<tr data-i="${i}" class="${A.cur && A.cur.path === t.path ? 'on' : ''}">
         <td class="n">${t.track || ''}</td><td><b>${esc(t.title || t.name)}</b>${showAlbum ? `<div class="smkv-dim2">${esc(t.artist || '')}${t.album ? ' · ' + esc(t.album) : ''}${ownerOfPath(t.path) ? ` · <span class="smkv-from">👤 ${esc(ownerOfPath(t.path))}</span>` : ''}</div>` : (t.artist && t.artist !== t.albumArtist ? `<div class="smkv-dim2">${esc(t.artist)}</div>` : '')}</td>
-        <td class="d">${t.duration ? fmtTime(t.duration) : ''}</td><td class="e"><button class="smkv-tadd" data-i="${i}" title="Add to a playlist">＋</button></td>${editLib && canEdit() ? `<td class="e"><button class="smkv-tedit" data-i="${i}" title="Edit tags">✎</button></td>` : ''}</tr>`).join('')}</table>`;
+        <td class="d">${t.duration ? fmtTime(t.duration) : ''}</td><td class="e"><button class="smkv-tadd" data-i="${i}" title="Add to a playlist">＋</button>${canSave() ? `<a class="smkv-tdl" href="${esc(dlUrl(t.path))}" download title="Save to this computer" onclick="event.stopPropagation()">⬇</a>` : ''}</td>${editLib && canEdit() ? `<td class="e"><button class="smkv-tedit" data-i="${i}" title="Edit tags">✎</button></td>` : ''}</tr>`).join('')}</table>`;
+    }
+    const canSave = () => !!(BR.me && (BR.me.offline || BR.me.admin));
+    const dlUrl = (path) => { const u = new URL('api/download', BASE); u.searchParams.set('path', path); return u.href; };
+    // several files as one .zip (the browser saves it; the page stays)
+    function downloadZip(tracks, name, numbered) {
+      const f = document.createElement('form');
+      f.method = 'POST'; f.action = new URL('api/download/zip', BASE).href; f.style.display = 'none';
+      const add = (k, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = k; i.value = v; f.appendChild(i); };
+      add('name', name); if (numbered) add('numbered', '1');
+      tracks.forEach((t) => add('path', t.path));
+      document.body.appendChild(f); f.submit(); f.remove();
+      toast(`Preparing ${tracks.length} songs…`);
     }
     function bindAdd(root, list) {
       root.querySelectorAll('.smkv-tadd').forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); addToPlaylist([list[+b.dataset.i]], b); });
@@ -832,7 +844,7 @@
               <div class="smkv-facts"><a href="#/artist/${encodeURIComponent(lib)}/${encodeURIComponent(a.artist)}">${esc(a.artist)}</a>${a.year ? ' · ' + a.year : ''} · ${a.tracks.length} songs · ${fmtTime(total)}</div>
               ${fromTxt(a.owners) ? `<div class="smkv-dim2" style="margin:2px 0 6px">📦 ${esc(fromTxt(a.owners))}</div>` : ''}
               <div class="smkv-chips">${[...a.genres].map((g) => `<a href="${mbase(lib)}/genres/${encodeURIComponent(g)}">${esc(g)}</a>`).join('')}</div>
-              <button class="smkv-primary" id="smkv-playall">▶ Play</button> <button id="smkv-shufall">🔀 Shuffle</button> <button id="smkv-pladd" title="Add the album to a playlist">＋ Playlist</button>
+              <button class="smkv-primary" id="smkv-playall">▶ Play</button> <button id="smkv-shufall">🔀 Shuffle</button> <button id="smkv-pladd" title="Add the album to a playlist">＋ Playlist</button>${canSave() ? ' <button id="smkv-zip" title="Save the album to this computer (.zip)">⬇ Download</button>' : ''}
               ${canEdit() ? '<button id="smkv-aedit">✎ Edit album</button>' : ''}</div></div>
           ${trackTable(a.tracks.filter((t) => matchQ(t.title, t.artist)), false, lib)}`;
         const ae = $('#smkv-aedit');
@@ -842,6 +854,7 @@
         $('#smkv-playall').onclick = () => playQueue(a.tracks, 0);
         $('#smkv-shufall').onclick = () => playQueue(shuffle([...a.tracks]), 0);
         $('#smkv-pladd').onclick = (e) => addToPlaylist(a.tracks, e.currentTarget);
+        if ($('#smkv-zip')) $('#smkv-zip').onclick = () => downloadZip(a.tracks, `${a.artist} - ${a.album}`);
       }
       draw();
     }
@@ -854,7 +867,7 @@
       function draw() {
         view.innerHTML = `<div class="smkv-albumhead"><div class="smkv-poster sq big round">${albums[0]?.cover ? `<img src="${esc(coverUrl(albums[0].cover))}">` : `<span>${esc(name)}</span>`}</div>
             <div><div class="smkv-dim2">ARTIST</div><h2>${esc(name)}</h2><div class="smkv-facts">${albums.length} albums · ${songs.length} songs</div>
-            <button class="smkv-primary" id="smkv-playall">▶ Play</button> <button id="smkv-shufall">🔀 Shuffle</button> <button id="smkv-pladd" title="Add every song to a playlist">＋ Playlist</button></div></div>
+            <button class="smkv-primary" id="smkv-playall">▶ Play</button> <button id="smkv-shufall">🔀 Shuffle</button> <button id="smkv-pladd" title="Add every song to a playlist">＋ Playlist</button>${canSave() ? ' <button id="smkv-zip" title="Save every song to this computer (.zip)">⬇ Download</button>' : ''}</div></div>
           <h3 class="smkv-h">Albums</h3><div class="smkv-grid sq">${albums.map((a) => posterCard({ key: a.key, title: a.album, sub: String(a.year || ''), img: coverUrl(a.cover), square: true, badge: ownerBadge(a) })).join('')}</div>
           <h3 class="smkv-h">Songs</h3>${trackTable(songs.filter((t) => matchQ(t.title, t.album)), true, lib)}`;
         bindCards(view, (k) => (location.hash = `#/album/${encodeURIComponent(lib)}/${encodeURIComponent(k)}`));
@@ -862,6 +875,7 @@
         $('#smkv-playall').onclick = () => playQueue(songs, 0);
         $('#smkv-shufall').onclick = () => playQueue(shuffle([...songs]), 0);
         $('#smkv-pladd').onclick = (e) => addToPlaylist(songs, e.currentTarget);
+        if ($('#smkv-zip')) $('#smkv-zip').onclick = () => downloadZip(songs, name);
       }
       draw();
     }
@@ -932,7 +946,7 @@
             <div><div class="smkv-dim2">PLAYLIST</div><h2>${esc(pl.name)}</h2>
               <div class="smkv-facts">${tracks.length} songs · ${fmtTime(total)}${missing ? ` · <span title="Their files are gone, or you can't open their library any more">${missing} unavailable</span>` : ''}</div>
               <button class="smkv-primary" id="smkv-playall" ${tracks.length ? '' : 'disabled'}>▶ Play</button> <button id="smkv-shufall" ${tracks.length ? '' : 'disabled'}>🔀 Shuffle</button>
-              <button id="smkv-plren">✎ Rename</button> <button id="smkv-pldel">🗑 Delete</button></div></div>
+              <button id="smkv-plren">✎ Rename</button> <button id="smkv-pldel">🗑 Delete</button>${canSave() && tracks.length ? ' <button id="smkv-zip" title="Save the playlist to this computer (.zip, in playlist order)">⬇ Download</button>' : ''}</div></div>
           ${shown.length ? `<table class="smkv-tracks smkv-pltracks">${shown.map((t, i) => `<tr data-i="${i}" draggable="true" class="${A.cur && A.cur.path === t.path ? 'on' : ''}">
             <td class="n smkv-grip" title="Drag to reorder">⠿</td><td><b>${esc(t.title || t.name)}</b><div class="smkv-dim2">${esc(t.artist || '')}${t.album ? ' · ' + esc(t.album) : ''}${ownerOfPath(t.path) ? ` · <span class="smkv-from">👤 ${esc(ownerOfPath(t.path))}</span>` : ''}</div></td>
             <td class="d">${t.duration ? fmtTime(t.duration) : ''}</td>
@@ -940,6 +954,7 @@
             : '<div class="smkv-dim">Empty — press ＋ next to songs, albums or artists to add them here.</div>'}`;
         $('#smkv-playall').onclick = () => playQueue(tracks, 0);
         $('#smkv-shufall').onclick = () => playQueue(shuffle([...tracks]), 0);
+        if ($('#smkv-zip')) $('#smkv-zip').onclick = () => downloadZip(tracks, pl.name, true);
         $('#smkv-plren').onclick = async () => {
           const n = prompt('Rename playlist', pl.name);
           if (!n || !n.trim() || n.trim() === pl.name) return;
@@ -2710,7 +2725,8 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 .smkv-pop.smkv-plpop button{font-size:14px;text-align:left;padding:8px 10px;display:flex;justify-content:space-between;gap:12px}
 .smkv-plpop button small{color:#7d8696}
 .smkv-tracks .smkv-tadd{opacity:.35;background:none!important;border:none!important;font-size:16px;cursor:pointer;color:#c9cfd8;padding:2px 6px!important}
-.smkv-tracks tr:hover .smkv-tadd{opacity:1}
+.smkv-tracks tr:hover .smkv-tadd,.smkv-tracks tr:hover .smkv-tdl{opacity:1}
+.smkv-tracks .smkv-tdl{opacity:.35;color:#c9cfd8;text-decoration:none;font-size:14px;padding:2px 6px}
 @media (hover:none){.smkv-tracks .smkv-tadd{opacity:.7}}
 .smkv-pltracks .smkv-grip{cursor:grab;color:#5d6675}
 .smkv-pltracks td.e{white-space:nowrap}.smkv-pltracks td.e button{background:none;border:none;color:#9aa3b2;cursor:pointer;font-size:14px;padding:2px 6px}
