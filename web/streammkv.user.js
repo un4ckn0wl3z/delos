@@ -1057,6 +1057,58 @@
       };
       drawMine();
       const state = { queued: 'Queued', downloading: 'Downloading', done: 'Done', failed: 'Failed', canceled: 'Canceled' };
+      const tName = { checking: 'Checking', downloading: 'Downloading', seeding: 'Seeding', paused: 'Paused', stopped: 'Stopped', finished: 'Finished (not seeding)', removed: 'Removed from rtorrent' };
+      const torBtns = (st) => [
+        (st === 'downloading' || st === 'seeding') && '<button data-a="pause">⏸ Pause</button>',
+        st === 'paused' && '<button data-a="resume">▶ Resume</button>',
+        st === 'seeding' && '<button data-a="stop">⏹ Stop seeding</button>',
+        (st === 'downloading' || st === 'paused') && '<button data-a="stop">⏹ Stop</button>',
+        st === 'finished' && '<button data-a="start">🌱 Seed</button>',
+        st === 'stopped' && '<button data-a="start">▶ Start</button>',
+      ].filter(Boolean).join('');
+      const limTxt = (r, h) => [r > 0 ? `ratio ${r}` : '', h > 0 ? `${h} h` : ''].filter(Boolean).join(' or ') || 'no limit';
+      const seedTxt = (j) => j.seedRatio === -1 && j.seedHours === -1 ? 'seeds without limit'
+        : (j.seedRatio || j.seedHours) ? `seed limit: ${limTxt(Math.max(j.seedRatio || 0, 0), Math.max(j.seedHours || 0, 0))}` : 'seed limit: server default';
+      function torMore(j) {
+        detailModal(`<h2>Torrent</h2><div class="smkv-dim2">${esc(j.name || j.source)}</div>
+          <div style="margin:12px 0"><button class="smkv-btn2" id="smkv-rc">🔁 Recheck files</button></div>
+          <h3 style="margin:14px 0 6px">Seeding limit</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <select id="smkv-sm" class="smkv-inp" style="width:170px;flex:none"><option value="def">Server default</option><option value="none">No limit</option><option value="own">Custom</option></select>
+            <span id="smkv-so">ratio <input id="smkv-sr" class="smkv-inp" type="number" min="0" step="0.1" style="width:80px"> or <input id="smkv-sh" class="smkv-inp" type="number" min="0" style="width:80px"> h</span>
+            <button class="smkv-btn2" id="smkv-sv">Save</button></div>
+          <h3 style="margin:14px 0 6px">Trackers & files</h3><div id="smkv-det" class="smkv-dim2" style="max-height:240px;overflow:auto">Loading…</div>`,
+          async (root, close) => {
+            const q = (x) => root.querySelector(x), mode = q('#smkv-sm');
+            mode.value = j.seedRatio === -1 && j.seedHours === -1 ? 'none' : (j.seedRatio || j.seedHours ? 'own' : 'def');
+            q('#smkv-sr').value = j.seedRatio > 0 ? j.seedRatio : ''; q('#smkv-sh').value = j.seedHours > 0 ? j.seedHours : '';
+            const sync = () => { q('#smkv-so').style.display = mode.value === 'own' ? '' : 'none'; };
+            mode.onchange = sync; sync();
+            q('#smkv-rc').onclick = async () => { close(); try { await apiPost(`downloads/${encodeURIComponent(j.id)}/torrent`, { action: 'recheck' }); refresh(); } catch (x) { toast(x.message, 5000); } };
+            q('#smkv-sv').onclick = async () => {
+              let ratio = 0, hours = 0;
+              if (mode.value === 'none') { ratio = -1; hours = -1; }
+              if (mode.value === 'own') { ratio = +q('#smkv-sr').value || -1; hours = +q('#smkv-sh').value || -1; }
+              try { await apiPost(`downloads/${encodeURIComponent(j.id)}/seed`, { ratio, hours }); close(); toast('Seeding limit saved'); refresh(); } catch (x) { toast(x.message, 5000); }
+            };
+            try {
+              const dd = await api(`downloads/${encodeURIComponent(j.id)}/detail`);
+              q('#smkv-det').innerHTML = dd.trackers.map((t) => `<div>📡 ${esc(t.url)} · ${t.seeds} seeds · ${t.leechers} leechers${t.failed ? ` · ${t.failed} failed` : ''}</div>`).join('')
+                + dd.files.map((f) => `<div>📄 ${esc(f.path)} · ${fmtSize(f.size)} · ${(f.progress * 100).toFixed(0)}%</div>`).join('');
+            } catch (x) { q('#smkv-det').textContent = x.message; }
+          });
+      }
+      function removeDlg(j) {
+        const running = j.state === 'queued' || j.state === 'downloading';
+        return new Promise((res) => detailModal(`<h2>${running ? 'Cancel' : 'Remove'} ${j.kind === 'torrent' ? 'torrent' : 'download'}</h2><div class="smkv-dim2">${esc(j.name || j.source)}</div>
+          <label style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="radio" name="smkv-rm" value="keep" checked> Remove ${j.kind === 'torrent' ? 'the torrent' : 'from the list'} only — keep the files</label>
+          <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="radio" name="smkv-rm" value="data"> …and <b style="color:#ff7a7a">delete ${running ? 'what was downloaded so far' : 'the files'}</b></label>
+          <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end"><button class="smkv-btn2" id="smkv-rmno">Cancel</button><button class="smkv-btn2" id="smkv-rmok" style="background:#a33">Remove</button></div>`,
+          (root, close) => {
+            root.querySelector('#smkv-rmno').onclick = () => { close(); res(null); };
+            root.querySelector('#smkv-rmok').onclick = () => { const v = root.querySelector('input[name=smkv-rm]:checked').value; close(); res(v === 'data'); };
+          }));
+      }
       function draw() {
         const t = d.torrent || {};
         $('#smkv-dlrt').innerHTML = t.ok ? `Torrents go to rtorrent ${esc(t.version || '')}` : `⚠ Torrents unavailable: ${esc(t.error || '')} — http(s) links still work`;
@@ -1064,19 +1116,27 @@
         $('#smkv-dllist').innerHTML = d.jobs.length ? d.jobs.map((j) => {
           const pct = j.size > 0 ? Math.min(100, j.done / j.size * 100) : 0;
           const mine = BR.me.admin || j.user === BR.me.user;
+          const tor = j.kind === 'torrent' && j.hash && j.tstate && j.tstate !== 'removed';
+          const st = j.kind === 'torrent' && j.tstate ? tName[j.tstate] || j.tstate : state[j.state] || j.state;
           return `<div class="smkv-dl ${esc(j.state)}" data-id="${esc(j.id)}">
             <div class="smkv-dlh"><b>${esc(j.name || j.source)}</b><span class="smkv-dim2">${j.kind} → ${esc(names[j.lib] || j.lib)}${j.subdir ? ' / ' + esc(j.subdir) : ''} · ${esc(j.user)}</span></div>
             <div class="smkv-pbar big"><i style="width:${pct.toFixed(1)}%"></i></div>
-            <div class="smkv-dlf2"><span class="smkv-dim2">${j.state === 'done' && j.seeding ? 'Seeding' : state[j.state] || j.state}${j.size > 0 ? ` · ${fmtSize(j.done)} / ${fmtSize(j.size)}` : ''}${j.rate > 0 ? ` · ${fmtSize(j.rate)}/s` : ''}${j.error ? ` · <span class="smkv-err">${esc(j.error)}</span>` : ''}${j.dupes && j.dupes.length ? `<br><span style="color:#f5a623" title="${esc(j.dupes.join('\n'))}">⚠ Also in the library: ${esc(j.dupes.slice(0, 2).join(' · '))}${j.dupes.length > 2 ? ` +${j.dupes.length - 2}` : ''}</span>` : ''}</span>
-              ${mine ? `${j.kind === 'http' && (j.state === 'failed' || j.state === 'canceled') ? '<button data-a="retry">Retry</button>' : ''}<button data-a="rm">${j.state === 'queued' || j.state === 'downloading' ? 'Cancel' : 'Remove'}</button>` : ''}</div></div>`;
+            <div class="smkv-dlf2"><span class="smkv-dim2">${st}${j.size > 0 ? ` · ${fmtSize(j.done)} / ${fmtSize(j.size)}` : ''}${j.rate > 0 ? ` · ↓ ${fmtSize(j.rate)}/s` : ''}${j.up > 0 ? ` · ↑ ${fmtSize(j.up)}/s` : ''}${j.kind === 'torrent' && j.tstate ? `<br>ratio <b>${(j.ratio || 0).toFixed(2)}</b> · ↑ ${fmtSize(j.uploaded || 0)}${tor ? ` · ${j.peers || 0} peers (${j.seeds || 0} seeds)` : ''} · ${seedTxt(j)}${j.autoStopped ? ` · <span style="color:#f5a623">auto-stopped: ${esc(j.autoStopped)}</span>` : ''}` : ''}${j.error ? ` · <span class="smkv-err">${esc(j.error)}</span>` : ''}${j.dupes && j.dupes.length ? `<br><span style="color:#f5a623" title="${esc(j.dupes.join('\n'))}">⚠ Also in the library: ${esc(j.dupes.slice(0, 2).join(' · '))}${j.dupes.length > 2 ? ` +${j.dupes.length - 2}` : ''}</span>` : ''}</span>
+              ${mine ? `${j.kind === 'http' && (j.state === 'failed' || j.state === 'canceled') ? '<button data-a="retry">Retry</button>' : ''}${tor ? torBtns(j.tstate) + '<button data-a="more" title="Recheck, seeding limit, trackers & files">⋯</button>' : ''}<button data-a="rm">${j.state === 'queued' || j.state === 'downloading' ? 'Cancel' : 'Remove'}</button>` : ''}</div></div>`;
         }).join('') : '<div class="smkv-dim">No downloads yet.</div>';
         $('#smkv-dllist').querySelectorAll('button[data-a]').forEach((b) => b.onclick = async () => {
           const j = d.jobs.find((x) => x.id === b.closest('.smkv-dl').dataset.id);
           try {
-            if (b.dataset.a === 'retry') {
+            const a = b.dataset.a;
+            if (a === 'retry') {
               await apiPost(`downloads/${encodeURIComponent(j.id)}/retry`, {});
+            } else if (a === 'more') {
+              return torMore(j);
+            } else if (a !== 'rm') {
+              await apiPost(`downloads/${encodeURIComponent(j.id)}/torrent`, { action: a });
             } else {
-              const files = confirm(`Also delete ${j.state === 'done' ? 'the downloaded files' : 'what was downloaded so far'}?\n\nOK = delete files · Cancel = keep them`);
+              const files = await removeDlg(j);
+              if (files === null) return;
               const r = await fetch(new URL(`api/downloads/${encodeURIComponent(j.id)}${files ? '?files=1' : ''}`, BASE), { method: 'DELETE', credentials: 'same-origin' });
               if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
             }
@@ -1089,7 +1149,7 @@
         clearTimeout(timer);
         if (!location.hash.startsWith('#/downloads')) return;
         try { d = await api('downloads'); draw(); } catch (_) {}
-        if (d.jobs.some((j) => j.state === 'queued' || j.state === 'downloading' || j.seeding)) timer = setTimeout(refresh, 3000);
+        if (d.jobs.some((j) => j.state === 'queued' || j.state === 'downloading' || j.seeding || j.tstate === 'checking' || j.tstate === 'paused')) timer = setTimeout(refresh, 3000);
       }
       draw();
       if (d.jobs.some((j) => j.state === 'queued' || j.state === 'downloading')) timer = setTimeout(refresh, 3000);
@@ -2025,7 +2085,8 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-pbar.big{position:relative;height:6px;border-radius:3px;margin:8px 0 6px;background:#252b35}
 .smkv-pbar.big i{display:block;height:100%;border-radius:3px;background:#4a9eff}
 .smkv-dl.done .smkv-pbar.big i{background:#3ecf8e}.smkv-dl.failed .smkv-pbar.big i{background:#ff6b6b}
-.smkv-dlf2{display:flex;align-items:center;gap:8px}.smkv-dlf2 span{flex:1}
+.smkv-dlf2{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.smkv-dlf2 span{flex:1;min-width:220px}
+.smkv-btn2{background:#1c212a;color:#e6e9ee;border:1px solid #2a313c;border-radius:6px;padding:6px 12px;cursor:pointer;font:inherit}
 .smkv-err{color:#ff7b7b}
 #smkv-side header{gap:4px!important}
 #smkv-side header button,#smkv-side header a{padding:4px 7px!important;min-width:0}

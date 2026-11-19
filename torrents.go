@@ -232,7 +232,7 @@ func (s *Server) handleAdminTorrents(w http.ResponseWriter, r *http.Request) {
 	}
 	byHash := map[string]map[string]any{}
 	for _, j := range s.dl.jobs {
-		if j.Hash != "" {
+		if j.Hash != "" && j.TState != "removed" && j.State != JobFailed {
 			byHash[strings.ToUpper(j.Hash)] = map[string]any{"id": j.ID, "user": j.User, "lib": j.Lib, "autoStopped": j.AutoStopped, "seedRatio": j.SeedRatio, "seedHours": j.SeedHours}
 		}
 	}
@@ -243,13 +243,19 @@ func (s *Server) handleAdminTorrents(w http.ResponseWriter, r *http.Request) {
 		v := torrentView{Hash: it.Hash, Name: it.Name, Status: it.Status(), Size: it.Size, Done: it.Done, Ratio: it.Ratio,
 			Uploaded: it.UpTotal, Downloaded: it.DownTotal, Up: it.UpRate, Down: it.DownRate, Peers: it.Peers, Seeds: it.Seeds,
 			Files: it.Files, Path: it.dataPath(), Label: it.Label, Message: it.Message, Added: it.StartedAt, Finished: it.FinishedAt}
-		if jm := byHash[strings.ToUpper(it.Hash)]; jm != nil {
+		// the job that added this copy (its tag), else one that knew the hash
+		var jm map[string]any
+		if id, ok := strings.CutPrefix(it.Tag, "smkv:"); ok && jobs[id] != nil {
+			j := jobs[id]
+			jm = map[string]any{"id": j.ID, "user": j.User, "lib": j.Lib, "autoStopped": j.AutoStopped, "seedRatio": j.SeedRatio, "seedHours": j.SeedHours}
+		} else {
+			jm = byHash[strings.ToUpper(it.Hash)]
+		}
+		if jm != nil {
 			if l, ok := s.libs.Get(jm["lib"].(string)); ok {
 				jm["libName"] = l.Name
 			}
 			v.Job = jm
-		} else if id, ok := strings.CutPrefix(it.Tag, "smkv:"); ok && jobs[id] != nil {
-			v.Job = map[string]any{"id": id, "user": jobs[id].User, "lib": jobs[id].Lib}
 		}
 		counts[v.Status]++
 		list = append(list, v)

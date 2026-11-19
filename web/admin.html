@@ -52,6 +52,11 @@
   .toggle{display:flex;align-items:center;gap:8px;color:var(--dim);cursor:pointer}
   select{background:#0b0d11;border:1px solid #2c3440;border-radius:7px;color:#fff;padding:7px 8px;font:inherit}
   .badge.t-movies{background:#3a2a4a;color:#d6b4ff}.badge.t-tv{background:#1e3352;color:#9cc8ff}
+  .badge.ts-seeding{background:#23402a;color:#8fe0a0}.badge.ts-downloading{background:#1e3352;color:#9cc8ff}
+  .badge.ts-paused{background:#4a3a1c;color:#ffcf7a}.badge.ts-stopped,.badge.ts-finished,.badge.ts-removed{background:#2c3440;color:#c9cfd8}
+  .badge.ts-checking{background:#3a2a4a;color:#d6b4ff}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}.chips button{font-size:12px;padding:3px 10px;border-radius:12px}.chips button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .tstat{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;margin:2px 0 8px}
   .badge.t-music{background:#4a2a35;color:#ffb3c7}.badge.t-videos{background:#2c3440;color:#c9cfd8}
   .folders{max-height:46vh;overflow:auto;border:1px solid #232a34;border-radius:8px}
   .folders div{padding:7px 12px;cursor:pointer;border-bottom:1px solid #1d222b}
@@ -139,6 +144,28 @@
       <span class="dim" title="Downloaders' personal libraries are created in <folder>/<user>/<library>">Personal libraries folder</span>
       <input type="text" name="root" autocomplete="off" style="flex:1;min-width:240px">
       <button class="primary">Save</button>
+    </form>
+  </section>
+
+  <section id="tor-sec">
+    <h2>Torrents <span class="count" id="n-tor">0</span><span class="dim" style="font-weight:normal;font-size:12px;margin-left:8px">everything in rtorrent</span><span class="sp"></span><span class="dim" style="font-weight:normal;font-size:12px" id="tor-rates"></span></h2>
+    <div style="padding:0 18px">
+      <div class="chips" id="tor-chips"></div>
+      <input type="search" id="tor-q" placeholder="Filter by name…" style="width:240px;margin-bottom:8px">
+    </div>
+    <div id="tor-list"></div>
+    <form class="add" id="seed-form" style="font-size:13px;flex-wrap:wrap">
+      <span class="dim" title="For torrents added through StreamMKV. Each download can override it.">Seeding rule</span>
+      stop at ratio <input type="number" name="ratio" min="0" step="0.1" style="width:80px" placeholder="∞">
+      or after <input type="number" name="hours" min="0" step="1" style="width:80px" placeholder="∞"> hours seeding, then
+      <select name="action"><option value="stop">stop seeding</option><option value="remove">remove the torrent (keep files)</option></select>
+      <button class="primary">Save</button>
+    </form>
+    <form class="add" id="thr-form" style="font-size:13px">
+      <span class="dim" title="Applies to all of rtorrent until it restarts (put throttle.global_*.max_rate in .rtorrent.rc to keep it)">Speed limits</span>
+      ↓ <input type="number" name="down" min="0" style="width:100px" placeholder="unlimited"> KB/s
+      ↑ <input type="number" name="up" min="0" style="width:100px" placeholder="unlimited"> KB/s
+      <button class="primary">Set</button>
     </form>
   </section>
 
@@ -623,19 +650,25 @@
     if (!$('#rt-form').ep.matches(':focus') && !$('#rt-form').ep.dataset.touched) $('#rt-form').ep.value = t.auto ? '' : (t.endpoint || '');
     $('#rt-form').ep.placeholder = t.auto && t.endpoint ? `auto: ${t.endpoint}` : 'auto-detect · /path/to/rpc.socket · 127.0.0.1:5000 · https://user:pass@host/RPC2';
     $('#n-dl').textContent = d.jobs.length;
+    lastJobs = d.jobs;
     const libName = Object.fromEntries(d.libraries.map((l) => [l.id, l.name]));
     $('#dl-list').innerHTML = d.jobs.length ? `<table><tr><th>Name</th><th class="h-m">To</th><th>Progress</th><th></th></tr>${d.jobs.map((j) => {
       const pct = j.size > 0 ? Math.min(100, (j.done / j.size) * 100) : 0;
-      const st = j.state === 'done' && j.seeding ? 'Seeding' : dlState[j.state] || j.state;
+      const st = j.kind === 'torrent' && j.tstate ? tName[j.tstate] || j.tstate : dlState[j.state] || j.state;
+      const tor = j.kind === 'torrent' && j.hash && j.tstate && j.tstate !== 'removed';
       return `<tr data-j="${esc(j.id)}">
         <td><b class="file">${esc(j.name || j.source)}</b><span class="badge ${j.kind === 'torrent' ? 't-tv' : 't-movies'}">${j.kind}</span>
           <div class="dim" style="font-size:12px">${esc(j.user)} · ${ago(j.created)}${j.error ? ` · <span style="color:#ff6b6b">${esc(j.error)}</span>` : ''}</div>
           ${j.dupes && j.dupes.length ? `<div style="font-size:12px;color:#f5a623" title="${esc(j.dupes.join('\n'))}">⚠ Also in the library: ${esc(j.dupes.slice(0, 2).join(' · '))}${j.dupes.length > 2 ? ` +${j.dupes.length - 2}` : ''}</div>` : ''}</td>
         <td class="h-m dim file">${esc(libName[j.lib] || j.lib)}${j.subdir ? ' / ' + esc(j.subdir) : ''}</td>
         <td style="min-width:150px"><div style="height:6px;background:rgba(128,128,128,.25);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(1)}%;background:${j.state === 'failed' ? '#ff6b6b' : j.state === 'done' ? '#3ecf8e' : '#4a9eff'}"></div></div>
-          <div class="dim" style="font-size:12px">${st}${j.size > 0 ? ` · ${size(j.done)} / ${size(j.size)}` : ''}${j.rate > 0 ? ` · ${size(j.rate)}/s` : ''}${j.up > 0 ? ` · ↑ ${size(j.up)}/s` : ''}</div></td>
+          <div class="dim" style="font-size:12px">${j.kind === 'torrent' && j.tstate ? `<span class="badge ts-${esc(j.tstate)}" style="margin:0 4px 0 0">${st}</span>` : st}${j.size > 0 ? ` · ${size(j.done)} / ${size(j.size)}` : ''}${j.rate > 0 ? ` · ↓ ${size(j.rate)}/s` : ''}${j.up > 0 ? ` · ↑ ${size(j.up)}/s` : ''}</div>
+          ${j.kind === 'torrent' && j.tstate ? `<div class="dim" style="font-size:12px">ratio <b>${(j.ratio || 0).toFixed(2)}</b> · ↑ ${size(j.uploaded || 0)} uploaded${tor ? ` · ${j.peers || 0} peers (${j.seeds || 0} seeds)` : ''}${j.seedSince && j.state === 'done' ? ` · done ${ago(j.seedSince)}` : ''}</div>
+            <div class="dim" style="font-size:12px">${seedLimitText(j)}${j.autoStopped ? ` · <span style="color:var(--warn)">auto-stopped: ${esc(j.autoStopped)}</span>` : ''}</div>` : ''}</td>
         <td><div class="actions">
           ${j.kind === 'http' && (j.state === 'failed' || j.state === 'canceled') ? '<button data-a="retry">Retry</button>' : ''}
+          ${tor ? torButtons(j.tstate) : ''}
+          ${tor ? '<button data-a="more" title="Recheck, seeding limit, trackers & files">⋯</button>' : ''}
           <button data-a="remove">${j.state === 'queued' || j.state === 'downloading' ? 'Cancel' : 'Remove'}</button>
         </div></td></tr>`;
     }).join('')}</table>` : '<div class="empty">No downloads yet.</div>';
@@ -644,7 +677,7 @@
       b.onclick = () => dlAction(b.dataset.a, j);
     });
     clearTimeout(dlTimer);
-    if (d.jobs.some((j) => j.state === 'queued' || j.state === 'downloading' || j.seeding)) dlTimer = setTimeout(loadDownloads, 3000);
+    if (d.jobs.some((j) => j.state === 'queued' || j.state === 'downloading' || j.seeding || j.tstate === 'checking' || j.tstate === 'paused')) dlTimer = setTimeout(loadDownloads, 3000);
   }
   const loadDownloads = () => api('downloads').then(renderDownloads).catch(() => {});
   async function loadDirs() {
@@ -656,10 +689,14 @@
   function dlAction(a, j) {
     const id = encodeURIComponent(j.id);
     if (a === 'retry') return api(`downloads/${id}/retry`, { method: 'POST' }).then(loadDownloads).catch((x) => toast(x.message));
+    if (TOR_ACTIONS[a]) return api(`downloads/${id}/torrent`, { method: 'POST', body: { action: a } }).then(() => { loadDownloads(); loadTorrents(); }).catch((x) => toast(x.message));
+    if (a === 'more') return torMore({ name: j.name || j.source, detail: `downloads/${id}/detail`, act: (x) => dlAction(x, j), job: j });
     const running = j.state === 'queued' || j.state === 'downloading';
+    if (j.kind === 'torrent') return torRemove(j.name || j.source, running, async (data) => {
+      await api(`downloads/${id}${data ? '?files=1' : ''}`, { method: 'DELETE' }); loadDownloads(); loadTorrents();
+    });
     modal(`<h3>${running ? 'Cancel' : 'Remove'} download</h3><div class="file">${esc(j.name || j.source)}</div>
       <label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="del"> Also delete ${running ? 'what was downloaded so far' : 'the downloaded files'}</label>
-      ${j.kind === 'torrent' ? '<div class="dim" style="font-size:12px">The torrent is removed from rtorrent (it stops seeding).</div>' : ''}
       <div class="row"><button data-close>Keep</button><button class="danger" id="ok">${running ? 'Cancel download' : 'Remove'}</button></div>`,
       (b, close) => {
         b.querySelector('#ok').onclick = async () => {
@@ -736,6 +773,141 @@
     } catch (x) { toast(x.message); }
   };
 
+  // ---------------------------------------------------------- torrents
+  const tName = { checking: 'Checking', downloading: 'Downloading', seeding: 'Seeding', paused: 'Paused', stopped: 'Stopped', finished: 'Finished (not seeding)', removed: 'Removed from rtorrent' };
+  const TOR_ACTIONS = { start: 1, stop: 1, pause: 1, resume: 1, recheck: 1 };
+  let seedRule = { ratio: 0, hours: 0, action: 'stop' };
+  function torButtons(st) {
+    const b = [];
+    if (st === 'downloading' || st === 'seeding') b.push('<button data-a="pause" title="Pause (keeps it open)">⏸ Pause</button>');
+    if (st === 'paused') b.push('<button data-a="resume">▶ Resume</button>');
+    if (st === 'seeding') b.push('<button data-a="stop" title="Stop seeding / stop the torrent">⏹ Stop seeding</button>');
+    else if (st === 'downloading' || st === 'paused') b.push('<button data-a="stop">⏹ Stop</button>');
+    if (st === 'finished') b.push('<button data-a="start" title="Start seeding again">🌱 Seed</button>');
+    if (st === 'stopped') b.push('<button data-a="start">▶ Start</button>');
+    return b.join('');
+  }
+  const limTxt = (r, h) => [r > 0 ? `ratio ${r}` : '', h > 0 ? `${h} h` : ''].filter(Boolean).join(' or ') || 'no limit';
+  function seedLimitText(j) {
+    if (j.seedRatio === -1 && j.seedHours === -1) return 'seeds without limit';
+    const r = j.seedRatio ? Math.max(j.seedRatio, 0) : seedRule.ratio, h = j.seedHours ? Math.max(j.seedHours, 0) : seedRule.hours;
+    const own = j.seedRatio || j.seedHours;
+    return `seed limit: ${limTxt(r, h)}${own ? '' : ' (default)'}`;
+  }
+  function torRemove(name, running, fn) {
+    modal(`<h3>${running ? 'Cancel' : 'Remove'} torrent</h3><div class="file">${esc(name)}</div>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="radio" name="rm" value="keep" checked> Remove the torrent only — <b>keep the files</b></label>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="radio" name="rm" value="data"> Remove the torrent <b style="color:var(--bad)">and delete its files</b></label>
+      <div class="dim" style="font-size:12px;margin-top:6px">Either way it stops seeding. Deleting files can't be undone.</div>
+      <div class="row"><button data-close>Cancel</button><button class="danger" id="ok">Remove</button></div>`,
+      (b, close) => {
+        b.querySelector('#ok').onclick = async () => {
+          const data = b.querySelector('input[name=rm]:checked').value === 'data';
+          try { await fn(data); close(); toast(data ? 'Removed with files' : 'Removed — files kept'); } catch (x) { toast(x.message); }
+        };
+      });
+  }
+  // ⋯ : recheck, seeding limit (StreamMKV downloads), trackers & files
+  function torMore(o) {
+    const j = o.job;
+    modal(`<h3>Torrent</h3><div class="file" style="margin-bottom:8px">${esc(o.name)}</div>
+      <div class="actions" style="justify-content:flex-start"><button id="rc">🔁 Recheck files</button></div>
+      ${j ? `<h4 style="margin:14px 0 4px">Seeding limit for this torrent</h4>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px">
+          <select id="mode"><option value="def">Server default (${esc(limTxt(seedRule.ratio, seedRule.hours))})</option><option value="none">No limit</option><option value="own">Custom</option></select>
+          <span id="own">ratio <input type="number" id="sr" min="0" step="0.1" style="width:70px"> or <input type="number" id="sh" min="0" style="width:70px"> h</span>
+          <button class="primary" id="sv">Save</button></div>` : ''}
+      <h4 style="margin:14px 0 4px">Trackers & files</h4><div id="det" class="dim" style="font-size:12.5px;max-height:260px;overflow:auto">Loading…</div>
+      <div class="row"><button data-close>Close</button></div>`,
+      async (b, close) => {
+        b.querySelector('#rc').onclick = () => { close(); o.act('recheck'); };
+        if (j) {
+          const mode = b.querySelector('#mode'), own = b.querySelector('#own');
+          mode.value = j.seedRatio === -1 && j.seedHours === -1 ? 'none' : (j.seedRatio || j.seedHours ? 'own' : 'def');
+          b.querySelector('#sr').value = j.seedRatio > 0 ? j.seedRatio : ''; b.querySelector('#sh').value = j.seedHours > 0 ? j.seedHours : '';
+          const sync = () => { own.style.display = mode.value === 'own' ? '' : 'none'; };
+          mode.onchange = sync; sync();
+          b.querySelector('#sv').onclick = async () => {
+            let ratio = 0, hours = 0;
+            if (mode.value === 'none') { ratio = -1; hours = -1; }
+            if (mode.value === 'own') { ratio = +b.querySelector('#sr').value || -1; hours = +b.querySelector('#sh').value || -1; }
+            try { await api(`downloads/${encodeURIComponent(j.id)}/seed`, { method: 'POST', body: { ratio, hours } }); close(); toast('Seeding limit saved'); loadDownloads(); loadTorrents(); }
+            catch (x) { toast(x.message); }
+          };
+        }
+        try {
+          const d = await api(o.detail);
+          b.querySelector('#det').innerHTML = `${d.trackers.map((t) => `<div>📡 ${esc(t.url)} · ${t.seeds} seeds · ${t.leechers} leechers${t.failed ? ` · <span style="color:var(--bad)">${t.failed} failed</span>` : ''}${t.enabled ? '' : ' · disabled'}</div>`).join('')}
+            <div style="margin-top:6px">${d.files.map((f) => `<div class="file">📄 ${esc(f.path)} · ${size(f.size)} · ${(f.progress * 100).toFixed(0)}%</div>`).join('')}</div>`;
+        } catch (x) { b.querySelector('#det').textContent = x.message; }
+      });
+  }
+
+  let torData = null, torFilter = 'all', torTimer = null;
+  const torFilters = [['all', 'All'], ['downloading', 'Downloading'], ['seeding', 'Seeding'], ['paused', 'Paused'], ['stopped', 'Stopped'], ['smkv', 'From StreamMKV']];
+  function renderTorrents(d) {
+    torData = d;
+    seedRule = d.seed || seedRule;
+    const sf = $('#seed-form');
+    if (!sf.contains(document.activeElement)) {
+      sf.ratio.value = seedRule.ratio || ''; sf.hours.value = seedRule.hours || ''; sf.action.value = seedRule.action || 'stop';
+    }
+    const th = d.throttle, tf = $('#thr-form');
+    if (th && !tf.contains(document.activeElement)) { tf.down.value = th.downMax ? Math.round(th.downMax / 1024) : ''; tf.up.value = th.upMax ? Math.round(th.upMax / 1024) : ''; }
+    $('#tor-rates').innerHTML = d.error ? `⚠ ${esc(d.error)}` : th ? `↓ ${size(th.down)}/s${th.downMax ? ` (max ${size(th.downMax)}/s)` : ''} · ↑ ${size(th.up)}/s${th.upMax ? ` (max ${size(th.upMax)}/s)` : ''}` : '';
+    const all = d.torrents || [], c = d.counts || {};
+    $('#n-tor').textContent = all.length;
+    const n = { all: all.length, downloading: c.downloading || 0, seeding: c.seeding || 0, paused: c.paused || 0, stopped: (c.stopped || 0) + (c.finished || 0), smkv: all.filter((t) => t.job).length };
+    $('#tor-chips').innerHTML = torFilters.map(([k, l]) => `<button data-f="${k}" class="${torFilter === k ? 'on' : ''}">${l} ${n[k]}</button>`).join('');
+    $('#tor-chips').querySelectorAll('button').forEach((b) => b.onclick = () => { torFilter = b.dataset.f; renderTorrents(torData); });
+    const q = $('#tor-q').value.trim().toLowerCase();
+    const list = all.filter((t) => (torFilter === 'all' || (torFilter === 'smkv' ? t.job : torFilter === 'stopped' ? t.status === 'stopped' || t.status === 'finished' : t.status === torFilter)) && (!q || t.name.toLowerCase().includes(q)));
+    $('#tor-list').innerHTML = list.length ? `<table><tr><th>Name</th><th>Status</th><th class="h-m">Ratio</th><th class="h-m">Speed</th><th></th></tr>${list.slice(0, 300).map((t) => {
+      const pct = t.size > 0 ? Math.min(100, (t.done / t.size) * 100) : 0;
+      return `<tr data-h="${esc(t.hash)}">
+        <td><b class="file" title="${esc(t.path)}">${esc(t.name)}</b>
+          <div class="dim" style="font-size:12px">${size(t.size)}${t.files > 1 ? ` · ${t.files} files` : ''} · added ${ago(t.added)}${t.job ? ` · 👤 ${esc(t.job.user)}${t.job.libName ? ' → ' + esc(t.job.libName) : ''}` : t.label ? ` · ${esc(t.label)}` : ''}</div>
+          ${t.message ? `<div style="font-size:12px;color:var(--warn)">${esc(t.message)}</div>` : ''}
+          ${t.job && t.job.autoStopped ? `<div style="font-size:12px;color:var(--warn)">auto-stopped: ${esc(t.job.autoStopped)}</div>` : ''}</td>
+        <td style="min-width:130px"><span class="badge ts-${esc(t.status)}" style="margin:0">${tName[t.status] || t.status}</span>
+          ${pct < 100 ? `<div style="height:5px;background:rgba(128,128,128,.25);border-radius:3px;overflow:hidden;margin-top:4px"><div style="height:100%;width:${pct.toFixed(1)}%;background:#4a9eff"></div></div><div class="dim" style="font-size:11.5px">${pct.toFixed(1)}%</div>` : ''}</td>
+        <td class="h-m"><b>${t.ratio.toFixed(2)}</b><div class="dim" style="font-size:11.5px">↑ ${size(t.uploaded)}</div></td>
+        <td class="h-m dim" style="font-size:12px">${t.down ? `↓ ${size(t.down)}/s<br>` : ''}${t.up ? `↑ ${size(t.up)}/s<br>` : ''}${t.peers} peers · ${t.seeds} seeds</td>
+        <td><div class="actions">${torButtons(t.status)}<button data-a="more">⋯</button><button data-a="remove" class="danger">Remove</button></div></td></tr>`;
+    }).join('')}</table>${list.length > 300 ? `<div class="empty">Showing 300 of ${list.length} — filter to see more.</div>` : ''}` : `<div class="empty">${d.error ? '' : 'No torrents here.'}</div>`;
+    $('#tor-list').querySelectorAll('button[data-a]').forEach((b) => {
+      const t = list.find((x) => x.hash === b.closest('tr').dataset.h);
+      b.onclick = () => torAction(b.dataset.a, t);
+    });
+  }
+  function torAction(a, t) {
+    const h = encodeURIComponent(t.hash);
+    const run = (action) => api(`admin/torrents/${h}`, { method: 'POST', body: { action } }).then(() => { loadTorrents(); loadDownloads(); });
+    if (TOR_ACTIONS[a]) return run(a).catch((x) => toast(x.message));
+    if (a === 'more') {
+      const job = t.job && lastJobs.find((j) => j.id === t.job.id);
+      return torMore({ name: t.name, detail: `admin/torrents/${h}`, act: (x) => torAction(x, t), job });
+    }
+    if (a === 'remove') return torRemove(t.name, t.status === 'downloading', (data) => run(data ? 'remove_data' : 'remove'));
+  }
+  let lastJobs = [];
+  const loadTorrents = () => api('admin/torrents').then(renderTorrents).catch(() => {});
+  $('#tor-q').oninput = () => torData && renderTorrents(torData);
+  $('#seed-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    try {
+      const r = await api('admin/settings', { method: 'POST', body: { seedRatio: Math.max(0, +f.ratio.value || 0), seedHours: Math.max(0, +f.hours.value || 0), seedAction: f.action.value } });
+      seedRule = r.seed; f.blur && document.activeElement.blur(); toast('Seeding rule saved'); loadTorrents(); loadDownloads();
+    } catch (x) { toast(x.message); }
+  };
+  $('#thr-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target, kb = (x) => Math.max(0, Math.round(+x.value || 0)) * 1024;
+    try { await api('admin/torrents/throttle', { method: 'POST', body: { down: kb(f.down), up: kb(f.up) } }); document.activeElement.blur(); toast('Speed limits set'); loadTorrents(); }
+    catch (x) { toast(x.message); }
+  };
+
   const loadOverview = () => api('admin/overview').then(renderOverview).catch(() => {});
   const loadUsers = () => api('admin/users').then(renderUsers).catch(() => {});
   const loadUpdate = () => api('admin/update').then(renderUpdate).catch(() => {});
@@ -746,10 +918,10 @@
     $('#ver').textContent = 'v' + me.version;
     if (!me.admin) { $('#self').hidden = false; $('#self-name').textContent = me.user; return; }
     $('#app').hidden = false;
-    await Promise.all([loadOverview(), loadUsers(), loadUpdate(), loadLibs(), loadDownloads(), api('admin/settings').then(renderMeta).catch(() => {})]);
+    await Promise.all([loadOverview(), loadUsers(), loadUpdate(), loadLibs(), loadDownloads(), loadTorrents(), api('admin/settings').then(renderMeta).catch(() => {})]);
     clearInterval(timer);
     let n = 0;
-    timer = setInterval(() => { loadOverview(); loadLibs(); if (++n % 3 === 0) loadUsers(); if (n % 12 === 0) loadUpdate(); }, 5000);
+    timer = setInterval(() => { loadOverview(); loadLibs(); loadTorrents(); if (++n % 3 === 0) loadUsers(); if (n % 12 === 0) loadUpdate(); }, 5000);
   }
   boot();
 })();
