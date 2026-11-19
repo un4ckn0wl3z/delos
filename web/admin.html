@@ -148,7 +148,7 @@
   </section>
 
   <section id="tor-sec">
-    <h2>Torrents <span class="count" id="n-tor">0</span><span class="dim" style="font-weight:normal;font-size:12px;margin-left:8px">everything in rtorrent</span><span class="sp"></span><span class="dim" style="font-weight:normal;font-size:12px" id="tor-rates"></span></h2>
+    <h2>Torrents <span class="count" id="n-tor">0</span><span class="dim" style="font-weight:normal;font-size:12px;margin-left:8px">everything in rtorrent</span><span class="sp"></span><span class="dim" style="font-weight:normal;font-size:12px" id="tor-rates"></span><button id="orph-btn" style="margin-left:10px;font-size:12px" title="Files in rtorrent's download folder that no torrent uses any more">🧹 Find unused files</button></h2>
     <div style="padding:0 18px">
       <div class="chips" id="tor-chips"></div>
       <input type="search" id="tor-q" placeholder="Filter by name…" style="width:240px;margin-bottom:8px">
@@ -251,6 +251,7 @@
   // ---------------------------------------------------------- modal
   function modal(html, bind) {
     const m = $('#modal'), b = $('#modal-box');
+    b.style.cssText = '';
     b.innerHTML = html;
     m.classList.add('show');
     const close = () => m.classList.remove('show');
@@ -893,6 +894,55 @@
     if (a === 'remove') return torRemove(t.name, t.status === 'downloading', (data) => run(data ? 'remove_data' : 'remove'));
   }
   let lastJobs = [];
+  // 🧹 unused files: left in rtorrent's folder after their torrents were removed
+  let orphDir = '';
+  async function orphans() {
+    modal(`<h3>Unused files</h3><div class="dim" style="font-size:12.5px">Files and folders in rtorrent's download folder that no torrent in rtorrent uses. Nothing is deleted until you choose.</div>
+      <form id="of" style="display:flex;gap:8px;margin:10px 0"><input name="dir" placeholder="rtorrent's download folder (default)" style="flex:1" value="${esc(orphDir)}"><button class="primary">Scan</button></form>
+      <div id="ol" class="dim">Scanning…</div>
+      <div class="row"><button data-close>Close</button><button class="danger" id="od" disabled>Delete selected</button></div>`,
+      (b, close) => {
+        b.style.cssText = 'width:min(760px,94vw);max-width:none';
+        let data = null;
+        const sel = () => [...b.querySelectorAll('#ol input[data-p]:checked')].map((x) => data.orphans[+x.dataset.i]);
+        const upd = () => {
+          const s = sel(), tot = s.reduce((t, o) => t + o.size, 0);
+          b.querySelector('#od').disabled = !s.length;
+          b.querySelector('#od').textContent = s.length ? `Delete ${s.length} (${size(tot)})` : 'Delete selected';
+        };
+        const scan = async () => {
+          const ol = b.querySelector('#ol');
+          ol.textContent = 'Scanning…';
+          try {
+            const dir = b.querySelector('#of').dir.value.trim();
+            data = await api('admin/torrents/orphans' + (dir ? '?dir=' + encodeURIComponent(dir) : ''));
+            orphDir = dir;
+            b.querySelector('#of').dir.placeholder = data.root;
+            if (!data.orphans.length) { ol.innerHTML = `✅ Nothing unused in <span class="file">${esc(data.root)}</span> (${data.torrents} torrents checked).`; upd(); return; }
+            ol.innerHTML = `<div style="margin-bottom:6px">${data.orphans.length} unused · <b>${size(data.total)}</b> in <span class="file">${esc(data.root)}</span> · ${data.torrents} torrents checked
+                <label style="float:right;cursor:pointer"><input type="checkbox" id="oall"> select all</label></div>
+              <div style="max-height:46vh;overflow:auto;border:1px solid var(--line);border-radius:6px">${data.orphans.map((o, i) => `
+                <label style="display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border-bottom:1px solid var(--line);cursor:pointer">
+                  <input type="checkbox" data-p data-i="${i}" style="margin-top:3px">
+                  <div style="flex:1;min-width:0"><div class="file" style="color:var(--text)">${o.dir ? '📁' : '📄'} ${esc(o.rel)}</div>
+                  <div style="font-size:11.5px">${size(o.size)}${o.dir ? ` · ${o.files} files` : ''} · changed ${ago(o.modified)}${o.library ? ` · <span style="color:var(--warn)">in library “${esc(o.library)}” (still watchable there)</span>` : ''}${o.download ? ` · HTTP download by ${esc(o.download)}` : ''}</div></div></label>`).join('')}</div>`;
+            ol.querySelectorAll('input[data-p]').forEach((x) => x.onchange = upd);
+            ol.querySelector('#oall').onchange = (e) => { ol.querySelectorAll('input[data-p]').forEach((x) => { x.checked = e.target.checked; }); upd(); };
+            upd();
+          } catch (x) { ol.textContent = '⚠ ' + x.message; }
+        };
+        b.querySelector('#of').onsubmit = (e) => { e.preventDefault(); scan(); };
+        b.querySelector('#od').onclick = () => {
+          const s = sel(), tot = s.reduce((t, o) => t + o.size, 0);
+          if (!confirm(`Permanently delete ${s.length} item${s.length > 1 ? 's' : ''} (${size(tot)}) from the seedbox?\n\n${s.slice(0, 12).map((o) => '• ' + o.rel).join('\n')}${s.length > 12 ? `\n… and ${s.length - 12} more` : ''}\n\nThis can't be undone.`)) return;
+          api('admin/torrents/orphans/delete', { method: 'POST', body: { dir: data.root, paths: s.map((o) => o.path) } })
+            .then((r) => { toast(`Deleted ${r.deleted.length} · freed ${size(r.freed)}${r.errors.length ? ` · ${r.errors.length} skipped` : ''}`); if (r.errors.length) console.warn(r.errors); scan(); loadOverview(); })
+            .catch((x) => toast(x.message));
+        };
+        scan();
+      });
+  }
+  $('#orph-btn').onclick = orphans;
   const loadTorrents = () => api('admin/torrents').then(renderTorrents).catch(() => {});
   $('#tor-q').oninput = () => torData && renderTorrents(torData);
   $('#seed-form').onsubmit = async (e) => {

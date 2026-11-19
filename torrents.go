@@ -22,6 +22,8 @@ func (s *Server) torrentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/torrents/{hash}", s.adminOnly(s.handleAdminTorrentDetail))
 	mux.HandleFunc("POST /api/admin/torrents/{hash}", s.adminOnly(s.handleAdminTorrentAction))
 	mux.HandleFunc("POST /api/admin/torrents/throttle", s.adminOnly(s.handleAdminThrottle))
+	mux.HandleFunc("GET /api/admin/torrents/orphans", s.adminOnly(s.handleOrphans))
+	mux.HandleFunc("POST /api/admin/torrents/orphans/delete", s.adminOnly(s.handleOrphansDelete))
 }
 
 // dataPath: where a torrent's files are. rtorrent clears d.base_path while a
