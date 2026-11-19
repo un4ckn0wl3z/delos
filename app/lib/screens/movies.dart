@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../offline/store.dart';
 import '../item_menu.dart';
 import '../library.dart';
 import '../util.dart';
@@ -104,7 +105,10 @@ class _MoviesViewState extends State<MoviesView> {
                       subtitle: [if (g.year > 0) '${g.year}', if ((g.meta?.rating ?? 0) > 0) '★ ${g.meta!.rating.toStringAsFixed(1)}'].join(' · '),
                       image: g.meta?.poster ?? '',
                       progress: g.main.progress,
-                      badge: g.items.length > 1 ? '${g.items.length} versions' : '',
+                      badge: [
+                        if (g.items.any((i) => OfflineStore.instance.downloaded(widget.app.api.settings.server, i.path) != null)) '📥',
+                        if (g.items.length > 1) '${g.items.length} versions',
+                      ].join(' '),
                       onTap: () async {
                         await Navigator.push(context, MaterialPageRoute(builder: (_) => MovieScreen(app: widget.app, data: d!, groupKey: g.key)));
                         if (mounted) setState(() {});

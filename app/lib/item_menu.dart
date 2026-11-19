@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'api.dart';
 import 'library.dart';
+import 'offline/store.dart';
 import 'screens/chat.dart';
 import 'screens/home_screen.dart';
 import 'util.dart';
@@ -32,6 +33,12 @@ Future<void> showItemMenu(
   // only files in your own personal library (admins: anywhere). Merged views ('_all') check per file.
   bool ownsLib(String id) => app.admin || app.myLibs.contains(id);
   final deletable = items.where((i) => ownsLib(i.path.split('/').first)).toList();
+  // save to this device (needs the "offline" permission)
+  final store = OfflineStore.instance;
+  final server = app.api.settings.server;
+  final candidates = type == 'music' ? <Item>[] : (play != null ? [play] : items);
+  final onDevice = candidates.where((i) => store.byServer(server, i.path) != null).toList();
+  final toSave = candidates.where((i) => store.byServer(server, i.path) == null).toList();
 
   final action = await showModalBottomSheet<String>(
     context: context,
@@ -53,6 +60,20 @@ Future<void> showItemMenu(
             leading: const Icon(Icons.replay),
             title: const Text('Start over'),
             onTap: () => Navigator.pop(ctx, 'restart'),
+          ),
+        if (app.offline && toSave.isNotEmpty)
+          ListTile(
+            leading: const Icon(Icons.download_for_offline_outlined),
+            title: Text(toSave.length > 1 ? 'Download ${toSave.length} files to this device' : 'Download to this device'),
+            subtitle: Text('${fmtSize(toSave.fold<int>(0, (s, i) => s + i.size))} · watch without internet'),
+            onTap: () => Navigator.pop(ctx, 'save'),
+          ),
+        if (onDevice.isNotEmpty)
+          ListTile(
+            leading: const Icon(Icons.offline_pin, color: Color(0xFF1F9D63)),
+            title: Text(onDevice.length > 1 ? 'Remove ${onDevice.length} files from this device' : 'Remove from this device'),
+            subtitle: const Text('Frees space here — it stays on the server'),
+            onTap: () => Navigator.pop(ctx, 'unsave'),
           ),
         if (inProgress.isNotEmpty)
           ListTile(
@@ -92,6 +113,19 @@ Future<void> showItemMenu(
       await openVideo(context, app, d, play!);
     case 'restart':
       await openVideo(context, app, d, play!, startOver: true);
+    case 'save':
+      for (final it in toSave) {
+        await store.download(app.api, it.path, offlineInfo(d, it));
+      }
+      messenger.showSnackBar(SnackBar(
+        content: Text(toSave.length > 1 ? 'Downloading ${toSave.length} files — see Offline' : 'Downloading — see Offline'),
+      ));
+    case 'unsave':
+      for (final it in onDevice) {
+        final o = store.byServer(server, it.path);
+        if (o != null) await store.remove(o);
+      }
+      messenger.showSnackBar(const SnackBar(content: Text('Removed from this device')));
     case 'clear':
       for (final it in inProgress) {
         await app.api.clearProgress(it.path);
@@ -292,4 +326,30 @@ class _IdentifyScreenState extends State<IdentifyScreen> {
       ]),
     );
   }
+}
+
+
+/// What the offline library needs to show a server file without the server.
+Map<String, dynamic> offlineInfo(LibData d, Item it) {
+  final tv = d.info.type == 'tv' && it.episode > 0;
+  final m = tv ? d.showOf(it) : d.movieOf(it);
+  return {
+    'kind': tv ? 'episode' : (d.info.type == 'movies' ? 'movie' : 'video'),
+    'title': m?.title.isNotEmpty == true ? m!.title : (it.title.isNotEmpty ? it.title : it.name),
+    'year': m?.year ?? it.year,
+    'show': tv ? (m?.title.isNotEmpty == true ? m!.title : it.show) : '',
+    'season': it.season,
+    'episode': it.episode,
+    'episodeTitle': it.episodeTitle,
+    'overview': tv && it.episodeOverview.isNotEmpty ? it.episodeOverview : (m?.overview ?? ''),
+    'genres': m?.genres ?? const <String>[],
+    'rating': m?.rating ?? 0,
+    'poster': m?.poster ?? '',
+    'backdrop': m?.backdrop ?? '',
+    'still': it.still,
+    'libName': d.info.owner.isNotEmpty ? '${d.info.name} (${d.info.owner})' : d.info.name,
+    'size': it.size,
+    'pos': it.pos,
+    'duration': it.duration,
+  };
 }

@@ -31,6 +31,21 @@ class Settings {
   bool get stereoDownmix => _p.getBool('stereoDownmix') ?? (Platform.isAndroid || Platform.isIOS);
   set stereoDownmix(bool v) => _p.setBool('stereoDownmix', v);
 
+  // ---------------------------------------------------------------- offline
+  /// Use the app without a server (offline library only).
+  bool get offlineMode => _p.getBool('offlineMode') ?? false;
+  set offlineMode(bool v) => _p.setBool('offlineMode', v);
+
+  /// Own TMDB key for scraping local folders when not signed in to a server.
+  String get tmdbKey => _p.getString('tmdbKey') ?? '';
+  set tmdbKey(String v) => _p.setString('tmdbKey', v.trim());
+  String get tmdbLang => _p.getString('tmdbLang') ?? 'en-US';
+  set tmdbLang(String v) => _p.setString('tmdbLang', v.trim());
+
+  /// Download to this device only on Wi-Fi.
+  bool get wifiOnly => _p.getBool('wifiOnly') ?? true;
+  set wifiOnly(bool v) => _p.setBool('wifiOnly', v);
+
   int get maxh => _p.getInt('maxh') ?? 720;
   set maxh(int v) => _p.setInt('maxh', v);
 

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 /// Network image with optional auth headers and a text placeholder.
@@ -19,9 +21,33 @@ class NetImage extends StatelessWidget {
           style: const TextStyle(color: Color(0xFF8B95A5), fontSize: 12)),
     );
     if (url.isEmpty) return ph;
+    if (!url.startsWith('http')) {
+      // artwork cached on this device (offline library)
+      return Image.file(File(url), fit: fit, errorBuilder: (_, __, ___) => ph);
+    }
     return Image.network(url, headers: headers, fit: fit, errorBuilder: (_, __, ___) => ph,
         frameBuilder: (_, child, frame, sync) => frame == null && !sync ? ph : child);
   }
+}
+
+/// Where a video plays from: green LOCAL (this device) or blue STREAM (server).
+class SourceBadge extends StatelessWidget {
+  const SourceBadge({super.key, required this.local, required this.text});
+  final bool local;
+  final String text;
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: (local ? const Color(0xFF1F9D63) : const Color(0xFF2B6FD6)).withValues(alpha: .9),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(local ? Icons.offline_pin : Icons.cloud_outlined, size: 13, color: Colors.white),
+          const SizedBox(width: 4),
+          Text(text, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: .3)),
+        ]),
+      );
 }
 
 class ProgressStrip extends StatelessWidget {
@@ -97,15 +123,19 @@ class PosterCard extends StatelessWidget {
 
 /// Responsive grid of cards.
 class CardGrid extends StatelessWidget {
-  const CardGrid({super.key, required this.children, this.minWidth = 140, this.aspect = 2 / 3});
+  const CardGrid({super.key, required this.children, this.minWidth = 140, this.aspect = 2 / 3, this.shrink = false});
   final List<Widget> children;
   final double minWidth, aspect;
+  /// Inside another scroll view (sized to its content, not scrollable itself).
+  final bool shrink;
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
         final cols = (box.maxWidth / (minWidth + 14)).floor().clamp(2, 10);
         final w = (box.maxWidth - 32 - (cols - 1) * 14) / cols;
         return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+          shrinkWrap: shrink,
+          physics: shrink ? const NeverScrollableScrollPhysics() : null,
+          padding: EdgeInsets.fromLTRB(16, 12, 16, shrink ? 16 : 96),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: cols,
             crossAxisSpacing: 14,

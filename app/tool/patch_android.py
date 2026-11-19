@@ -54,6 +54,17 @@ if "com.ryanheise.audioservice.AudioService" not in m:
         </receiver>
     </application>""", 1)
 
+# offline library: background downloads (background_downloader) and the user's own video folders
+for perm in ("POST_NOTIFICATIONS", "FOREGROUND_SERVICE_DATA_SYNC", "RUN_USER_INITIATED_JOBS", "READ_MEDIA_VIDEO"):
+    if f"android.permission.{perm}\"" not in m:
+        m = re.sub(r"(<manifest[^>]*>)", rf'\1\n    <uses-permission android:name="android.permission.{perm}"/>', m, count=1)
+if "android.permission.READ_EXTERNAL_STORAGE" not in m:
+    m = re.sub(r"(<manifest[^>]*>)", r'\1\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>', m, count=1)
+if "SystemForegroundService" not in m:
+    m = m.replace("</application>", """        <service android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync" tools:node="merge"/>
+    </application>""", 1)
+
 manifest.write_text(m)
 print("patched", manifest)
 

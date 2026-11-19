@@ -216,6 +216,12 @@ class Api {
   Future<void> metaMatch(String lib, {String? path, String? show, required int tmdbId}) =>
       _req('POST', 'meta/match', body: {'lib': lib, if (path != null) 'path': path, if (show != null) 'show': show, 'tmdbId': tmdbId});
 
+  /// URL that saves a file to the device (needs the "offline" permission).
+  String downloadUrl(String path) => _u('download', {'path': path}).toString();
+
+  /// Metadata for the app's own local folders, using the server's TMDB key.
+  Future<Map> metaLookup(Map<String, dynamic> body) async => await _req('POST', 'meta/lookup', body: body) as Map;
+
   /// Throws ApiException with the server's reason when a stream limit is hit.
   Future<void> streamCheck(String path, String kind) => _req('GET', 'stream/check', q: {'path': path, 'kind': kind});
 

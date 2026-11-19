@@ -11,6 +11,7 @@ import '../api.dart';
 import '../social.dart';
 import '../models.dart';
 import '../util.dart';
+import '../widgets.dart';
 
 /// Two playback modes:
 ///  * direct    — mpv plays the original MKV over HTTP Range. All codecs, all embedded
@@ -768,8 +769,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(color: Colors.white, fontSize: 15)),
-                        Text(_transcode ? 'Transcode ≤${_maxh}p' : 'Direct',
-                            style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                        const SizedBox(height: 3),
+                        SourceBadge(local: false, text: _transcode ? 'STREAM · Transcode ≤${_maxh}p' : 'STREAM · Direct'),
                       ]),
                     ),
                     if (!_desktop)

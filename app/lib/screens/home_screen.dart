@@ -7,6 +7,9 @@ import '../audio.dart';
 import '../item_menu.dart';
 import '../library.dart';
 import '../media_session.dart';
+import '../offline/local_player.dart';
+import '../offline/offline_view.dart';
+import '../offline/store.dart';
 import '../social.dart';
 import '../update.dart';
 import '../util.dart';
@@ -31,6 +34,8 @@ class AppCtx {
   bool admin = false;
   /// May add downloads (admin or downloader role).
   bool downloader = false;
+  /// May save files to this device (admin or "offline" permission).
+  bool offline = false;
   /// Ids of this user's own personal libraries (deletable).
   Set<String> myLibs = {};
   /// Who's online + chats (live).
@@ -46,6 +51,16 @@ Future<void> openVideo(BuildContext context, AppCtx app, LibData d, Item it, {bo
     final eps = d.items.where((e) => e.show == it.show).toList()..sort(episodeOrder);
     final i = eps.indexWhere((e) => e.path == it.path);
     if (i >= 0 && i + 1 < eps.length) next = eps[i + 1];
+  }
+  // a copy on this device plays from there (works without internet too)
+  final local = OfflineStore.instance.downloaded(app.api.settings.server, it.path);
+  if (local != null) {
+    if (!startOver && it.pos > local.pos) local.pos = it.pos; // further along on another device
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => LocalPlayerScreen(item: local, api: app.api, settings: app.api.settings, startOver: startOver),
+    ));
+    app.repo.setPos(it.path, local.pos);
+    return;
   }
   final file = it.toMediaFile(d.labelOf(it));
   await Navigator.of(context).push(MaterialPageRoute(
@@ -71,7 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
   late final AppCtx app = AppCtx(widget.api);
   List<LibraryInfo> libs = [];
   List<LibraryInfo> get videoLibs => libs.where((l) => l.type != 'music').toList();
-  /// 0 = Videos, 1 = Music, 2 = Chat, 3 = Downloads — separate sides with their own menus
+  /// 0 = Videos, 1 = Music, 2 = Chat, 3 = Downloads, 4 = Offline — separate sides with their own menus
   static int section = 0;
   int _lastMedia = 0;
   StreamSubscription? _incoming;
@@ -89,9 +104,11 @@ class _HomeScreenState extends State<HomeScreen> {
       app.admin = m['admin'] == true;
       app.editor = m['editor'] == true || app.admin;
       app.downloader = m['downloader'] == true || app.admin;
+      app.offline = m['offline'] == true || app.admin;
       if (!app.downloader && section == 3) section = 0;
       if (mounted) setState(() {});
     }).catchError((_) {});
+    OfflineStore.instance.api = widget.api;
     MusicSession.attach(app.audio);
     app.social = Social(widget.api, app.audio)..start();
     _incoming = app.social!.incoming.stream.listen((e) {
@@ -116,6 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
     app.social?.dispose();
     NowWatching.onChange = null;
     app.audio.dispose();
+    if (OfflineStore.instance.api == widget.api) OfflineStore.instance.api = null;
     super.dispose();
   }
 
@@ -194,6 +212,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _body() {
+    // the offline library works even when the server can't be reached
+    if (section == 4) return OfflineView(api: widget.api, settings: widget.api.settings);
     if (loading) return const Center(child: CircularProgressIndicator());
     if (error != null) {
       return Center(
@@ -205,6 +225,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Wrap(spacing: 12, children: [
               FilledButton(onPressed: () => _load(force: true), child: const Text('Retry')),
               OutlinedButton(onPressed: _signOut, child: const Text('Sign in again')),
+              OutlinedButton.icon(onPressed: () => _go(4), icon: const Icon(Icons.offline_pin_outlined), label: const Text('Offline library')),
             ]),
           ]),
         ),
@@ -250,15 +271,18 @@ class _HomeScreenState extends State<HomeScreen> {
       1 => 'Music',
       2 => 'Chat',
       3 => 'Downloads',
+      4 => 'Offline',
       _ => sel == 0 || sel > vl.length ? 'Home' : vl[sel - 1].name,
     };
-    final dests = <(IconData, IconData, String)>[
-      (Icons.movie_outlined, Icons.movie, 'Videos'),
-      (Icons.library_music_outlined, Icons.library_music, 'Music'),
-      (Icons.chat_bubble_outline, Icons.chat_bubble, 'Chat'),
-      if (app.downloader) (Icons.download_outlined, Icons.download, 'Downloads'),
+    final dests = <(IconData, IconData, String, int)>[
+      (Icons.movie_outlined, Icons.movie, 'Videos', 0),
+      (Icons.library_music_outlined, Icons.library_music, 'Music', 1),
+      (Icons.offline_pin_outlined, Icons.offline_pin, 'Offline', 4),
+      (Icons.chat_bubble_outline, Icons.chat_bubble, 'Chat', 2),
+      if (app.downloader) (Icons.download_outlined, Icons.download, 'Downloads', 3),
     ];
-    final idx = section.clamp(0, dests.length - 1);
+    final idx = dests.indexWhere((d) => d.$4 == section).clamp(0, dests.length - 1);
+    void goIdx(int i) => _go(dests[i].$4);
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
@@ -272,6 +296,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? IconButton(tooltip: 'Music is playing', icon: const Icon(Icons.graphic_eq), onPressed: () => _go(1))
                   : const SizedBox.shrink(),
             ),
+          if (section == 4)
+            IconButton(tooltip: 'Offline settings', icon: const Icon(Icons.tune), onPressed: () => offlineSettings(context, widget.api.settings)),
           IconButton(tooltip: 'Reload', icon: const Icon(Icons.refresh), onPressed: () {
             app.repo.invalidate();
             _load(force: true);
@@ -297,7 +323,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     builder: (_, __) => NavigationRail(
                       selectedIndex: idx,
                       labelType: NavigationRailLabelType.all,
-                      onDestinationSelected: _go,
+                      onDestinationSelected: goIdx,
                       destinations: [for (final d in dests) NavigationRailDestination(icon: _badged(d.$1, d.$3), selectedIcon: _badged(d.$2, d.$3), label: Text(d.$3))],
                     ),
                   ),
@@ -319,7 +345,7 @@ class _HomeScreenState extends State<HomeScreen> {
               listenable: app.social!,
               builder: (_, __) => NavigationBar(
                 selectedIndex: idx,
-                onDestinationSelected: _go,
+                onDestinationSelected: goIdx,
                 destinations: [for (final d in dests) NavigationDestination(icon: _badged(d.$1, d.$3), selectedIcon: _badged(d.$2, d.$3), label: d.$3)],
               ),
             ),

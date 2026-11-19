@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../api.dart';
+import '../offline/offline_home.dart';
 import '../settings.dart';
 import 'home_screen.dart';
 
@@ -37,6 +38,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final api = Api(s);
     try {
       await api.login();
+      s.offlineMode = false;
       // let the system password manager offer to save the login (Google, Samsung Pass, iCloud…)
       TextInput.finishAutofillContext();
       if (!mounted) return;
@@ -107,6 +109,22 @@ class _LoginScreenState extends State<LoginScreen> {
                             ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                             : const Text('Sign in'),
                       ),
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: _busy
+                          ? null
+                          : () {
+                              widget.settings.offlineMode = true;
+                              Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => OfflineHome(settings: widget.settings)));
+                            },
+                      icon: const Icon(Icons.offline_pin_outlined),
+                      label: const Text('Use offline — without a server'),
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: Text('Watch what you downloaded and your own video folders on this device.',
+                          textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Color(0xFF8B95A5))),
                     ),
                   ],
                 ),

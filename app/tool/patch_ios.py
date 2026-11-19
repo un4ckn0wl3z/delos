@@ -28,9 +28,11 @@ p["UISupportedInterfaceOrientations~ipad"] = orient + ["UIInterfaceOrientationPo
 p["UIRequiresFullScreen"] = True          # needed for orientation locking on iPad
 p["UIStatusBarHidden"] = False
 p["UIViewControllerBasedStatusBarAppearance"] = True
-p["UIFileSharingEnabled"] = False
+# offline library: the app's Documents folder shows in the Files app (On My iPhone → StreamMKV → My Videos)
+p["UIFileSharingEnabled"] = True
+p["LSSupportsOpeningDocumentsInPlace"] = True
 p["ITSAppUsesNonExemptEncryption"] = False
-p["UIBackgroundModes"] = ["audio"]  # keep music playing with the screen locked
+p["UIBackgroundModes"] = ["audio", "fetch"]  # music with the screen locked; downloads to the device
 
 with info.open("wb") as f:
     plistlib.dump(p, f)
