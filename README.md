@@ -79,6 +79,19 @@ Users with the **downloader** role can create **their own libraries** under Down
 - **Send to a friend:** share a movie, episode or song into a chat as a card your friend can tap to play. If they can't open that library, you get a warning.
 - **Where:** the people list and 💬 drawer in the userscript sidebar, and the **Chat** tab in the app. Notifications appear only while the app or page is open.
 
+## Offline library (app)
+
+The app can play things **without the server**, in two clearly separate places (📥 Offline tab):
+
+- **☁️ Downloaded from server** — users with the **Offline downloads** permission (admins always; dashboard → Users → *Allow offline*) long-press a movie/episode → *Download to this device*. Downloads run in the background with a notification, can be paused/resumed, and can be removed from the device (the file stays on the server). Downloaded posters get a 📥 badge, and playing them uses the local copy — progress is synced back to the server when it's reachable.
+- **📁 My folders** — add any folder of your own videos on the device (Movies / TV series / Other videos). Files are named-parsed like the server does and scraped from TMDB: through the server when signed in (no key needed), or with your own TMDB key (⚙ Offline settings) when not. On iOS the folder is the app's own *Files → On My iPhone → StreamMKV → My Videos*.
+
+The player shows where a video comes from: **LOCAL** (green: downloaded / my folder) or **STREAM** (blue: Direct / Transcode).
+
+**Offline mode:** on the sign-in screen choose *Use offline — without a server*; the app opens straight to the offline library next time. If the server can't be reached while signed in, the error screen has an *Offline library* button.
+
+Notes: the permission controls the app's download feature — anyone who can stream (Direct) technically receives the whole file anyway. `GET /api/download?path=` (Range supported, 3 at a time per user) and `POST /api/meta/lookup` back this.
+
 ## Users & admin dashboard
 
 StreamMKV supports several users. Each user has their own watch progress, resume positions and track choices. Admins choose which libraries each user can see.
