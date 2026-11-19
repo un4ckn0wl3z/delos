@@ -934,7 +934,7 @@
       view.innerHTML = `<h2 class="smkv-pageh">Downloads</h2>
         <form id="smkv-dlf" class="smkv-dlform">
           <input name="source" placeholder="https://… link or magnet:?xt=…" autocomplete="off">
-          <label class="smkv-file" title="Upload a .torrent file"><input type="file" name="file" accept=".torrent,application/x-bittorrent"><span>📎 .torrent</span></label>
+          <label class="smkv-tfile" title="Upload a .torrent file"><input type="file" name="file" accept=".torrent,application/x-bittorrent"><span>📎 .torrent</span></label>
           <select name="lib">${libs.map((l) => `<option value="${esc(l.id)}">${typeIcon[l.type] || '📁'} ${esc(l.name)}${esc(ownerTag(l))}</option>`).join('')}</select>
           <input name="subdir" list="smkv-dldirs" placeholder="folder (optional)" autocomplete="off"><datalist id="smkv-dldirs"></datalist>
           <button class="smkv-primary">⬇ Download</button>
@@ -954,7 +954,7 @@
         try { const r = await api('downloads/dirs', { lib: f.lib.value }); $('#smkv-dldirs').innerHTML = r.dirs.map((x) => `<option value="${esc(x)}">`).join(''); } catch (_) {}
       };
       f.lib.onchange = loadDirs; loadDirs();
-      f.file.onchange = () => { f.querySelector('.smkv-file span').textContent = f.file.files[0] ? '📎 ' + f.file.files[0].name : '📎 .torrent'; };
+      f.file.onchange = () => { f.querySelector('.smkv-tfile span').textContent = f.file.files[0] ? '📎 ' + f.file.files[0].name : '📎 .torrent'; };
       const send = (force) => {
         if (f.file.files[0]) {
           const fd = new FormData(); fd.append('file', f.file.files[0]); fd.append('lib', f.lib.value); fd.append('subdir', f.subdir.value);
@@ -2175,8 +2175,8 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-dlform{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
 .smkv-dlform input[name=source]{flex:1;min-width:260px}
 .smkv-dlform input,.smkv-dlform select{background:#151920;color:#e6e9ee;border:1px solid #2a313c;border-radius:6px;padding:7px 9px;font:inherit}
-.smkv-file{position:relative;overflow:hidden;background:#1c212a;border:1px solid #2a313c;border-radius:6px;padding:6px 10px;cursor:pointer;white-space:nowrap;max-width:200px;text-overflow:ellipsis}
-.smkv-file input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.smkv-tfile{position:relative;overflow:hidden;background:#1c212a;border:1px solid #2a313c;border-radius:6px;padding:6px 10px;cursor:pointer;white-space:nowrap;max-width:200px;text-overflow:ellipsis}
+.smkv-tfile input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .smkv-dl{background:#141820;border:1px solid #20262f;border-radius:10px;padding:10px 12px;margin:8px 0}
 .smkv-dlh{display:flex;flex-direction:column;gap:2px;word-break:break-all}
 .smkv-pbar.big{position:relative;height:6px;border-radius:3px;margin:8px 0 6px;background:#252b35}
@@ -2315,7 +2315,8 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 /* detail modal */
 #smkv-detail{position:fixed;inset:0;background:rgba(4,5,7,.78);display:none;place-items:center;z-index:20;padding:20px}
 #smkv-detail.show{display:grid}
-.smkv-dbox{position:relative;background:#12161d;border:1px solid #232a34;border-radius:14px;width:min(900px,96vw);max-height:92vh;overflow:auto;padding:0 24px 24px}
+.smkv-dbox{position:relative;box-sizing:border-box;background:#12161d;border:1px solid #232a34;border-radius:14px;width:min(900px,100%);max-height:92vh;overflow:auto;padding:0 24px 24px}
+@media (max-width:600px){#smkv-detail{padding:8px}.smkv-dbox{padding:0 14px 16px;max-height:96vh}}
 .smkv-dbox h2{color:#fff;margin:0;font-size:24px}
 .smkv-x{position:absolute;top:10px;right:10px;z-index:2;border-radius:50%!important;width:34px;height:34px;padding:0!important;background:rgba(0,0,0,.6)!important}
 .smkv-hero{height:260px;margin:0 -24px;background-size:cover;background-position:center;mask-image:linear-gradient(#000 55%,transparent)}
@@ -2323,7 +2324,8 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 .smkv-dbox .smkv-dhead:first-child{margin-top:24px}
 .smkv-files{display:flex;flex-direction:column;gap:8px;margin-top:14px}
 .smkv-file{display:flex;gap:10px;align-items:center;background:#171c24;border-radius:8px;padding:8px 10px}
-.smkv-file span{color:#c9cfd8;font-size:13px;word-break:break-all}
+.smkv-file span{color:#c9cfd8;font-size:13px;word-break:break-all;flex:1;min-width:0}
+.smkv-file button,.smkv-file a{flex:none}
 .smkv-file small{color:#6f7988}
 .smkv-admin-row{margin-top:14px;color:#6f7988;font-size:12px}
 .smkv-esearch,.smkv-erow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
