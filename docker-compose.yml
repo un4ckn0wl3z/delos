@@ -1,13 +1,13 @@
 # Delos with Docker
 #   1. Set the media path below (the folder with your movies / TV / music).
 #   2. docker compose up -d
-#   3. Open http://<host>:8090 — on first start the admin password is in `docker compose logs streammkv`
+#   3. Open http://<host>:8090 — on first start the admin password is in `docker compose logs delos`
 #      (or set STREAMMKV_USER / STREAMMKV_PASS below before the first start).
 # Update: docker compose pull && docker compose up -d
 services:
-  streammkv:
+  delos:
     image: ghcr.io/un4ckn0wl3z/delos:latest
-    container_name: streammkv
+    container_name: delos
     restart: unless-stopped
     ports:
       - "8090:8090"          # web app + API

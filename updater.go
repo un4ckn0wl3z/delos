@@ -32,7 +32,7 @@ func releasesAPI() string {
 	}
 	repo := os.Getenv("STREAMMKV_UPDATE_REPO")
 	if repo == "" {
-		repo = "un4ckn0wl3z/streammkv" // also works after the rename to …/delos (GitHub redirects)
+		repo = "un4ckn0wl3z/delos"
 	}
 	return "https://api.github.com/repos/" + repo + "/releases/latest"
 }

@@ -44,7 +44,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Image name
         id: n
-        run: echo "image=ghcr.io/$(echo '${{ github.repository_owner }}' | tr 'A-Z' 'a-z')/delos" >> "$GITHUB_OUTPUT"
+        run: |
+          o=$(echo '${{ github.repository_owner }}' | tr 'A-Z' 'a-z')
+          echo "image=ghcr.io/$o/delos" >> "$GITHUB_OUTPUT"
+          echo "legacy=ghcr.io/$o/streammkv" >> "$GITHUB_OUTPUT"   # old name: existing compose files keep updating
       - name: Publish (amd64 + arm64)
         if: inputs.version != ''
         uses: docker/build-push-action@v6
@@ -56,6 +59,8 @@ jobs:
           tags: |
             ${{ steps.n.outputs.image }}:${{ steps.v.outputs.version }}
             ${{ steps.n.outputs.image }}:latest
+            ${{ steps.n.outputs.legacy }}:${{ steps.v.outputs.version }}
+            ${{ steps.n.outputs.legacy }}:latest
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.v.outputs.version }}

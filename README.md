@@ -213,13 +213,13 @@ The image has the server, ffmpeg and a built-in rtorrent (for downloads), for `l
 curl -O https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/docker-compose.yml
 # edit: /path/to/media → your media folder, PUID/PGID → your user (`id`)
 docker compose up -d
-docker compose logs streammkv      # first start prints the admin password
+docker compose logs delos          # first start prints the admin password
 ```
 
 Then open `http://<host>:8090`. Or without compose:
 
 ```bash
-docker run -d --name streammkv -p 8090:8090 -p 50000:50000 -p 6881:6881/udp \
+docker run -d --name delos -p 8090:8090 -p 50000:50000 -p 6881:6881/udp \
   -e PUID=$(id -u) -e PGID=$(id -g) -e TZ=Asia/Bangkok \
   -v ./data:/data -v /path/to/media:/media ghcr.io/un4ckn0wl3z/delos:latest
 ```
@@ -232,6 +232,8 @@ docker run -d --name streammkv -p 8090:8090 -p 50000:50000 -p 6881:6881/udp \
 | `STREAMMKV_USER` / `STREAMMKV_PASS` | the first admin (only used when there are no users yet; otherwise a random password is printed in the log) |
 | `RTORRENT=0` | don't run the built-in rtorrent; `STREAMMKV_RTORRENT=scgi://host:5000` (or a socket path / http URL) uses another one |
 | ports | `8090` web app + API · `50000` + `6881/udp` incoming peers / DHT for the built-in rtorrent |
+
+Already running the old image `ghcr.io/un4ckn0wl3z/streammkv`? It keeps getting the same releases, so nothing breaks — switch the `image:` line to `ghcr.io/un4ckn0wl3z/delos:latest` whenever you like (your `./data` stays as it is).
 
 Torrents download to `/media/downloads` by default (or to the library you pick). The built-in rtorrent's settings are in `/data/rtorrent/rtorrent.rc` — edit and restart the container to change them.
 

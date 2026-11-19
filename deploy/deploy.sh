@@ -3,7 +3,7 @@
 # Asks for the connection details; answers are remembered for next time.
 set -euo pipefail
 
-URL="https://raw.githubusercontent.com/un4ckn0wl3z/streammkv/main/deploy/install.sh"
+URL="https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/deploy/install.sh"
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}/streammkv-deploy.env"
 
 SSH_HOST="${SSH_HOST:-}" SSH_USER="${SSH_USER:-}" SSH_PORT="${SSH_PORT:-22}"

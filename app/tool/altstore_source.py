@@ -3,14 +3,14 @@
 
 usage: altstore_source.py VERSION BUILD IPA_PATH > altstore-source.json
 Add the source in SideStore/AltStore with:
-  https://github.com/un4ckn0wl3z/streammkv/releases/latest/download/altstore-source.json
+  https://github.com/un4ckn0wl3z/delos/releases/latest/download/altstore-source.json
 """
 import datetime
 import json
 import os
 import sys
 
-REPO = os.environ.get("GITHUB_REPOSITORY", "un4ckn0wl3z/streammkv")
+REPO = os.environ.get("GITHUB_REPOSITORY", "un4ckn0wl3z/delos")
 version, build, ipa = sys.argv[1], sys.argv[2], sys.argv[3]
 icon = f"https://raw.githubusercontent.com/{REPO}/main/app/assets/icon.png"
 desc = ("Watch MKV movies from your Delos seedbox server: original quality playback with every "
