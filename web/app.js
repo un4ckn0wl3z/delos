@@ -2320,8 +2320,8 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 .smkv-dbox h2{color:#fff;margin:0;font-size:24px}
 .smkv-x{position:absolute;top:10px;right:10px;z-index:2;border-radius:50%!important;width:34px;height:34px;padding:0!important;background:rgba(0,0,0,.6)!important}
 .smkv-hero{height:260px;margin:0 -24px;background-size:cover;background-position:center;mask-image:linear-gradient(#000 55%,transparent)}
-.smkv-dhead{display:flex;gap:20px;align-items:flex-end;margin-top:-90px;position:relative}
-.smkv-dbox .smkv-dhead:first-child{margin-top:24px}
+.smkv-dhead{display:flex;gap:20px;align-items:flex-end;margin-top:28px;position:relative;padding-right:40px}
+.smkv-hero+.smkv-dhead{margin-top:-90px}
 .smkv-files{display:flex;flex-direction:column;gap:8px;margin-top:14px}
 .smkv-file{display:flex;gap:10px;align-items:center;background:#171c24;border-radius:8px;padding:8px 10px}
 .smkv-file span{color:#c9cfd8;font-size:13px;word-break:break-all;flex:1;min-width:0}
