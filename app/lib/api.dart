@@ -157,6 +157,17 @@ class Api {
 
   Future<void> retryDownload(String id) => _req('POST', 'downloads/${Uri.encodeComponent(id)}/retry', body: const {});
 
+  /// Torrent control: start | stop | pause | resume | recheck → the updated job.
+  Future<Map> torrentAction(String id, String action) async =>
+      await _req('POST', 'downloads/${Uri.encodeComponent(id)}/torrent', body: {'action': action}) as Map;
+
+  /// Seeding limit for one torrent: 0 = server default, -1 = no limit.
+  Future<Map> torrentSeedLimit(String id, double ratio, double hours) async =>
+      await _req('POST', 'downloads/${Uri.encodeComponent(id)}/seed', body: {'ratio': ratio, 'hours': hours}) as Map;
+
+  /// Trackers and files of a torrent.
+  Future<Map> torrentDetail(String id) async => await _req('GET', 'downloads/${Uri.encodeComponent(id)}/detail') as Map;
+
   Future<void> deleteDownload(String id, {bool files = false}) =>
       _req('DELETE', 'downloads/${Uri.encodeComponent(id)}', q: files ? {'files': '1'} : null);
 

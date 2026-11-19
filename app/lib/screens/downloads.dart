@@ -58,7 +58,7 @@ class _DownloadsViewState extends State<DownloadsView> {
           _loadDirs();
         }
       });
-      if (_jobs.any((j) => j['state'] == 'queued' || j['state'] == 'downloading' || j['seeding'] == true)) {
+      if (_jobs.any((j) => j['state'] == 'queued' || j['state'] == 'downloading' || j['seeding'] == true || j['tstate'] == 'checking' || j['tstate'] == 'paused')) {
         _timer = Timer(const Duration(seconds: 3), _load);
       }
     } on ApiException catch (e) {
@@ -154,29 +154,33 @@ class _DownloadsViewState extends State<DownloadsView> {
 
   Future<void> _remove(Map j) async {
     final running = j['state'] == 'queued' || j['state'] == 'downloading';
-    var files = false;
-    final ok = await showDialog<bool>(
+    final torrent = j['kind'] == 'torrent';
+    final files = await showDialog<bool>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, set) => AlertDialog(
-          title: Text(running ? 'Cancel download?' : 'Remove download?'),
-          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${j['name'] ?? ''}'.isNotEmpty ? '${j['name']}' : '${j['source']}', maxLines: 3, overflow: TextOverflow.ellipsis),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              value: files,
-              onChanged: (v) => set(() => files = v ?? false),
-              title: Text(running ? 'Also delete what was downloaded so far' : 'Also delete the downloaded files'),
-            ),
-          ]),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(running ? 'Cancel download' : 'Remove')),
-          ],
-        ),
+      builder: (ctx) => AlertDialog(
+        title: Text(running ? 'Cancel download?' : (torrent ? 'Remove torrent?' : 'Remove download?')),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${j['name'] ?? ''}'.isNotEmpty ? '${j['name']}' : '${j['source']}', maxLines: 3, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 16),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: Text(torrent ? 'Remove the torrent only' : 'Remove from the list'),
+            subtitle: Text(running ? 'Keep what was downloaded so far' : 'Keep the files${torrent ? ' — it stops seeding' : ''}'),
+            onTap: () => Navigator.pop(ctx, false),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.delete_forever_outlined, color: Colors.redAccent),
+            title: const Text('Remove and delete the files', style: TextStyle(color: Colors.redAccent)),
+            subtitle: const Text("Can't be undone"),
+            onTap: () => Navigator.pop(ctx, true),
+          ),
+        ]),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel'))],
       ),
     );
-    if (ok != true) return;
+    if (files == null) return;
     try {
       await widget.app.api.deleteDownload('${j['id']}', files: files);
     } on ApiException catch (e) {
@@ -412,14 +416,147 @@ class _DownloadsViewState extends State<DownloadsView> {
     }
   }
 
+  static const _tName = {
+    'checking': 'Checking',
+    'downloading': 'Downloading',
+    'seeding': 'Seeding',
+    'paused': 'Paused',
+    'stopped': 'Stopped',
+    'finished': 'Finished (not seeding)',
+    'removed': 'Removed from rtorrent',
+  };
+
+  static String _limit(num r, num h) {
+    final p = [if (r > 0) 'ratio $r', if (h > 0) '$h h'];
+    return p.isEmpty ? 'no limit' : p.join(' or ');
+  }
+
+  String _seedText(Map j) {
+    final r = j['seedRatio'] as num? ?? 0, h = j['seedHours'] as num? ?? 0;
+    if (r == -1 && h == -1) return 'seeds without limit';
+    if (r != 0 || h != 0) return 'seed limit: ${_limit(r < 0 ? 0 : r, h < 0 ? 0 : h)}';
+    return 'seed limit: server default';
+  }
+
+  Future<void> _torrent(Map j, String a) async {
+    final api = widget.app.api, id = '${j['id']}';
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      switch (a) {
+        case 'remove':
+          return _remove(j);
+        case 'limit':
+          return _seedLimit(j);
+        case 'detail':
+          final d = await api.torrentDetail(id);
+          if (!mounted) return;
+          await showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Trackers & files'),
+              content: SizedBox(
+                width: 480,
+                child: ListView(shrinkWrap: true, children: [
+                  for (final t in (d['trackers'] as List? ?? const []))
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.cell_tower, size: 20),
+                      title: Text('${t['url']}', maxLines: 2, overflow: TextOverflow.ellipsis),
+                      subtitle: Text('${t['seeds']} seeds · ${t['leechers']} leechers${(t['failed'] as num? ?? 0) > 0 ? ' · ${t['failed']} failed' : ''}'),
+                    ),
+                  const Divider(),
+                  for (final f in (d['files'] as List? ?? const []))
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.insert_drive_file_outlined, size: 20),
+                      title: Text('${f['path']}', maxLines: 2, overflow: TextOverflow.ellipsis),
+                      subtitle: Text('${fmtSize((f['size'] as num? ?? 0).toInt())} · ${((f['progress'] as num? ?? 0) * 100).toStringAsFixed(0)}%'),
+                    ),
+                ]),
+              ),
+              actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))],
+            ),
+          );
+          return;
+        default:
+          await api.torrentAction(id, a);
+      }
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    }
+    _load();
+  }
+
+  Future<void> _seedLimit(Map j) async {
+    final r0 = j['seedRatio'] as num? ?? 0, h0 = j['seedHours'] as num? ?? 0;
+    var mode = r0 == -1 && h0 == -1 ? 'none' : (r0 != 0 || h0 != 0 ? 'own' : 'def');
+    final ratio = TextEditingController(text: r0 > 0 ? '$r0' : '');
+    final hours = TextEditingController(text: h0 > 0 ? '$h0' : '');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => AlertDialog(
+          title: const Text('Seeding limit'),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'def', label: Text('Default')),
+                ButtonSegment(value: 'none', label: Text('No limit')),
+                ButtonSegment(value: 'own', label: Text('Custom')),
+              ],
+              selected: {mode},
+              onSelectionChanged: (v) => set(() => mode = v.first),
+            ),
+            if (mode == 'own') ...[
+              const SizedBox(height: 12),
+              TextField(controller: ratio, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Stop at ratio', hintText: 'e.g. 2')),
+              TextField(controller: hours, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'or after hours seeding', hintText: 'e.g. 48')),
+            ],
+            const SizedBox(height: 8),
+            const Text('When the limit is reached it stops seeding (or is removed, if the server is set that way). Starting it again by hand keeps it seeding.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF8B95A5))),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          ],
+        ),
+      ),
+    );
+    final rs = ratio.text, hs = hours.text;
+    ratio.dispose();
+    hours.dispose();
+    if (ok != true) return;
+    double r = 0, h = 0;
+    if (mode == 'none') {
+      r = -1;
+      h = -1;
+    } else if (mode == 'own') {
+      r = double.tryParse(rs.trim()) ?? -1;
+      h = double.tryParse(hs.trim()) ?? -1;
+      if (r <= 0) r = -1;
+      if (h <= 0) h = -1;
+    }
+    try {
+      await widget.app.api.torrentSeedLimit('${j['id']}', r, h);
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+    _load();
+  }
+
   Widget _job(Map j, Map<String, String> names, AppCtx me) {
     final size = (j['size'] as num? ?? -1).toDouble();
     final done = (j['done'] as num? ?? 0).toDouble();
     final rate = (j['rate'] as num? ?? 0).toDouble();
     final state = '${j['state']}';
-    final label = state == 'done' && j['seeding'] == true
-        ? 'Seeding'
+    final tstate = '${j['tstate'] ?? ''}';
+    final torrent = j['kind'] == 'torrent' && tstate.isNotEmpty;
+    final live = torrent && '${j['hash'] ?? ''}'.isNotEmpty && tstate != 'removed';
+    final label = torrent
+        ? _tName[tstate] ?? tstate
         : {'queued': 'Queued', 'downloading': 'Downloading', 'done': 'Done', 'failed': 'Failed', 'canceled': 'Canceled'}[state] ?? state;
+    final up = (j['up'] as num? ?? 0).toInt();
     final color = state == 'failed' ? Colors.redAccent : state == 'done' ? const Color(0xFF3ECF8E) : Theme.of(context).colorScheme.primary;
     final mine = me.admin || j['user'] == me.api.settings.username;
     final name = '${j['name'] ?? ''}'.isNotEmpty ? '${j['name']}' : '${j['source']}';
@@ -437,7 +574,25 @@ class _DownloadsViewState extends State<DownloadsView> {
                 await me.api.retryDownload('${j['id']}');
                 _load();
               }),
-            if (mine) IconButton(tooltip: 'Remove', icon: const Icon(Icons.close), onPressed: () => _remove(j)),
+            if (mine && live)
+              PopupMenuButton<String>(
+                tooltip: 'Torrent',
+                onSelected: (a) => _torrent(j, a),
+                itemBuilder: (_) => [
+                  if (tstate == 'downloading' || tstate == 'seeding') const PopupMenuItem(value: 'pause', child: ListTile(leading: Icon(Icons.pause), title: Text('Pause'))),
+                  if (tstate == 'paused') const PopupMenuItem(value: 'resume', child: ListTile(leading: Icon(Icons.play_arrow), title: Text('Resume'))),
+                  if (tstate == 'seeding') const PopupMenuItem(value: 'stop', child: ListTile(leading: Icon(Icons.stop), title: Text('Stop seeding'))),
+                  if (tstate == 'downloading' || tstate == 'paused') const PopupMenuItem(value: 'stop', child: ListTile(leading: Icon(Icons.stop), title: Text('Stop'))),
+                  if (tstate == 'finished') const PopupMenuItem(value: 'start', child: ListTile(leading: Icon(Icons.eco_outlined), title: Text('Seed'))),
+                  if (tstate == 'stopped') const PopupMenuItem(value: 'start', child: ListTile(leading: Icon(Icons.play_arrow), title: Text('Start'))),
+                  const PopupMenuItem(value: 'recheck', child: ListTile(leading: Icon(Icons.fact_check_outlined), title: Text('Recheck files'))),
+                  const PopupMenuItem(value: 'limit', child: ListTile(leading: Icon(Icons.speed), title: Text('Seeding limit…'))),
+                  const PopupMenuItem(value: 'detail', child: ListTile(leading: Icon(Icons.info_outline), title: Text('Trackers & files'))),
+                  const PopupMenuItem(value: 'remove', child: ListTile(leading: Icon(Icons.delete_outline, color: Colors.redAccent), title: Text('Remove…'))),
+                ],
+              )
+            else if (mine)
+              IconButton(tooltip: 'Remove', icon: const Icon(Icons.close), onPressed: () => _remove(j)),
           ]),
           Text('→ ${names['${j['lib']}'] ?? j['lib']}${'${j['subdir'] ?? ''}'.isNotEmpty ? ' / ${j['subdir']}' : ''} · ${j['user']}',
               style: const TextStyle(fontSize: 12, color: Color(0xFF8B95A5))),
@@ -449,11 +604,27 @@ class _DownloadsViewState extends State<DownloadsView> {
             [
               label,
               if (size > 0) '${fmtSize(done.round())} / ${fmtSize(size.round())}',
-              if (rate > 0) '${fmtSize(rate.round())}/s',
+              if (rate > 0) '↓ ${fmtSize(rate.round())}/s',
+              if (up > 0) '↑ ${fmtSize(up)}/s',
               if ('${j['error'] ?? ''}'.isNotEmpty) '${j['error']}',
             ].join(' · '),
             style: TextStyle(fontSize: 12, color: state == 'failed' ? Colors.redAccent : const Color(0xFF9AA3B2)),
           ),
+          if (torrent)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                [
+                  'ratio ${(j['ratio'] as num? ?? 0).toStringAsFixed(2)}',
+                  '↑ ${fmtSize((j['uploaded'] as num? ?? 0).toInt())} uploaded',
+                  if (live) '${j['peers'] ?? 0} peers (${j['seeds'] ?? 0} seeds)',
+                  _seedText(j),
+                ].join(' · '),
+                style: const TextStyle(fontSize: 12, color: Color(0xFF9AA3B2)),
+              ),
+            ),
+          if ('${j['autoStopped'] ?? ''}'.isNotEmpty)
+            Text('Auto-stopped: ${j['autoStopped']}', style: const TextStyle(fontSize: 12, color: Color(0xFFF5A623))),
           if ((j['dupes'] as List?)?.isNotEmpty ?? false)
             Padding(
               padding: const EdgeInsets.only(top: 4),

@@ -46,6 +46,9 @@ Use **/admin → Downloads** to paste a link, then pick a library and an optiona
   - **The same movie or episode** already in a library of that type, even under a different file name.
 
   For the last two you can choose **Download anyway**. After a download finishes and is matched, other versions of the same title are listed on it ("⚠ Also in the library").
+- **Managing torrents:** every torrent download shows its state (Downloading / Seeding / Paused / Stopped / Finished / Checking), ratio, uploaded amount, speeds and peers. Its owner or an admin can **Pause / Resume**, **Stop seeding** and **Seed** again, **Recheck** the files, see **trackers & files**, and **Remove** — either the torrent only (files stay in the library) or the torrent **and its files**. This works in the dashboard, the userscript and the app (⋮ menu).
+- **Seeding limits:** in **/admin → Torrents → Seeding rule**, set a ratio and/or hours of seeding after which StreamMKV's torrents stop seeding (or are removed from rtorrent, keeping the files). Each torrent can override it (server default / no limit / its own ratio or hours). Starting a torrent again by hand after it was auto-stopped keeps it seeding.
+- **All of rtorrent (admins):** **/admin → Torrents** lists every torrent in rtorrent, including ones added outside StreamMKV, with filters (downloading / seeding / paused / stopped / from StreamMKV), the same actions, and global **speed limits** (these last until rtorrent restarts; put `throttle.global_down.max_rate` / `throttle.global_up.max_rate` in `.rtorrent.rc` to keep them). *Remove with data* only deletes the torrent's own file/folder, never a library root or your home folder.
 - **Who can add downloads:** admins, plus users given **Make downloader** in Users. Downloaders only see libraries they have access to, and only they or an admin can cancel or remove their downloads. They can't download from private or loopback addresses.
 
 ## Stream limits
