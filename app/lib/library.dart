@@ -121,8 +121,24 @@ int trackOrder(Item a, Item b) {
   return t != 0 ? t : a.name.compareTo(b.name);
 }
 
+/// Whose personal library a file comes from ('' = a server library, 'you', or a user name).
+class LibOwners {
+  static Map<String, String> byLib = {};
+  static String me = '';
+  static String of(String path) {
+    final o = byLib[path.split('/').first] ?? '';
+    return o.isEmpty ? '' : (o == me ? 'you' : o);
+  }
+
+  static String badge(Iterable<String> owners) {
+    final o = owners.where((x) => x.isNotEmpty).toSet();
+    return o.isEmpty ? '' : '👤 ${o.length > 1 ? '${o.length} people' : o.first}';
+  }
+}
+
 class Album {
   Album(this.key, this.title, this.artist);
+  Set<String> get owners => {for (final t in tracks) LibOwners.of(t.path)}..remove('');
   final String key, title, artist;
   String cover = '';
   int year = 0, added = 0;
@@ -160,6 +176,8 @@ class LibraryRepo {
     try {
       libs = await api.libraries();
       legacy = false;
+      LibOwners.me = api.settings.username;
+      LibOwners.byLib = {for (final l in libs!) l.id: l.owner};
     } on ApiException catch (e) {
       if (e.status != 404) rethrow;
       legacy = true;

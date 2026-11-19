@@ -548,6 +548,9 @@
     // only your own personal libraries (admins: everything)
     const canDelete = (lib) => !!(BR.me && lib !== '_legacy' && (BR.me.admin || (libOf(lib).owner && libOf(lib).owner === BR.me.user)));
     const ownerTag = (l) => !l.owner ? '' : l.owner === (BR.me && BR.me.user) ? ' · mine' : ' · ' + l.owner;
+    // whose personal library a file comes from: '' (a server library), 'you', or the user's name
+    const ownerOfPath = (p) => { const o = libOf(String(p || '').split('/')[0]).owner; return !o ? '' : o === (BR.me && BR.me.user) ? 'you' : o; };
+    const fromTxt = (owners) => { const o = [...owners].filter(Boolean); return o.length ? 'from ' + o.map((x) => x === 'you' ? 'your library' : x + "'s library").join(', ') : ''; };
     async function deleteFiles(paths, label) {
       if (!confirm(`Delete ${label} from the server?\n\nThe file${paths.length > 1 ? 's are' : ' is'} removed from disk — this cannot be undone.`)) return false;
       try {
@@ -750,8 +753,9 @@
       const m = new Map();
       for (const it of items) {
         const k = albumKey(it);
-        if (!m.has(k)) m.set(k, { key: k, album: it.album || it.dir || '(no album)', artist: it.albumArtist || it.artist || 'Unknown artist', cover: it.cover, year: it.year, genres: new Set(), tracks: [], added: 0 });
+        if (!m.has(k)) m.set(k, { key: k, album: it.album || it.dir || '(no album)', artist: it.albumArtist || it.artist || 'Unknown artist', cover: it.cover, year: it.year, genres: new Set(), tracks: [], added: 0, owners: new Set() });
         const a = m.get(k);
+        a.owners.add(ownerOfPath(it.path));
         a.tracks.push(it); a.added = Math.max(a.added, it.added); if (!a.cover && it.cover) a.cover = it.cover; if (!a.year && it.year) a.year = it.year;
         (it.genres || []).forEach((g) => a.genres.add(g));
       }
@@ -759,6 +763,7 @@
     }
 
     const mbase = (lib) => lib === '_all' ? '#/music' : '#/lib/' + encodeURIComponent(lib);
+    const ownerBadge = (a) => { const o = [...a.owners].filter(Boolean); return o.length ? '👤 ' + (o.length > 1 ? o.length + ' people' : o[0]) : ''; };
     async function musicView(lib, tab, arg) {
       const d = await libData(lib);
       const tabs = { albums: 'Albums', artists: 'Artists', genres: 'Genres', songs: 'Songs' };
@@ -769,7 +774,7 @@
       function draw() {
         if (tab === 'albums' || (tab === 'genres' && arg)) {
           const list = albums.filter((a) => (!arg || a.genres.has(arg)) && matchQ(a.album, a.artist, String(a.year || ''))).sort((a, b) => b.added - a.added);
-          view.innerHTML = (arg ? `<h3 class="smkv-h">${esc(arg)}</h3>` : '') + (list.length ? `<div class="smkv-grid sq">${list.map((a) => posterCard({ key: a.key, title: a.album, sub: a.artist + (a.year ? ' · ' + a.year : ''), img: coverUrl(a.cover), square: true })).join('')}</div>` : '<div class="smkv-dim">No albums</div>');
+          view.innerHTML = (arg ? `<h3 class="smkv-h">${esc(arg)}</h3>` : '') + (list.length ? `<div class="smkv-grid sq">${list.map((a) => posterCard({ key: a.key, title: a.album, sub: a.artist + (a.year ? ' · ' + a.year : ''), img: coverUrl(a.cover), square: true, badge: ownerBadge(a) })).join('')}</div>` : '<div class="smkv-dim">No albums</div>');
           bindCards(view, (k) => (location.hash = `#/album/${encodeURIComponent(lib)}/${encodeURIComponent(k)}`));
         } else if (tab === 'artists') {
           const artists = new Map();
@@ -796,7 +801,7 @@
 
     function trackTable(list, showAlbum, editLib) {
       return `<table class="smkv-tracks">${list.map((t, i) => `<tr data-i="${i}" class="${A.cur && A.cur.path === t.path ? 'on' : ''}">
-        <td class="n">${t.track || ''}</td><td><b>${esc(t.title || t.name)}</b>${showAlbum ? `<div class="smkv-dim2">${esc(t.artist || '')}${t.album ? ' · ' + esc(t.album) : ''}</div>` : (t.artist && t.artist !== t.albumArtist ? `<div class="smkv-dim2">${esc(t.artist)}</div>` : '')}</td>
+        <td class="n">${t.track || ''}</td><td><b>${esc(t.title || t.name)}</b>${showAlbum ? `<div class="smkv-dim2">${esc(t.artist || '')}${t.album ? ' · ' + esc(t.album) : ''}${ownerOfPath(t.path) ? ` · <span class="smkv-from">👤 ${esc(ownerOfPath(t.path))}</span>` : ''}</div>` : (t.artist && t.artist !== t.albumArtist ? `<div class="smkv-dim2">${esc(t.artist)}</div>` : '')}</td>
         <td class="d">${t.duration ? fmtTime(t.duration) : ''}</td><td class="e"><button class="smkv-tadd" data-i="${i}" title="Add to a playlist">＋</button></td>${editLib && canEdit() ? `<td class="e"><button class="smkv-tedit" data-i="${i}" title="Edit tags">✎</button></td>` : ''}</tr>`).join('')}</table>`;
     }
     function bindAdd(root, list) {
@@ -825,6 +830,7 @@
             <div class="smkv-poster sq big">${a.cover ? `<img src="${esc(coverUrl(a.cover))}">` : `<span>${esc(a.album)}</span>`}</div>
             <div><div class="smkv-dim2">ALBUM</div><h2>${esc(a.album)}</h2>
               <div class="smkv-facts"><a href="#/artist/${encodeURIComponent(lib)}/${encodeURIComponent(a.artist)}">${esc(a.artist)}</a>${a.year ? ' · ' + a.year : ''} · ${a.tracks.length} songs · ${fmtTime(total)}</div>
+              ${fromTxt(a.owners) ? `<div class="smkv-dim2" style="margin:2px 0 6px">📦 ${esc(fromTxt(a.owners))}</div>` : ''}
               <div class="smkv-chips">${[...a.genres].map((g) => `<a href="${mbase(lib)}/genres/${encodeURIComponent(g)}">${esc(g)}</a>`).join('')}</div>
               <button class="smkv-primary" id="smkv-playall">▶ Play</button> <button id="smkv-shufall">🔀 Shuffle</button> <button id="smkv-pladd" title="Add the album to a playlist">＋ Playlist</button>
               ${canEdit() ? '<button id="smkv-aedit">✎ Edit album</button>' : ''}</div></div>
@@ -849,7 +855,7 @@
         view.innerHTML = `<div class="smkv-albumhead"><div class="smkv-poster sq big round">${albums[0]?.cover ? `<img src="${esc(coverUrl(albums[0].cover))}">` : `<span>${esc(name)}</span>`}</div>
             <div><div class="smkv-dim2">ARTIST</div><h2>${esc(name)}</h2><div class="smkv-facts">${albums.length} albums · ${songs.length} songs</div>
             <button class="smkv-primary" id="smkv-playall">▶ Play</button> <button id="smkv-shufall">🔀 Shuffle</button> <button id="smkv-pladd" title="Add every song to a playlist">＋ Playlist</button></div></div>
-          <h3 class="smkv-h">Albums</h3><div class="smkv-grid sq">${albums.map((a) => posterCard({ key: a.key, title: a.album, sub: String(a.year || ''), img: coverUrl(a.cover), square: true })).join('')}</div>
+          <h3 class="smkv-h">Albums</h3><div class="smkv-grid sq">${albums.map((a) => posterCard({ key: a.key, title: a.album, sub: String(a.year || ''), img: coverUrl(a.cover), square: true, badge: ownerBadge(a) })).join('')}</div>
           <h3 class="smkv-h">Songs</h3>${trackTable(songs.filter((t) => matchQ(t.title, t.album)), true, lib)}`;
         bindCards(view, (k) => (location.hash = `#/album/${encodeURIComponent(lib)}/${encodeURIComponent(k)}`));
         bindTracks(view, songs.filter((t) => matchQ(t.title, t.album)), lib);
@@ -928,7 +934,7 @@
               <button class="smkv-primary" id="smkv-playall" ${tracks.length ? '' : 'disabled'}>▶ Play</button> <button id="smkv-shufall" ${tracks.length ? '' : 'disabled'}>🔀 Shuffle</button>
               <button id="smkv-plren">✎ Rename</button> <button id="smkv-pldel">🗑 Delete</button></div></div>
           ${shown.length ? `<table class="smkv-tracks smkv-pltracks">${shown.map((t, i) => `<tr data-i="${i}" draggable="true" class="${A.cur && A.cur.path === t.path ? 'on' : ''}">
-            <td class="n smkv-grip" title="Drag to reorder">⠿</td><td><b>${esc(t.title || t.name)}</b><div class="smkv-dim2">${esc(t.artist || '')}${t.album ? ' · ' + esc(t.album) : ''}</div></td>
+            <td class="n smkv-grip" title="Drag to reorder">⠿</td><td><b>${esc(t.title || t.name)}</b><div class="smkv-dim2">${esc(t.artist || '')}${t.album ? ' · ' + esc(t.album) : ''}${ownerOfPath(t.path) ? ` · <span class="smkv-from">👤 ${esc(ownerOfPath(t.path))}</span>` : ''}</div></td>
             <td class="d">${t.duration ? fmtTime(t.duration) : ''}</td>
             <td class="e"><button data-mv="-1" title="Move up">↑</button><button data-mv="1" title="Move down">↓</button><button data-rm title="Remove from the playlist">✕</button></td></tr>`).join('')}</table>`
             : '<div class="smkv-dim">Empty — press ＋ next to songs, albums or artists to add them here.</div>'}`;
@@ -992,7 +998,7 @@
           <div><div class="smkv-dim2">${A.el.paused ? 'PAUSED' : 'NOW PLAYING'}</div><b>${esc(A.cur.title || A.cur.name)}</b><div class="smkv-dim2">${esc(A.cur.artist || '')}</div></div></a>`;
       }
       html += `<h3 class="smkv-h">Recently added · <a href="#/music/albums">all albums</a></h3><div class="smkv-row">${albums.slice(0, 18).map((a) =>
-        posterCard({ key: 'a:' + a.key, title: a.album, sub: a.artist, img: coverUrl(a.cover), square: true })).join('')}</div>`;
+        posterCard({ key: 'a:' + a.key, title: a.album, sub: a.artist, img: coverUrl(a.cover), square: true, badge: ownerBadge(a) })).join('')}</div>`;
       html += `<h3 class="smkv-h">Artists · <a href="#/music/artists">all</a></h3><div class="smkv-row smkv-artists">${[...artists.values()].slice(0, 18).map((a) =>
         posterCard({ key: 'r:' + a.artist, title: a.artist, img: coverUrl(a.cover), square: true })).join('')}</div>`;
       if (genres.size) html += `<h3 class="smkv-h">Genres</h3><div class="smkv-chips big">${[...genres.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([n, c]) =>
@@ -2698,6 +2704,7 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 #smkv-chat .smkv-rxadd{visibility:hidden;background:none!important;border:none!important;padding:0 4px!important;margin-left:6px;color:#8b95a5;font-size:12px;cursor:pointer}
 #smkv-chat .smkv-msg:hover .smkv-rxadd,#smkv-chat .smkv-msg.act .smkv-rxadd{visibility:visible}
 @media (hover:none){#smkv-chat .smkv-rxadd{visibility:visible;opacity:.55}}
+.smkv-from{color:#9db7d8}
 .smkv-plpop{display:flex;flex-direction:column;min-width:220px;max-height:min(60vh,420px);overflow:auto;padding:6px}
 .smkv-plpop .smkv-plh{font:600 11px system-ui,sans-serif;color:#7d8696;text-transform:uppercase;letter-spacing:.5px;padding:6px 10px 4px}
 .smkv-pop.smkv-plpop button{font-size:14px;text-align:left;padding:8px 10px;display:flex;justify-content:space-between;gap:12px}

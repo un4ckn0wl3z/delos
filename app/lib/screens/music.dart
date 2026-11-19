@@ -139,6 +139,7 @@ extension on _MusicViewState {
             image: app.api.coverUrl(a.cover),
             headers: app.api.authHeaders,
             aspect: 1,
+            badge: LibOwners.badge(a.owners),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AlbumScreen(app: app, data: d!, album: a))),
           ),
       ]),
@@ -190,6 +191,7 @@ class AlbumGrid extends StatelessWidget {
               image: app.api.coverUrl(a.cover),
               headers: app.api.authHeaders,
               aspect: 1,
+              badge: LibOwners.badge(a.owners),
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AlbumScreen(app: app, data: data, album: a))),
             ),
         ]);
@@ -221,7 +223,10 @@ class TrackList extends StatelessWidget {
                     : Text(t.track > 0 ? '${t.track}' : '', textAlign: TextAlign.right, style: const TextStyle(color: Color(0xFF7D8696))),
               ),
               title: Text(t.title.isNotEmpty ? t.title : t.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: showAlbum ? Text([t.artist, t.album].where((e) => e.isNotEmpty).join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis) : null,
+              subtitle: showAlbum
+                  ? Text([t.artist, t.album, if (LibOwners.of(t.path).isNotEmpty) '👤 ${LibOwners.of(t.path)}'].where((e) => e.isNotEmpty).join(' · '),
+                      maxLines: 1, overflow: TextOverflow.ellipsis)
+                  : null,
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 Text(t.duration > 0 ? fmtDur(t.duration) : '', style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))),
                 IconButton(
@@ -268,6 +273,9 @@ class AlbumScreen extends StatelessWidget {
                       child: Text(album.artist, style: TextStyle(color: Theme.of(context).colorScheme.primary)),
                     ),
                     Text('${album.year > 0 ? '${album.year} · ' : ''}${album.tracks.length} songs · ${fmtDur(total)}', style: const TextStyle(color: Color(0xFF8B95A5))),
+                    if (album.owners.isNotEmpty)
+                      Text('📦 from ${album.owners.map((o) => o == 'you' ? 'your library' : "$o's library").join(', ')}',
+                          style: const TextStyle(fontSize: 12.5, color: Color(0xFF9DB7D8))),
                     const SizedBox(height: 8),
                     Chips(album.genres.toList()),
                     const SizedBox(height: 8),
@@ -317,6 +325,7 @@ class ArtistScreen extends StatelessWidget {
                   image: app.api.coverUrl(a.cover),
                   headers: app.api.authHeaders,
                   aspect: 1,
+                  badge: LibOwners.badge(a.owners),
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AlbumScreen(app: app, data: data, album: a))),
                 ),
             ]),
