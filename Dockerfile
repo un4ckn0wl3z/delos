@@ -12,7 +12,8 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/streammkv .
 
 FROM alpine:3.22
-RUN apk add --no-cache ffmpeg rtorrent ca-certificates tzdata tini su-exec
+# python3 + nodejs: yt-dlp (downloaded at first use) and the JavaScript runtime YouTube needs
+RUN apk add --no-cache ffmpeg rtorrent ca-certificates tzdata tini su-exec python3 nodejs
 COPY --from=build /out/streammkv /usr/local/bin/streammkv
 COPY deploy/docker/entrypoint.sh /entrypoint.sh
 RUN chmod 755 /entrypoint.sh

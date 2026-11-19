@@ -940,7 +940,8 @@
       const libs = [...d.libraries].sort((a, b) => ((a.type === 'music') === (BR.mode === 'music') ? 0 : 1) - ((b.type === 'music') === (BR.mode === 'music') ? 0 : 1));
       view.innerHTML = `<h2 class="smkv-pageh">Downloads</h2>
         <form id="smkv-dlf" class="smkv-dlform">
-          <input name="source" placeholder="https://… link or magnet:?xt=…" autocomplete="off">
+          <input name="source" placeholder="https://… link, YouTube link / playlist, or magnet:?xt=…" autocomplete="off">
+          <label class="smkv-check" id="smkv-ytpl" hidden title="This YouTube link is in a playlist: download every video of it"><input type="checkbox" name="playlist"> Whole playlist</label>
           <label class="smkv-tfile" title="Upload a .torrent file"><input type="file" name="file" accept=".torrent,application/x-bittorrent"><span>📎 .torrent</span></label>
           <select name="lib">${libs.map((l) => `<option value="${esc(l.id)}">${typeIcon[l.type] || '📁'} ${esc(l.name)}${esc(ownerTag(l))}</option>`).join('')}</select>
           <input name="subdir" list="smkv-dldirs" placeholder="folder (optional)" autocomplete="off"><datalist id="smkv-dldirs"></datalist>
@@ -961,6 +962,10 @@
         try { const r = await api('downloads/dirs', { lib: f.lib.value }); $('#smkv-dldirs').innerHTML = r.dirs.map((x) => `<option value="${esc(x)}">`).join(''); } catch (_) {}
       };
       f.lib.onchange = loadDirs; loadDirs();
+      f.source.oninput = () => { // a YouTube video that's part of a playlist: offer the whole playlist
+        let u = null; try { u = new URL(f.source.value.trim()); } catch { /* not a URL */ }
+        $('#smkv-ytpl').hidden = !(u && /(^|\.)(youtube\.com|youtu\.be)$/.test(u.hostname) && u.searchParams.get('list') && u.searchParams.get('v'));
+      };
       f.file.onchange = () => { f.querySelector('.smkv-tfile span').textContent = f.file.files[0] ? '📎 ' + f.file.files[0].name : '📎 .torrent'; };
       const send = (force) => {
         if (f.file.files[0]) {
@@ -969,7 +974,7 @@
           return fetch(new URL('api/downloads/torrent', BASE), { method: 'POST', body: fd, credentials: 'same-origin' });
         }
         return fetch(new URL('api/downloads', BASE), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ source: f.source.value.trim(), lib: f.lib.value, subdir: f.subdir.value, force }) });
+          body: JSON.stringify({ source: f.source.value.trim(), lib: f.lib.value, subdir: f.subdir.value, force, playlist: !$('#smkv-ytpl').hidden && f.playlist.checked }) });
       };
       f.onsubmit = async (e) => {
         e.preventDefault();
@@ -985,7 +990,7 @@
             r = await send(true);
           }
           if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
-          f.source.value = ''; f.file.value = ''; f.file.onchange();
+          f.source.value = ''; f.file.value = ''; f.file.onchange(); f.source.oninput();
           toast('Download added'); refresh();
         } catch (x) { toast(x.message, 5000); }
       };
@@ -1089,20 +1094,28 @@
             root.querySelector('#smkv-rmok').onclick = () => { const v = root.querySelector('input[name=smkv-rm]:checked').value; close(); res(v === 'data'); };
           }));
       }
+      function ytLine(j) {
+        const n = j.items > 1 ? ` · ${j.state === 'done' ? j.itemsDone || 0 : Math.max(j.itemIndex || 0, j.itemsDone || 0)} / ${j.items}` : '';
+        const cur = j.state === 'downloading' && j.current && j.current !== j.name ? ` · ${esc(j.current)}` : '';
+        return `${j.playlist ? ' · ▶ playlist' : ''}${n}${cur}`;
+      }
       function draw() {
         const t = d.torrent || {};
         $('#smkv-dlrt').innerHTML = t.ok ? `Torrents go to rtorrent ${esc(t.version || '')}` : `⚠ Torrents unavailable: ${esc(t.error || '')} — http(s) links still work`;
         const names = Object.fromEntries(d.libraries.map((l) => [l.id, l.name]));
         $('#smkv-dllist').innerHTML = d.jobs.length ? d.jobs.map((j) => {
-          const pct = j.size > 0 ? Math.min(100, j.done / j.size * 100) : 0;
+          const yt = j.kind === 'youtube';
+          const itemFrac = j.size > 0 ? Math.min(1, j.done / j.size) : 0;
+          const pct = yt ? (j.state === 'done' ? 100 : j.items > 0 ? Math.min(100, ((j.itemIndex || 1) - 1 + itemFrac) / j.items * 100) : itemFrac * 100)
+            : j.size > 0 ? Math.min(100, j.done / j.size * 100) : 0;
           const mine = BR.me.admin || j.user === BR.me.user;
           const tor = j.kind === 'torrent' && j.hash && j.tstate && j.tstate !== 'removed';
           const st = j.kind === 'torrent' && j.tstate ? tName[j.tstate] || j.tstate : state[j.state] || j.state;
           return `<div class="smkv-dl ${esc(j.state)}" data-id="${esc(j.id)}">
             <div class="smkv-dlh"><b>${esc(j.name || j.source)}</b><span class="smkv-dim2">${j.kind} → ${esc(names[j.lib] || j.lib)}${j.subdir ? ' / ' + esc(j.subdir) : ''} · ${esc(j.user)}</span></div>
             <div class="smkv-pbar big"><i style="width:${pct.toFixed(1)}%"></i></div>
-            <div class="smkv-dlf2"><span class="smkv-dim2">${st}${j.size > 0 ? ` · ${fmtSize(j.done)} / ${fmtSize(j.size)}` : ''}${j.rate > 0 ? ` · ↓ ${fmtSize(j.rate)}/s` : ''}${j.up > 0 ? ` · ↑ ${fmtSize(j.up)}/s` : ''}${j.kind === 'torrent' && j.tstate ? `<br>ratio <b>${(j.ratio || 0).toFixed(2)}</b> · ↑ ${fmtSize(j.uploaded || 0)}${tor ? ` · ${j.peers || 0} peers (${j.seeds || 0} seeds)` : ''} · ${seedTxt(j)}${j.autoStopped ? ` · <span style="color:#f5a623">auto-stopped: ${esc(j.autoStopped)}</span>` : ''}` : ''}${j.error ? ` · <span class="smkv-err">${esc(j.error)}</span>` : ''}${j.dupes && j.dupes.length ? `<br><span style="color:#f5a623" title="${esc(j.dupes.join('\n'))}">⚠ Also in the library: ${esc(j.dupes.slice(0, 2).join(' · '))}${j.dupes.length > 2 ? ` +${j.dupes.length - 2}` : ''}</span>` : ''}</span>
-              ${mine ? `${j.kind === 'http' && (j.state === 'failed' || j.state === 'canceled') ? '<button data-a="retry">Retry</button>' : ''}${tor ? torBtns(j.tstate) + '<button data-a="more" title="Recheck, seeding limit, trackers & files">⋯</button>' : ''}<button data-a="rm">${j.state === 'queued' || j.state === 'downloading' ? 'Cancel' : 'Remove'}</button>` : ''}</div></div>`;
+            <div class="smkv-dlf2"><span class="smkv-dim2">${st}${yt ? ytLine(j) : j.size > 0 ? ` · ${fmtSize(j.done)} / ${fmtSize(j.size)}` : ''}${j.rate > 0 ? ` · ↓ ${fmtSize(j.rate)}/s` : ''}${j.up > 0 ? ` · ↑ ${fmtSize(j.up)}/s` : ''}${j.kind === 'torrent' && j.tstate ? `<br>ratio <b>${(j.ratio || 0).toFixed(2)}</b> · ↑ ${fmtSize(j.uploaded || 0)}${tor ? ` · ${j.peers || 0} peers (${j.seeds || 0} seeds)` : ''} · ${seedTxt(j)}${j.autoStopped ? ` · <span style="color:#f5a623">auto-stopped: ${esc(j.autoStopped)}</span>` : ''}` : ''}${j.error ? ` · <span class="smkv-err">${esc(j.error)}</span>` : ''}${j.dupes && j.dupes.length ? `<br><span style="color:#f5a623" title="${esc(j.dupes.join('\n'))}">⚠ Also in the library: ${esc(j.dupes.slice(0, 2).join(' · '))}${j.dupes.length > 2 ? ` +${j.dupes.length - 2}` : ''}</span>` : ''}</span>
+              ${mine ? `${(j.kind === 'http' || yt) && (j.state === 'failed' || j.state === 'canceled') ? '<button data-a="retry">Retry</button>' : ''}${yt && j.playlist && j.state === 'done' ? '<button data-a="retry" title="Download what was added to the playlist since">🔄 Update</button>' : ''}${tor ? torBtns(j.tstate) + '<button data-a="more" title="Recheck, seeding limit, trackers & files">⋯</button>' : ''}<button data-a="rm">${j.state === 'queued' || j.state === 'downloading' ? 'Cancel' : 'Remove'}</button>` : ''}</div></div>`;
         }).join('') : '<div class="smkv-dim">No downloads yet.</div>';
         $('#smkv-dllist').querySelectorAll('button[data-a]').forEach((b) => b.onclick = async () => {
           const j = d.jobs.find((x) => x.id === b.closest('.smkv-dl').dataset.id);

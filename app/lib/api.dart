@@ -133,8 +133,8 @@ class Api {
   }
 
   /// 409 = looks like a duplicate (retry with force), 422 = can't (already in rtorrent).
-  Future<void> addDownload(String source, String lib, String subdir, {bool force = false}) =>
-      _req('POST', 'downloads', body: {'source': source, 'lib': lib, 'subdir': subdir, 'force': force});
+  Future<void> addDownload(String source, String lib, String subdir, {bool force = false, bool playlist = false}) =>
+      _req('POST', 'downloads', body: {'source': source, 'lib': lib, 'subdir': subdir, 'force': force, 'playlist': playlist});
 
   /// Upload a .torrent file (rtorrent downloads it into the library).
   Future<void> addTorrentFile(String fileName, List<int> bytes, String lib, String subdir, {bool force = false}) async {

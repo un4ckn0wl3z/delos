@@ -101,9 +101,27 @@ class _DownloadsViewState extends State<DownloadsView> {
     final src = _src.text.trim();
     if (src.isEmpty || lib == null) return;
     FocusScope.of(context).unfocus();
+    // a YouTube video that's part of a playlist: this video, or the whole playlist?
+    var playlist = false;
+    final u = Uri.tryParse(src);
+    if (u != null && RegExp(r'(^|\.)(youtube\.com|youtu\.be)$').hasMatch(u.host) && (u.queryParameters['list'] ?? '').isNotEmpty && (u.queryParameters['v'] ?? '').isNotEmpty) {
+      final pick = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('YouTube playlist'),
+          content: const Text('This video is part of a playlist. Download just this video, or every video in the playlist?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('This video')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Whole playlist')),
+          ],
+        ),
+      );
+      if (pick == null) return;
+      playlist = pick;
+    }
     setState(() => busy = true);
     try {
-      await _withDupCheck((force) => widget.app.api.addDownload(src, lib!, _sub.text.trim(), force: force));
+      await _withDupCheck((force) => widget.app.api.addDownload(src, lib!, _sub.text.trim(), force: force, playlist: playlist));
       _src.clear();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Download added')));
       await _load();
@@ -560,16 +578,34 @@ class _DownloadsViewState extends State<DownloadsView> {
     final color = state == 'failed' ? Colors.redAccent : state == 'done' ? const Color(0xFF3ECF8E) : Theme.of(context).colorScheme.primary;
     final mine = me.admin || j['user'] == me.api.settings.username;
     final name = '${j['name'] ?? ''}'.isNotEmpty ? '${j['name']}' : '${j['source']}';
+    final yt = j['kind'] == 'youtube';
+    final items = (j['items'] as num? ?? 0).toInt();
+    final itemIndex = (j['itemIndex'] as num? ?? 0).toInt();
+    final itemsDone = (j['itemsDone'] as num? ?? 0).toInt();
+    final frac = size > 0 ? (done / size).clamp(0.0, 1.0) : 0.0;
+    final double? progress = yt
+        ? (state == 'done'
+            ? 1.0
+            : items > 0
+                ? (((itemIndex > 0 ? itemIndex : 1) - 1 + frac) / items).clamp(0.0, 1.0)
+                : (size > 0 ? frac : (state == 'downloading' ? null : 0.0)))
+        : (size > 0 ? frac : (state == 'downloading' ? null : 0.0));
+    final current = '${j['current'] ?? ''}';
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Icon(j['kind'] == 'torrent' ? Icons.hub_outlined : Icons.link, size: 18, color: const Color(0xFF8B95A5)),
+            Icon(j['kind'] == 'torrent' ? Icons.hub_outlined : yt ? Icons.smart_display_outlined : Icons.link, size: 18, color: const Color(0xFF8B95A5)),
             const SizedBox(width: 6),
             Expanded(child: Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600))),
-            if (mine && j['kind'] == 'http' && (state == 'failed' || state == 'canceled'))
+            if (mine && yt && j['playlist'] == true && state == 'done')
+              IconButton(tooltip: 'Update — download what was added to the playlist since', icon: const Icon(Icons.sync), onPressed: () async {
+                await me.api.retryDownload('${j['id']}');
+                _load();
+              }),
+            if (mine && (j['kind'] == 'http' || yt) && (state == 'failed' || state == 'canceled'))
               IconButton(tooltip: 'Retry', icon: const Icon(Icons.refresh), onPressed: () async {
                 await me.api.retryDownload('${j['id']}');
                 _load();
@@ -598,12 +634,15 @@ class _DownloadsViewState extends State<DownloadsView> {
               style: const TextStyle(fontSize: 12, color: Color(0xFF8B95A5))),
           Padding(
             padding: const EdgeInsets.fromLTRB(0, 8, 8, 6),
-            child: LinearProgressIndicator(value: size > 0 ? (done / size).clamp(0.0, 1.0) : (state == 'downloading' ? null : 0), color: color, minHeight: 4),
+            child: LinearProgressIndicator(value: progress, color: color, minHeight: 4),
           ),
           Text(
             [
               label,
-              if (size > 0) '${fmtSize(done.round())} / ${fmtSize(size.round())}',
+              if (yt && j['playlist'] == true) 'playlist',
+              if (yt && items > 1) '${state == 'done' ? itemsDone : (itemIndex > itemsDone ? itemIndex : itemsDone)} / $items',
+              if (yt && state == 'downloading' && current.isNotEmpty && current != name) current,
+              if (!yt && size > 0) '${fmtSize(done.round())} / ${fmtSize(size.round())}',
               if (rate > 0) '↓ ${fmtSize(rate.round())}/s',
               if (up > 0) '↑ ${fmtSize(up)}/s',
               if ('${j['error'] ?? ''}'.isNotEmpty) '${j['error']}',

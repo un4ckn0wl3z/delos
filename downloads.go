@@ -37,7 +37,7 @@ const (
 
 type DownloadJob struct {
 	ID       string `json:"id"`
-	Kind     string `json:"kind"`   // http | torrent
+	Kind     string `json:"kind"`   // http | torrent | youtube
 	Source   string `json:"source"` // URL / magnet / "file.torrent"
 	Lib      string `json:"lib"`
 	Subdir   string `json:"subdir,omitempty"`
@@ -71,6 +71,15 @@ type DownloadJob struct {
 	SeedHours float64 `json:"seedHours,omitempty"`
 	// AutoStopped: why the seeding rule stopped it (set once; starting it again by hand keeps it seeding)
 	AutoStopped string `json:"autoStopped,omitempty"`
+
+	// youtube (yt-dlp): Items = playlist size, ItemIndex = entry being fetched, Current = its title
+	Playlist  bool     `json:"playlist,omitempty"`
+	Items     int      `json:"items,omitempty"`
+	ItemIndex int      `json:"itemIndex,omitempty"`
+	ItemsDone int      `json:"itemsDone,omitempty"`
+	Current   string   `json:"current,omitempty"`
+	Paths     []string `json:"paths,omitempty"` // files saved (for "remove with files")
+	VideoIDs  []string `json:"videoIds,omitempty"`
 }
 
 // seedLimits: the ratio / hours this job seeds to (0 = no limit).
@@ -114,10 +123,14 @@ func NewDownloads(s *Server) *Downloads {
 	}
 	// HTTP jobs that were running when the server stopped: resume them
 	for _, j := range d.jobs {
-		if j.Kind == "http" && (j.State == JobQueued || j.State == JobDownloading) {
+		if (j.Kind == "http" || j.Kind == "youtube") && (j.State == JobQueued || j.State == JobDownloading) {
 			j.State = JobQueued
 			j.Rate = 0
-			go d.runHTTP(j.ID)
+			if j.Kind == "youtube" {
+				go d.runYouTube(j.ID)
+			} else {
+				go d.runHTTP(j.ID)
+			}
 		}
 	}
 	go d.pollLoop()
@@ -735,6 +748,7 @@ func (s *Server) handleDownloadAdd(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		Source, Lib, Subdir, Name string
 		Force                     bool // download even if it looks like a duplicate
+		Playlist                  bool // YouTube video link: download its whole playlist
 	}
 	if !decodeJSON(w, r, &b) {
 		return
@@ -752,6 +766,10 @@ func (s *Server) handleDownloadAdd(w http.ResponseWriter, r *http.Request) {
 		}
 		if strings.HasSuffix(strings.ToLower(u.Path), ".torrent") {
 			kind = "torrent" // rtorrent fetches .torrent URLs itself
+		}
+		if isYouTubeURL(u) {
+			kind = "youtube"
+			b.Playlist = b.Playlist || isYouTubePlaylist(u)
 		}
 	default:
 		httpErr(w, 400, "paste an http(s) link or a magnet link")
@@ -797,6 +815,8 @@ func (s *Server) handleDownloadAdd(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		j.State = JobDownloading
+	} else if kind == "youtube" {
+		j.Playlist, j.Size = b.Playlist, -1
 	} else {
 		name := j.Name
 		if name == "" {
@@ -818,8 +838,11 @@ func (s *Server) handleDownloadAdd(w http.ResponseWriter, r *http.Request) {
 	s.dl.jobs[j.ID] = j
 	s.dl.saveLocked()
 	s.dl.mu.Unlock()
-	if kind == "http" {
+	switch kind {
+	case "http":
 		go s.dl.runHTTP(j.ID)
+	case "youtube":
+		go s.dl.runYouTube(j.ID)
 	}
 	writeJSON(w, 200, j)
 }
@@ -895,12 +918,18 @@ func (s *Server) handleDownloadRetry(w http.ResponseWriter, r *http.Request) {
 	if j == nil {
 		return
 	}
-	if j.Kind != "http" || (j.State != JobFailed && j.State != JobCanceled) {
-		httpErr(w, 400, "only failed or canceled HTTP downloads can be retried")
+	if j.Kind == "youtube" && j.State == JobDone {
+		// run the playlist again: only new entries are downloaded (download archive)
+	} else if (j.Kind != "http" && j.Kind != "youtube") || (j.State != JobFailed && j.State != JobCanceled) {
+		httpErr(w, 400, "only failed or canceled downloads can be retried")
 		return
 	}
-	s.dl.update(j.ID, func(x *DownloadJob) { x.State, x.Error, x.Rate = JobQueued, "", 0 })
-	go s.dl.runHTTP(j.ID)
+	s.dl.update(j.ID, func(x *DownloadJob) { x.State, x.Error, x.Rate, x.ItemsDone, x.Current = JobQueued, "", 0, 0, "" })
+	if j.Kind == "youtube" {
+		go s.dl.runYouTube(j.ID)
+	} else {
+		go s.dl.runHTTP(j.ID)
+	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 
@@ -934,6 +963,21 @@ func (s *Server) handleDownloadDelete(w http.ResponseWriter, r *http.Request) {
 		if withFiles && j.BasePath != "" && inside(j.BasePath) {
 			if err := os.RemoveAll(j.BasePath); err != nil {
 				errs = append(errs, err.Error())
+			}
+		}
+	} else if j.Kind == "youtube" {
+		if withFiles {
+			time.Sleep(300 * time.Millisecond)
+			for _, p := range j.Paths {
+				if inside(p) {
+					if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+						errs = append(errs, err.Error())
+					}
+					os.Remove(filepath.Dir(p)) // only if now empty
+				}
+			}
+			if dir, _, err := s.dl.targetDir(j.Lib, j.Subdir); err == nil {
+				forgetArchived(dir, j.VideoIDs)
 			}
 		}
 	} else if dir, _, err := s.dl.targetDir(j.Lib, j.Subdir); err == nil && j.Name != "" {

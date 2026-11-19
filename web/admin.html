@@ -809,20 +809,22 @@
     const libName = Object.fromEntries(d.libraries.map((l) => [l.id, l.name]));
     const pd = page('dl', d.jobs, () => renderDownloads(lastDl));
     $('#dl-list').innerHTML = d.jobs.length ? `<table><tr><th>Name</th><th class="h-m">To</th><th>Progress</th><th></th></tr>${pd.items.map((j) => {
-      const pct = j.size > 0 ? Math.min(100, (j.done / j.size) * 100) : 0;
+      const yt = j.kind === 'youtube', frac = j.size > 0 ? Math.min(1, j.done / j.size) : 0;
+      const pct = yt ? (j.state === 'done' ? 100 : j.items > 0 ? Math.min(100, ((j.itemIndex || 1) - 1 + frac) / j.items * 100) : frac * 100) : frac * 100;
       const st = j.kind === 'torrent' && j.tstate ? tName[j.tstate] || j.tstate : dlState[j.state] || j.state;
       const tor = j.kind === 'torrent' && j.hash && j.tstate && j.tstate !== 'removed';
       return `<tr data-j="${esc(j.id)}">
-        <td><b class="file">${esc(j.name || j.source)}</b><span class="badge ${j.kind === 'torrent' ? 't-tv' : 't-movies'}">${j.kind}</span>
+        <td><b class="file">${esc(j.name || j.source)}</b><span class="badge ${j.kind === 'torrent' ? 't-tv' : yt ? 't-music' : 't-movies'}">${j.kind}${j.playlist ? ' · playlist' : ''}</span>
           <div class="dim" style="font-size:12px">${esc(j.user)} · ${ago(j.created)}${j.error ? ` · <span style="color:#ff6b6b">${esc(j.error)}</span>` : ''}</div>
           ${j.dupes && j.dupes.length ? `<div style="font-size:12px;color:#f5a623" title="${esc(j.dupes.join('\n'))}">⚠ Also in the library: ${esc(j.dupes.slice(0, 2).join(' · '))}${j.dupes.length > 2 ? ` +${j.dupes.length - 2}` : ''}</div>` : ''}</td>
         <td class="h-m dim file">${esc(libName[j.lib] || j.lib)}${j.subdir ? ' / ' + esc(j.subdir) : ''}</td>
         <td style="min-width:150px"><div style="height:6px;background:rgba(128,128,128,.25);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct.toFixed(1)}%;background:${j.state === 'failed' ? '#ff6b6b' : j.state === 'done' ? '#3ecf8e' : '#4a9eff'}"></div></div>
-          <div class="dim" style="font-size:12px">${j.kind === 'torrent' && j.tstate ? `<span class="badge ts-${esc(j.tstate)}" style="margin:0 4px 0 0">${st}</span>` : st}${j.size > 0 ? ` · ${size(j.done)} / ${size(j.size)}` : ''}${j.rate > 0 ? ` · ↓ ${size(j.rate)}/s` : ''}${j.up > 0 ? ` · ↑ ${size(j.up)}/s` : ''}</div>
+          <div class="dim" style="font-size:12px">${j.kind === 'torrent' && j.tstate ? `<span class="badge ts-${esc(j.tstate)}" style="margin:0 4px 0 0">${st}</span>` : st}${yt ? `${j.items > 1 ? ` · ${j.state === 'done' ? j.itemsDone || 0 : Math.max(j.itemIndex || 0, j.itemsDone || 0)} / ${j.items}` : ''}${j.state === 'downloading' && j.current && j.current !== j.name ? ` · ${esc(j.current)}` : ''}` : j.size > 0 ? ` · ${size(j.done)} / ${size(j.size)}` : ''}${j.rate > 0 ? ` · ↓ ${size(j.rate)}/s` : ''}${j.up > 0 ? ` · ↑ ${size(j.up)}/s` : ''}</div>
           ${j.kind === 'torrent' && j.tstate ? `<div class="dim" style="font-size:12px">ratio <b>${(j.ratio || 0).toFixed(2)}</b> · ↑ ${size(j.uploaded || 0)} uploaded${tor ? ` · ${j.peers || 0} peers (${j.seeds || 0} seeds)` : ''}${j.seedSince && j.state === 'done' ? ` · done ${ago(j.seedSince)}` : ''}</div>
             <div class="dim" style="font-size:12px">${seedLimitText(j)}${j.autoStopped ? ` · <span style="color:var(--warn)">auto-stopped: ${esc(j.autoStopped)}</span>` : ''}</div>` : ''}</td>
         <td><div class="actions">
-          ${j.kind === 'http' && (j.state === 'failed' || j.state === 'canceled') ? '<button data-a="retry">Retry</button>' : ''}
+          ${(j.kind === 'http' || yt) && (j.state === 'failed' || j.state === 'canceled') ? '<button data-a="retry">Retry</button>' : ''}
+          ${yt && j.playlist && j.state === 'done' ? '<button data-a="retry" title="Download what was added to the playlist since">Update</button>' : ''}
           ${tor ? torButtons(j.tstate) : ''}
           ${tor ? '<button data-a="more" title="Recheck, seeding limit, trackers & files">⋯</button>' : ''}
           <button data-a="remove">${j.state === 'queued' || j.state === 'downloading' ? 'Cancel' : 'Remove'}</button>
