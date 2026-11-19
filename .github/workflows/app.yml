@@ -2,7 +2,7 @@ name: android
 on:
   push:
     branches: [main]
-    paths: ['app/**', '.github/workflows/app.yml']
+    paths: ['app/**', '.github/workflows/app.yml', 'tools/android-*.sh', 'tools/ci-music-server.sh']
   workflow_dispatch:
   workflow_call:
     inputs:
