@@ -292,18 +292,11 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	scale := fmt.Sprintf("scale=-2:'min(%d,ih)',format=yuv420p", maxh)
 	if burn >= 0 {
-		v, sub := info.Video, info.Subs[burn]
-		var fc string
-		switch {
-		case sub.Width == 0 || sub.Height == 0 || (sub.Width == v.Width && sub.Height == v.Height):
-			fc = fmt.Sprintf("[0:v:0][0:s:%d]overlay=eof_action=pass", burn)
-		case sub.Width >= v.Width && sub.Height >= v.Height:
-			// e.g. 1920x1080 PGS on a cropped 1920x800 encode: pad video to the subtitle canvas
-			fc = fmt.Sprintf("[0:v:0]pad=%d:%d:(ow-iw)/2:(oh-ih)/2[pv];[pv][0:s:%d]overlay=eof_action=pass", sub.Width, sub.Height, burn)
-		default:
-			// e.g. 1080p PGS on 4K video: scale subtitle canvas up to the video width
-			fc = fmt.Sprintf("[0:s:%d]scale=%d:-1[ss];[0:v:0][ss]overlay=(W-w)/2:(H-h)/2:eof_action=pass", burn, v.Width)
-		}
+		v := info.Video
+		cw, ch := s.media.subCanvas(r.Context(), path, st.ModTime(), info, burn, start)
+		subScale := min(max(qInt(r, "subscale", 100), 40), 250)
+		subRaise := min(max(qInt(r, "subpos", 0), -15), 60)
+		fc := burnFilter(v.Width, v.Height, cw, ch, burn, subScale, subRaise)
 		args = append(args, "-filter_complex", fc+","+scale+"[vout]", "-map", "[vout]")
 	} else {
 		args = append(args, "-map", "0:v:0")

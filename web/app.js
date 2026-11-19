@@ -43,7 +43,7 @@
         input,select{width:100%;box-sizing:border-box;padding:8px 10px;background:#0d1015;color:#fff;border:1px solid #2a313c;border-radius:6px;font:inherit}
         input:focus{outline:none;border-color:#4a9eff}
         .hint{font-size:12px;color:#6b7482;margin-top:3px}
-        .row{display:flex;gap:8px;margin-top:18px;justify-content:flex-end}
+        .row{display:flex;gap:8px;margin-top:18px;justify-content:flex-end;flex-wrap:wrap}
         button{padding:8px 14px;border-radius:6px;border:1px solid #2a313c;background:#222833;color:#d7dce4;font:inherit;cursor:pointer}
         button.primary{background:#2b6fd6;border-color:#2b6fd6;color:#fff}
         .msg{color:#ff8080;font-size:13px;min-height:1em;margin-top:8px}
@@ -61,6 +61,9 @@
         <label>Max height when transcoding</label><input name="maxh" type="number" min="240" max="2160" step="1">
         <div class="msg"></div>
         <div class="row">
+          <button type="button" data-act="refresh" title="Rescan the server's libraries">⟳ Reload libraries</button>
+          <button type="button" data-act="logout">Log out</button>
+          <span style="flex:1"></span>
           <button type="button" data-act="cancel">Cancel</button>
           <button type="submit" class="primary">Save</button>
         </div>
@@ -77,6 +80,8 @@
     };
     form.addEventListener('submit', (e) => { e.preventDefault(); const n = collect(); if (n) { close(); onSaved && onSaved(n); } });
     root.querySelector('[data-act=cancel]').onclick = close;
+    root.querySelector('[data-act=refresh]').onclick = () => { close(); document.getElementById('smkv-refresh')?.click(); };
+    root.querySelector('[data-act=logout]').onclick = () => { close(); document.getElementById('smkv-logout')?.click(); };
     root.querySelector('.bg').addEventListener('mousedown', (e) => { if (e.target.classList.contains('bg')) close(); });
     document.documentElement.appendChild(host);
     form.elements.audioLang.focus();
@@ -129,6 +134,7 @@
       loadSeq: 0, dragging: false, pendingTarget: null, pendingTimer: 0,
       engFile: null, engAudio: -1, browserFail: null, // in-browser engine state
       errCount: 0, lastSave: 0,
+      subSize: +lsGet('subSize', 100) || 100, subPos: +lsGet('subPos', 0) || 0, // % size, % raise (kept across videos)
     };
     // `media` is what's playing: the <video> (server stream) or the in-browser engine
     let wp = null, media = video;
@@ -1971,7 +1977,11 @@
       S.pendingTarget = null;
       const u = new URL('api/stream', BASE);
       const q = { path: S.file.path, audio: S.audio, start: start.toFixed(3), v: mode, maxh: S.maxh };
-      if (S.sub && !S.sub.text) q.burn = S.sub.idx;
+      if (S.sub && !S.sub.text) {
+        q.burn = S.sub.idx;
+        if (S.subSize !== 100) q.subscale = S.subSize;
+        if (S.subPos) q.subpos = S.subPos;
+      }
       for (const [k, v] of Object.entries(q)) u.searchParams.set(k, v);
       video.src = u.href;
       if (autoplay) video.play().catch(() => {});
@@ -2158,6 +2168,28 @@
 
     $('#smkv-sd-minus').onclick = () => { S.subDelay -= 0.1; updateSubDelay(); };
     $('#smkv-sd-plus').onclick = () => { S.subDelay += 0.1; updateSubDelay(); };
+    // Subtitle size / position: text subs are styled here; burned-in picture subs restart the stream.
+    let subLookTimer = 0;
+    function updateSubLook(changed) {
+      S.subSize = Math.min(200, Math.max(50, Math.round(S.subSize)));
+      S.subPos = Math.min(40, Math.max(-10, Math.round(S.subPos)));
+      lsSet('subSize', S.subSize); lsSet('subPos', S.subPos);
+      $('#smkv-ss').textContent = S.subSize + '%';
+      $('#smkv-sp').textContent = (S.subPos > 0 ? '+' : '') + S.subPos + '%';
+      player.style.setProperty('--sraise', S.subPos + '%');
+      sizeSubs();
+      if (changed && S.file && S.sub && !S.sub.text) {
+        clearTimeout(subLookTimer);
+        subLookTimer = setTimeout(() => { if (S.file && S.sub && !S.sub.text) playAt(cur(), !media.paused); }, 700);
+      }
+    }
+    $('#smkv-ss-minus').onclick = () => { S.subSize -= 10; updateSubLook(true); };
+    $('#smkv-ss-plus').onclick = () => { S.subSize += 10; updateSubLook(true); };
+    $('#smkv-sp-down').onclick = () => { S.subPos -= 2; updateSubLook(true); };
+    $('#smkv-sp-up').onclick = () => { S.subPos += 2; updateSubLook(true); };
+    $('#smkv-ss').ondblclick = () => { S.subSize = 100; updateSubLook(true); };
+    $('#smkv-sp').ondblclick = () => { S.subPos = 0; updateSubLook(true); };
+
     function updateSubDelay() {
       if (Math.abs(S.subDelay) < 0.001) S.subDelay = 0;
       $('#smkv-sd').textContent = (S.subDelay > 0 ? '+' : '') + S.subDelay.toFixed(1) + 's';
@@ -2182,6 +2214,10 @@
         ArrowDown: () => setVolume(Math.max(0, video.volume - 0.05)),
         f: toggleFs, m: () => $('#smkv-mute').click(),
         z: () => $('#smkv-sd-minus').click(), x: () => $('#smkv-sd-plus').click(),
+        '[': () => { $('#smkv-ss-minus').click(); toast('Subtitle size ' + S.subSize + '%', 1000); },
+        ']': () => { $('#smkv-ss-plus').click(); toast('Subtitle size ' + S.subSize + '%', 1000); },
+        '{': () => { $('#smkv-sp-down').click(); toast('Subtitle position ' + $('#smkv-sp').textContent, 1000); },
+        '}': () => { $('#smkv-sp-up').click(); toast('Subtitle position ' + $('#smkv-sp').textContent, 1000); },
         c: () => { // cycle subtitles
           const opts = [...selSub.options].map((o) => o.value);
           const n = opts[(opts.indexOf(selSub.value) + 1) % opts.length];
@@ -2269,10 +2305,12 @@
     }
     (function loop() { renderSubs(false); if (S.dragging || S.pendingTarget != null) updateTime(); requestAnimationFrame(loop); })();
 
-    new ResizeObserver(() => {
+    function sizeSubs() {
       const h = player.clientHeight;
-      subsEl.style.fontSize = Math.max(14, Math.round(h * 0.048)) + 'px';
-    }).observe(player);
+      subsEl.style.fontSize = Math.max(12, Math.round(h * 0.048 * S.subSize / 100)) + 'px';
+    }
+    new ResizeObserver(sizeSubs).observe(player);
+    updateSubLook(false);
 
     // ------------------------------------------------------------ https hint
     // On plain http the browser hides WebCodecs, so in-browser playback can't work. The server
@@ -2314,11 +2352,11 @@
   <aside id="smkv-side">
     <header>
       <b>StreamMKV</b><span class="smkv-sp"></span>
-      <a id="smkv-admin" href="admin" target="_blank" title="Admin dashboard" hidden>🛡</a>
-      <button id="smkv-refresh" title="Reload libraries">⟳</button>
-      <button id="smkv-ann" title="Announcements">📣<i hidden></i></button>
-      <button id="smkv-settings" title="Settings">⚙</button>
-      <button id="smkv-logout" title="Log out">⏻</button>
+      <a id="smkv-admin" class="smkv-hb" href="admin" target="_blank" title="Admin dashboard" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 8.4-7 10-4-1.6-7-5.4-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></a>
+      <button id="smkv-refresh" class="smkv-hb" title="Reload libraries" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>
+      <button id="smkv-ann" class="smkv-hb" title="Announcements"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4a1 1 0 0 0 1 1h2l6 4V5L7 9H5a1 1 0 0 0-1 1z"/><path d="M17 9.5a3.5 3.5 0 0 1 0 5"/><path d="M19.5 7a7 7 0 0 1 0 10"/></svg><i hidden></i></button>
+      <button id="smkv-settings" class="smkv-hb" title="Settings · reload libraries · log out"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>
+      <button id="smkv-logout" class="smkv-hb" title="Log out" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h10"/></svg></button>
     </header>
     <nav id="smkv-nav"></nav>
     <div id="smkv-people"></div>
@@ -2359,6 +2397,8 @@
       <label>Audio <select id="smkv-audio"><option>—</option></select></label>
       <label>Subtitles <select id="smkv-sub"><option value="">Off</option></select></label>
       <label>Sub delay <span class="smkv-group"><button id="smkv-sd-minus" title="z">−</button><span id="smkv-sd">0.0s</span><button id="smkv-sd-plus" title="x">+</button></span></label>
+      <label>Sub size <span class="smkv-group"><button id="smkv-ss-minus" title="Smaller subtitles">−</button><span id="smkv-ss" title="Double-click to reset">100%</span><button id="smkv-ss-plus" title="Bigger subtitles">+</button></span></label>
+      <label>Sub position <span class="smkv-group"><button id="smkv-sp-down" title="Move subtitles down">↓</button><span id="smkv-sp" title="Double-click to reset">0</span><button id="smkv-sp-up" title="Move subtitles up">↑</button></span></label>
       <label>Video <select id="smkv-vmode">
         <option value="auto">Auto</option><option value="browser">In browser (original file)</option><option value="copy">Server remux</option><option value="transcode">Server transcode H.264</option>
       </select></label>
@@ -2367,7 +2407,7 @@
         <option value="720">720p</option><option value="480">480p</option>
       </select></label>
     </div>
-    <div class="smkv-keys">Keys: space play · ←/→ ±10s · j/l ±30s · a audio · c subs · z/x sub delay · f fullscreen · m mute · Esc back</div>
+    <div class="smkv-keys">Keys: space play · ←/→ ±10s · j/l ±30s · a audio · c subs · z/x sub delay · [/] sub size · {/} sub position · f fullscreen · m mute · Esc back</div>
   </section>
 </div>
 <div id="smkv-abar">
@@ -2403,7 +2443,7 @@ button{font:inherit}
 #smkv-app button,#smkv-login button,#smkv-watch button,#smkv-abar button,#smkv-detail button{background:#1c212a;color:#c9cfd8;border:1px solid #2a313c;border-radius:6px;padding:5px 9px;cursor:pointer;font:inherit}
 #smkv-app button:hover,#smkv-detail button:hover{background:#262c37}
 button.smkv-primary,#smkv-detail .smkv-play{background:#2b6fd6!important;border-color:#2b6fd6!important;color:#fff!important}
-#smkv-admin{background:#1c212a;border:1px solid #2a313c;border-radius:6px;padding:4px 8px;font-size:13px}
+#smkv-admin{font-size:13px}
 #smkv-admin[hidden]{display:none}
 #smkv-nav{display:flex;flex-direction:column;padding:4px 8px;overflow:auto}
 #smkv-nav a{color:#c9cfd8;padding:8px 10px;border-radius:7px;display:flex;gap:6px;align-items:center}
@@ -2452,7 +2492,11 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-btn2{background:#1c212a;color:#e6e9ee;border:1px solid #2a313c;border-radius:6px;padding:6px 12px;cursor:pointer;font:inherit}
 .smkv-err{color:#ff7b7b}
 #smkv-side header{gap:4px!important}
-#smkv-side header button,#smkv-side header a{padding:4px 7px!important;min-width:0}
+#smkv-side header .smkv-hb{display:inline-flex;align-items:center;justify-content:center;flex:none;width:30px;height:30px;padding:0!important;min-width:0;
+  background:transparent!important;border:1px solid transparent!important;border-radius:8px;color:#aab3c0!important;cursor:pointer;text-decoration:none}
+#smkv-side header .smkv-hb:hover{background:#1c212a!important;border-color:#2a313c!important;color:#fff!important}
+#smkv-side header .smkv-hb[hidden]{display:none}
+#smkv-side header b{white-space:nowrap}
 #smkv-people{border-top:1px solid #1f242d;padding:6px 8px;max-height:38vh;overflow:auto}
 .smkv-ph{display:flex;align-items:center;gap:6px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8b95a5;padding:4px 4px 6px}
 .smkv-ph button{margin-left:auto;position:relative;background:transparent!important;border:none!important;font-size:16px!important;padding:2px 4px!important}
@@ -2644,7 +2688,7 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 #smkv-player:fullscreen{max-height:none;aspect-ratio:auto}
 #smkv-video{width:100%;height:100%;display:block;background:#000}
 #smkv-canvas{position:absolute;inset:0;width:100%;height:100%;display:none;background:#000}
-#smkv-ann{position:relative}#smkv-ann i{position:absolute;top:-5px;right:-5px;background:#e5484d;color:#fff;font-style:normal;font-size:10px;border-radius:9px;padding:0 5px;font-weight:700;line-height:15px}
+#smkv-ann{position:relative}#smkv-ann i{position:absolute;top:-4px;right:-4px;background:#e5484d;color:#fff;font-style:normal;font-size:10px;border-radius:9px;padding:0 5px;font-weight:700;line-height:15px}
 #smkv-annbar{display:flex;gap:12px;align-items:flex-start;margin:12px 24px 0;padding:10px 12px;border-radius:10px;background:#16263d;border:1px solid #234066;color:#d7e6fb;font-size:13.5px}
 #smkv-annbar[hidden]{display:none}
 #smkv-secbar{display:flex;gap:12px;align-items:center;margin:12px 24px 0;padding:10px 12px;border-radius:10px;background:#12241a;border:1px solid #1f6f43;color:#cfe9d9;font-size:13.5px}
@@ -2666,9 +2710,9 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 #smkv-player.engine #smkv-video{visibility:hidden}
 #smkv-player:not(.ctl) #smkv-canvas{cursor:none}
 #smkv-player:not(.ctl) #smkv-video{cursor:none}
-#smkv-subs{position:absolute;left:5%;right:5%;bottom:7%;text-align:center;pointer-events:none;color:#fff;line-height:1.25;
+#smkv-subs{position:absolute;left:5%;right:5%;bottom:calc(7% + var(--sraise,0%));text-align:center;pointer-events:none;color:#fff;line-height:1.25;
   text-shadow:0 0 3px #000,0 0 3px #000,1px 1px 2px #000,-1px -1px 2px #000,1px -1px 2px #000,-1px 1px 2px #000;transition:bottom .2s}
-#smkv-player.ctl #smkv-subs{bottom:max(7%,78px)}
+#smkv-player.ctl #smkv-subs{bottom:calc(max(7%,78px) + var(--sraise,0%))}
 #smkv-subs span{background:rgba(0,0,0,.18);padding:0 .2em;border-radius:3px;font-weight:500}
 #smkv-controls{position:absolute;left:0;right:0;bottom:0;padding:24px 12px 8px;background:linear-gradient(transparent,rgba(0,0,0,.85));opacity:0;transition:opacity .2s}
 #smkv-player.ctl #smkv-controls{opacity:1}
