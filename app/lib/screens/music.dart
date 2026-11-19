@@ -4,6 +4,7 @@ import '../audio.dart';
 import '../library.dart';
 import '../widgets.dart';
 import 'home_screen.dart';
+import 'playlists.dart';
 
 class MusicView extends StatefulWidget {
   const MusicView({super.key, required this.app, required this.lib});
@@ -54,7 +55,7 @@ class _MusicViewState extends State<MusicView> {
     final genreNames = genres.keys.where((n) => _match([n])).toList()..sort();
 
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Column(children: [
         SearchField(onChanged: (v) => setState(() => q = v), trailing: [
           const SizedBox(width: 8),
@@ -64,7 +65,7 @@ class _MusicViewState extends State<MusicView> {
             onPressed: () => app.audio.playQueue(d!.items, 0, shuffled: true),
           ),
         ]),
-        const TabBar(isScrollable: true, tabs: [Tab(text: 'Listen now'), Tab(text: 'Albums'), Tab(text: 'Artists'), Tab(text: 'Genres'), Tab(text: 'Songs')]),
+        const TabBar(isScrollable: true, tabs: [Tab(text: 'Listen now'), Tab(text: 'Albums'), Tab(text: 'Artists'), Tab(text: 'Genres'), Tab(text: 'Songs'), Tab(text: 'Playlists')]),
         Expanded(
           child: TabBarView(children: [
             _listenNow(context, albums, artists, genres),
@@ -94,6 +95,7 @@ class _MusicViewState extends State<MusicView> {
                 ),
             ]),
             TrackList(app: app, tracks: songs, showAlbum: true),
+            PlaylistsTab(app: app, data: d!),
           ]),
         ),
       ]),
@@ -220,8 +222,17 @@ class TrackList extends StatelessWidget {
               ),
               title: Text(t.title.isNotEmpty ? t.title : t.name, maxLines: 1, overflow: TextOverflow.ellipsis),
               subtitle: showAlbum ? Text([t.artist, t.album].where((e) => e.isNotEmpty).join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis) : null,
-              trailing: Text(t.duration > 0 ? fmtDur(t.duration) : '', style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(t.duration > 0 ? fmtDur(t.duration) : '', style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))),
+                IconButton(
+                  tooltip: 'Add to playlist',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.playlist_add, size: 20, color: Color(0xFF8B95A5)),
+                  onPressed: () => addToPlaylist(context, app, [t]),
+                ),
+              ]),
               onTap: () => app.audio.playQueue(tracks, i),
+              onLongPress: () => addToPlaylist(context, app, [t]),
             );
           },
         ),
@@ -263,6 +274,7 @@ class AlbumScreen extends StatelessWidget {
                     Wrap(spacing: 8, children: [
                       FilledButton.icon(icon: const Icon(Icons.play_arrow), label: const Text('Play'), onPressed: () => app.audio.playQueue(album.tracks, 0)),
                       OutlinedButton.icon(icon: const Icon(Icons.shuffle), label: const Text('Shuffle'), onPressed: () => app.audio.playQueue(album.tracks, 0, shuffled: true)),
+                      OutlinedButton.icon(icon: const Icon(Icons.playlist_add), label: const Text('Playlist'), onPressed: () => addToPlaylist(context, app, album.tracks)),
                     ]),
                   ]),
                 ),
@@ -289,6 +301,7 @@ class ArtistScreen extends StatelessWidget {
       ..sort((a, b) => a.album.compareTo(b.album) != 0 ? a.album.compareTo(b.album) : trackOrder(a, b));
     return Scaffold(
       appBar: AppBar(title: Text(artist), actions: [
+        IconButton(tooltip: 'Add to playlist', icon: const Icon(Icons.playlist_add), onPressed: () => addToPlaylist(context, app, songs)),
         IconButton(icon: const Icon(Icons.shuffle), onPressed: () => app.audio.playQueue(songs, 0, shuffled: true)),
         IconButton(icon: const Icon(Icons.play_arrow), onPressed: () => app.audio.playQueue(songs, 0)),
       ]),

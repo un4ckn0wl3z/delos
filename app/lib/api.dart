@@ -224,6 +224,17 @@ class Api {
       await _req('POST', 'chat/${Uri.encodeComponent(id)}/messages', body: {'text': text, if (ref != null) 'ref': ref}) as Map;
   Future<void> chatRead(String id, int seq) => _req('POST', 'chat/${Uri.encodeComponent(id)}/read', body: {'seq': seq});
 
+  // ---------------------------------------------------------------- music playlists
+  Future<List<Map>> playlists() async => List<Map>.from((await _req('GET', 'playlists') as Map)['playlists'] as List? ?? const []);
+  Future<Map> playlist(String id) async => await _req('GET', 'playlists/${Uri.encodeComponent(id)}') as Map;
+  Future<Map> createPlaylist(String name, List<String> tracks) async =>
+      await _req('POST', 'playlists', body: {'name': name, 'tracks': tracks}) as Map;
+  Future<Map> updatePlaylist(String id, {String? name, List<String>? tracks}) async => await _req('PUT', 'playlists/${Uri.encodeComponent(id)}',
+      body: {if (name != null) 'name': name, if (tracks != null) 'tracks': tracks}) as Map;
+  Future<Map> addToPlaylist(String id, List<String> tracks) async =>
+      await _req('POST', 'playlists/${Uri.encodeComponent(id)}/add', body: {'tracks': tracks}) as Map;
+  Future<void> deletePlaylist(String id) => _req('DELETE', 'playlists/${Uri.encodeComponent(id)}');
+
   /// Toggle my reaction on a message → {reactions: {emoji: [users]}}.
   Future<Map> chatReact(String id, int seq, String emoji) async =>
       await _req('POST', 'chat/${Uri.encodeComponent(id)}/messages/$seq/react', body: {'emoji': emoji}) as Map;

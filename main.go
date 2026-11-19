@@ -49,22 +49,23 @@ type Config struct {
 }
 
 type Server struct {
-	cfg      Config
-	media    *Media
-	progress *ProgressStore
-	users    *UserStore
-	conns    *ConnRegistry
-	limiter  *StreamLimiter
-	settings *SettingsStore
-	updater  *Updater
-	libs     *LibraryStore
-	index    *Indexer
-	dl       *Downloads
-	chat     *Chat
-	avatars  *Avatars
-	tls      *TLSManager
-	ann      *Announcements
-	started  time.Time
+	cfg       Config
+	media     *Media
+	progress  *ProgressStore
+	users     *UserStore
+	conns     *ConnRegistry
+	limiter   *StreamLimiter
+	settings  *SettingsStore
+	updater   *Updater
+	libs      *LibraryStore
+	index     *Indexer
+	dl        *Downloads
+	chat      *Chat
+	avatars   *Avatars
+	tls       *TLSManager
+	playlists *Playlists
+	ann       *Announcements
+	started   time.Time
 }
 
 func envOr(k, def string) string {
@@ -194,6 +195,7 @@ func main() {
 	s.chat = NewChat(s)
 	s.avatars = NewAvatars(cfg.DataDir)
 	s.ann = NewAnnouncements(s)
+	s.playlists = NewPlaylists(cfg.DataDir)
 	if s.tls, err = NewTLSManager(cfg, tlsMode); err != nil {
 		log.Printf("tls: %v — HTTPS disabled", err)
 		s.tls = &TLSManager{mode: "off"}
@@ -231,6 +233,7 @@ func main() {
 	s.avatarRoutes(mux)
 	s.announcementRoutes(mux)
 	s.tlsRoutes(mux)
+	s.playlistRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
