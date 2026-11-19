@@ -36,6 +36,12 @@ grep -E "pkg=$PKG" -A3 "$OUT/notification.txt" | head -30
 ok=1
 grep -q "package=$PKG" "$OUT/media_session.txt" || { echo "::warning::no media session for the app"; ok=0; }
 grep -A12 "package=$PKG" "$OUT/media_session.txt" | grep -q "state=PlaybackState {state=PLAYING\|state=3" || { echo "::warning::media session is not PLAYING"; ok=0; }
-grep -q "pkg=$PKG.*" "$OUT/notification.txt" && grep -q "MediaStyle\|android.mediaSession" "$OUT/notification.txt" || { echo "::warning::no media notification"; ok=0; }
+notif=0
+for i in 1 2 3 4 5 6; do   # the notification is re-posted when the track changes: give it a moment
+  adb shell dumpsys notification --noredact > "$OUT/notification.txt"
+  grep -E "NotificationRecord.*pkg=$PKG" "$OUT/notification.txt" | grep -q "category=transport" && { notif=1; break; }
+  sleep 2
+done
+[ $notif = 1 ] || { echo "::warning::no media notification"; ok=0; }
 grep -q "AUTOTEST: offline playing=true file=true" "$OUT/logcat.txt" || { echo "::warning::saved song didn't play from the device"; ok=0; }
 [ $ok = 1 ] && echo "Media session, notification and offline music OK" || exit 1
