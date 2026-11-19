@@ -57,6 +57,12 @@
   .badge.ts-paused{background:#4a3a1c;color:#ffcf7a}.badge.ts-stopped,.badge.ts-finished,.badge.ts-removed{background:#2c3440;color:#c9cfd8}
   .badge.ts-checking{background:#3a2a4a;color:#d6b4ff}
   .badge.ann-info{background:#1e3352;color:#9cc8ff}.badge.ann-warning{background:#4a3a1c;color:#ffcf7a}.badge.ann-important{background:#4a1f22;color:#ff9a9a}
+  .pager{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 18px 4px;font-size:12.5px}
+  .pager .sp{flex:1}
+  .pager button{min-width:30px;padding:3px 8px;font-size:12px}
+  .pager button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .pager button:disabled{opacity:.35;cursor:default}
+  .pager select{font-size:12px;padding:3px 6px}
   .chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}.chips button{font-size:12px;padding:3px 10px;border-radius:12px}.chips button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
   .tstat{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;margin:2px 0 8px}
   .badge.t-music{background:#4a2a35;color:#ffb3c7}.badge.t-videos{background:#2c3440;color:#c9cfd8}
@@ -348,7 +354,50 @@
     setTimeout(poll, 2000);
   }
 
+  // ---------------------------------------------------------- pagination for long lists
+  // page(key, list, rerender) → { items: this page, bar: controls html }; bindPager(el, key) after rendering.
+  // The page survives the auto-refresh; the page size is remembered per list.
+  const PG = {};
+  function page(key, list, rerender) {
+    let st = PG[key];
+    if (!st) {
+      let n = 25; try { n = +localStorage.getItem('pg:' + key) || 25; } catch { /* private mode */ }
+      st = PG[key] = { p: 0, n };
+    }
+    st.rerender = rerender;
+    const pages = Math.max(1, Math.ceil(list.length / st.n));
+    st.p = Math.min(Math.max(0, st.p), pages - 1);
+    const a = st.p * st.n, items = list.slice(a, a + st.n);
+    if (list.length <= 10) return { items: list, bar: '' };
+    const nums = [...new Set([0, st.p - 2, st.p - 1, st.p, st.p + 1, st.p + 2, pages - 1])].filter((x) => x >= 0 && x < pages).sort((x, y) => x - y);
+    let btns = '', prev = -1;
+    for (const x of nums) {
+      if (x - prev > 1) btns += '<span class="dim">…</span>';
+      btns += `<button data-p="${x}" class="${x === st.p ? 'on' : ''}">${x + 1}</button>`;
+      prev = x;
+    }
+    return {
+      items,
+      bar: `<div class="pager" data-pg="${key}"><span class="dim">${a + 1}–${a + items.length} of ${list.length}</span><span class="sp"></span>
+        ${pages > 1 ? `<button data-p="${st.p - 1}" ${st.p === 0 ? 'disabled' : ''} title="Previous page">‹</button>${btns}<button data-p="${st.p + 1}" ${st.p >= pages - 1 ? 'disabled' : ''} title="Next page">›</button>` : ''}
+        <select title="Rows per page">${[10, 25, 50, 100, 250].map((n) => `<option value="${n}" ${n === st.n ? 'selected' : ''}>${n} / page</option>`).join('')}</select></div>`,
+    };
+  }
+  function bindPager(root, key) {
+    const el = root.querySelector(`.pager[data-pg="${key}"]`), st = PG[key];
+    if (!el || !st) return;
+    el.querySelectorAll('button[data-p]').forEach((b) => b.onclick = () => { st.p = +b.dataset.p; st.rerender(); });
+    el.querySelector('select').onchange = (e) => {
+      st.n = +e.target.value; st.p = 0;
+      try { localStorage.setItem('pg:' + key, e.target.value); } catch { /* ignore */ }
+      st.rerender();
+    };
+  }
+  const pageReset = (key) => { if (PG[key]) PG[key].p = 0; };
+
+  let lastOv = null;
   function renderOverview(o) {
+    lastOv = o;
     const lib = o.library || {}, d = o.disk || {};
     const used = d.total ? (1 - d.free / d.total) : 0;
     $('#ver').textContent = 'v' + o.version;
@@ -362,19 +411,23 @@
     ].map(([k, v, s]) => `<div class="card"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
 
     $('#n-watch').textContent = o.watching.length;
+    const pw = page('watch', o.watching, () => renderOverview(lastOv));
     $('#watching').innerHTML = o.watching.length ? `<table><tr><th>User</th><th>File</th><th>Position</th><th class="h-m">Updated</th></tr>${
-      o.watching.map((w) => `<tr><td>${esc(w.user)}</td><td class="file" title="${esc(w.path)}">${esc(base(w.path))}</td>
+      pw.items.map((w) => `<tr><td>${esc(w.user)}</td><td class="file" title="${esc(w.path)}">${esc(base(w.path))}</td>
         <td><span class="mini"><i style="width:${w.duration ? (w.pos / w.duration * 100).toFixed(1) : 0}%"></i></span>${tm(w.pos)} / ${tm(w.duration)}</td>
-        <td class="h-m dim">${ago(w.updated)}</td></tr>`).join('')}</table>` : '<div class="empty">Nobody is watching right now.</div>';
+        <td class="h-m dim">${ago(w.updated)}</td></tr>`).join('')}</table>${pw.bar}` : '<div class="empty">Nobody is watching right now.</div>';
+    bindPager($('#watching'), 'watch');
 
     $('#n-conn').textContent = o.conns.length;
     const st = o.streams;
     $('#tx').textContent = `transcodes ${st.transcode}/${st.maxTranscode} · light ${st.remux}/${st.maxRemux}${st.maxPerUser ? ` · ${st.maxPerUser} per user` : ''}`;
+    const pc = page('conns', o.conns, () => renderOverview(lastOv));
     $('#conns').innerHTML = o.conns.length ? `<table><tr><th>User</th><th>File</th><th>Mode</th><th class="h-m">Client</th><th class="h-m">Since</th></tr>${
-      o.conns.map((c) => `<tr><td>${esc(c.user)}</td><td class="file" title="${esc(c.path)}">${esc(base(c.path))}</td>
+      pc.items.map((c) => `<tr><td>${esc(c.user)}</td><td class="file" title="${esc(c.path)}">${esc(base(c.path))}</td>
         <td><span class="badge k-${esc(c.kind)}">${esc(c.kind)}</span></td>
         <td class="h-m dim" title="${esc(c.agent)}">${esc(agent(c.agent))} · ${esc(c.remote.replace(/:\d+$/, ''))}</td>
-        <td class="h-m dim">${ago(c.since)}</td></tr>`).join('')}</table>` : '<div class="empty">No open streams.</div>';
+        <td class="h-m dim">${ago(c.since)}</td></tr>`).join('')}</table>${pc.bar}` : '<div class="empty">No open streams.</div>';
+    bindPager($('#conns'), 'conns');
 
     const recent = (o.recent || []).slice(0, 25);
     $('#recent').innerHTML = recent.length ? `<table><tr><th>User</th><th>File</th><th>Progress</th><th class="h-m">When</th></tr>${
@@ -386,16 +439,20 @@
   // ---------------------------------------------------------- announcements
   let annUsers = [];
   const annLevel = { info: 'ℹ️ Info', warning: '⚠️ Warning', important: '🔴 Important (pops up)' };
+  let lastAnn = null;
   function renderAnn(d) {
+    lastAnn = d;
     const items = d.items || [];
+    const pa = page('ann', items, () => renderAnn(lastAnn));
     $('#n-ann').textContent = items.filter((a) => a.active).length;
-    $('#ann-list').innerHTML = items.length ? `<table>${items.map((a) => `<tr data-id="${esc(a.id)}" style="${a.active ? '' : 'opacity:.55'}">
+    $('#ann-list').innerHTML = items.length ? `<table>${pa.items.map((a) => `<tr data-id="${esc(a.id)}" style="${a.active ? '' : 'opacity:.55'}">
       <td><b>${esc(a.title || '(no title)')}</b> <span class="badge ann-${esc(a.level)}" style="margin-left:6px">${esc(a.level)}</span>${a.pinned ? ' 📌' : ''}
         ${a.body ? `<div class="dim" style="font-size:12.5px;white-space:pre-wrap;max-height:4.5em;overflow:hidden">${esc(a.body)}</div>` : ''}
         <div class="dim" style="font-size:12px">${esc(a.author)} · ${ago(a.updated || a.created)}${a.updated ? ' (edited)' : ''} · ${a.users && a.users.length ? 'to ' + a.users.map(esc).join(', ') : 'to everyone'}${a.expires ? (a.active ? ' · until ' + new Date(a.expires * 1000).toLocaleString() : ' · expired') : ''}</div></td>
       <td class="h-m dim" style="font-size:12px;white-space:nowrap" title="${esc(a.readBy.join(', ') || 'nobody yet')}">read by <b>${a.readBy.length}</b> / ${a.audience}</td>
-      <td><div class="actions"><button data-a="edit">Edit</button><button data-a="del" class="danger">Delete</button></div></td></tr>`).join('')}</table>`
+      <td><div class="actions"><button data-a="edit">Edit</button><button data-a="del" class="danger">Delete</button></div></td></tr>`).join('')}</table>${pa.bar}`
       : '<div class="empty">No announcements yet. Post one to show a message to everyone (or to chosen users) in the web app and the apps.</div>';
+    bindPager($('#ann-list'), 'ann');
     $('#ann-list').querySelectorAll('button[data-a]').forEach((b) => {
       const a = items.find((x) => x.id === b.closest('tr').dataset.id);
       b.onclick = () => b.dataset.a === 'edit' ? annEditor(a)
@@ -444,10 +501,13 @@
   }
   $('#ann-new').onclick = () => annEditor(null);
 
+  let lastUsers = null;
   function renderUsers(d) {
+    lastUsers = d;
     $('#n-users').textContent = d.users.length;
+    const pu = page('users', d.users, () => renderUsers(lastUsers));
     $('#users').innerHTML = `<table><tr><th>User</th><th class="h-m">Last seen</th><th class="h-m">Watching</th><th class="h-m">Created</th><th></th></tr>${
-      d.users.map((u) => `<tr data-u="${esc(u.name)}">
+      pu.items.map((u) => `<tr data-u="${esc(u.name)}">
         <td>${u.avatar ? `<img src="${BASE}api/avatar/${encodeURIComponent(u.name)}?v=${u.avatar}" alt="" style="width:26px;height:26px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:7px">` : ''}<b>${esc(u.name)}</b>${u.admin ? '<span class="badge">admin</span>' : ''}${!u.admin && u.editor ? '<span class="badge t-tv">editor</span>' : ''}${!u.admin && u.downloader ? '<span class="badge t-music">downloader</span>' : ''}${!u.admin && u.offline ? '<span class="badge t-videos" title="May save files to their own device">offline</span>' : ''}${u.name === d.me ? '<span class="badge you">you</span>' : ''}
           ${u.streams ? `<span class="dim"> · ${u.streams} stream${u.streams > 1 ? 's' : ''}</span>` : ''}</td>
         <td class="h-m dim">${ago(u.lastSeen)}</td>
@@ -465,7 +525,8 @@
           ${u.avatar ? '<button data-a="avatar" title="Remove this user\'s profile picture">Remove picture</button>' : ''}
           <button data-a="revoke" title="Sign this user out on every device">Sign out</button>
           ${u.name === d.me ? '' : '<button class="danger" data-a="delete">Delete</button>'}
-        </div></td></tr>`).join('')}</table>`;
+        </div></td></tr>`).join('')}</table>${pu.bar}`;
+    bindPager($('#users'), 'users');
     $('#users').querySelectorAll('button[data-a]').forEach((b) => {
       const name = b.closest('tr').dataset.u, u = d.users.find((x) => x.name === name);
       b.onclick = () => userAction(b.dataset.a, u);
@@ -707,7 +768,9 @@
   // ---------------------------------------------------------- downloads
   let dlTimer = null, dlLibsKey = '';
   const dlState = { queued: 'Queued', downloading: 'Downloading', done: 'Done', failed: 'Failed', canceled: 'Canceled' };
+  let lastDl = null;
   function renderDownloads(d) {
+    lastDl = d;
     const f = $('#dl-form'), key = d.libraries.map((l) => l.id).join();
     if (key !== dlLibsKey) {
       dlLibsKey = key;
@@ -724,7 +787,8 @@
     $('#n-dl').textContent = d.jobs.length;
     lastJobs = d.jobs;
     const libName = Object.fromEntries(d.libraries.map((l) => [l.id, l.name]));
-    $('#dl-list').innerHTML = d.jobs.length ? `<table><tr><th>Name</th><th class="h-m">To</th><th>Progress</th><th></th></tr>${d.jobs.map((j) => {
+    const pd = page('dl', d.jobs, () => renderDownloads(lastDl));
+    $('#dl-list').innerHTML = d.jobs.length ? `<table><tr><th>Name</th><th class="h-m">To</th><th>Progress</th><th></th></tr>${pd.items.map((j) => {
       const pct = j.size > 0 ? Math.min(100, (j.done / j.size) * 100) : 0;
       const st = j.kind === 'torrent' && j.tstate ? tName[j.tstate] || j.tstate : dlState[j.state] || j.state;
       const tor = j.kind === 'torrent' && j.hash && j.tstate && j.tstate !== 'removed';
@@ -743,7 +807,8 @@
           ${tor ? '<button data-a="more" title="Recheck, seeding limit, trackers & files">⋯</button>' : ''}
           <button data-a="remove">${j.state === 'queued' || j.state === 'downloading' ? 'Cancel' : 'Remove'}</button>
         </div></td></tr>`;
-    }).join('')}</table>` : '<div class="empty">No downloads yet.</div>';
+    }).join('')}</table>${pd.bar}` : '<div class="empty">No downloads yet.</div>';
+    bindPager($('#dl-list'), 'dl');
     $('#dl-list').querySelectorAll('button[data-a]').forEach((b) => {
       const j = d.jobs.find((x) => x.id === b.closest('tr').dataset.j);
       b.onclick = () => dlAction(b.dataset.a, j);
@@ -931,10 +996,11 @@
     $('#n-tor').textContent = all.length;
     const n = { all: all.length, downloading: c.downloading || 0, seeding: c.seeding || 0, paused: c.paused || 0, stopped: (c.stopped || 0) + (c.finished || 0), smkv: all.filter((t) => t.job).length };
     $('#tor-chips').innerHTML = torFilters.map(([k, l]) => `<button data-f="${k}" class="${torFilter === k ? 'on' : ''}">${l} ${n[k]}</button>`).join('');
-    $('#tor-chips').querySelectorAll('button').forEach((b) => b.onclick = () => { torFilter = b.dataset.f; renderTorrents(torData); });
+    $('#tor-chips').querySelectorAll('button').forEach((b) => b.onclick = () => { torFilter = b.dataset.f; pageReset('tor'); renderTorrents(torData); });
     const q = $('#tor-q').value.trim().toLowerCase();
     const list = all.filter((t) => (torFilter === 'all' || (torFilter === 'smkv' ? t.job : torFilter === 'stopped' ? t.status === 'stopped' || t.status === 'finished' : t.status === torFilter)) && (!q || t.name.toLowerCase().includes(q)));
-    $('#tor-list').innerHTML = list.length ? `<table><tr><th>Name</th><th>Status</th><th class="h-m">Ratio</th><th class="h-m">Speed</th><th></th></tr>${list.slice(0, 300).map((t) => {
+    const pt = page('tor', list, () => renderTorrents(torData));
+    $('#tor-list').innerHTML = list.length ? `<table><tr><th>Name</th><th>Status</th><th class="h-m">Ratio</th><th class="h-m">Speed</th><th></th></tr>${pt.items.map((t) => {
       const pct = t.size > 0 ? Math.min(100, (t.done / t.size) * 100) : 0;
       return `<tr data-h="${esc(t.hash)}">
         <td><b class="file" title="${esc(t.path)}">${esc(t.name)}</b>
@@ -946,7 +1012,8 @@
         <td class="h-m"><b>${t.ratio.toFixed(2)}</b><div class="dim" style="font-size:11.5px">↑ ${size(t.uploaded)}</div></td>
         <td class="h-m dim" style="font-size:12px">${t.down ? `↓ ${size(t.down)}/s<br>` : ''}${t.up ? `↑ ${size(t.up)}/s<br>` : ''}${t.peers} peers · ${t.seeds} seeds</td>
         <td><div class="actions">${torButtons(t.status)}<button data-a="more">⋯</button><button data-a="remove" class="danger">Remove</button></div></td></tr>`;
-    }).join('')}</table>${list.length > 300 ? `<div class="empty">Showing 300 of ${list.length} — filter to see more.</div>` : ''}` : `<div class="empty">${d.error ? '' : 'No torrents here.'}</div>`;
+    }).join('')}</table>${pt.bar}` : `<div class="empty">${d.error ? '' : 'No torrents here.'}</div>`;
+    bindPager($('#tor-list'), 'tor');
     $('#tor-list').querySelectorAll('button[data-a]').forEach((b) => {
       const t = list.find((x) => x.hash === b.closest('tr').dataset.h);
       b.onclick = () => torAction(b.dataset.a, t);
@@ -1013,7 +1080,7 @@
   }
   $('#orph-btn').onclick = orphans;
   const loadTorrents = () => api('admin/torrents').then(renderTorrents).catch(() => {});
-  $('#tor-q').oninput = () => torData && renderTorrents(torData);
+  $('#tor-q').oninput = () => { pageReset('tor'); if (torData) renderTorrents(torData); };
   $('#seed-form').onsubmit = async (e) => {
     e.preventDefault();
     const f = e.target;
