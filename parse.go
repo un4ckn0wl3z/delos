@@ -18,6 +18,8 @@ var (
 		regexp.MustCompile(`(?i)^(.*?)[\s._\-\[(]+(\d{1,2})x(\d{2,3})\b`),
 		regexp.MustCompile(`(?i)^(.*?)[\s._\-]*season[\s._-]*(\d{1,2})[\s._-]*episode[\s._-]*(\d{1,3})`),
 	}
+	// "S01E07-E08", "S01E07E08", "S01E07-S01E08": the last episode of a multi-episode file
+	moreEpRe  = regexp.MustCompile(`(?i)^(?:[\s._]*-[\s._]*|[\s._]*)(?:s\d{1,2}[\s._-]*)?e(\d{1,3})\b`)
 	looseEpRe = regexp.MustCompile(`(?i)(?:^|[\s._\-\[(])(?:e|ep|episode)[\s._-]*(\d{1,3})\b`)
 	seasonDir = regexp.MustCompile(`(?i)^(?:season|series|s)[\s._-]*(\d{1,2})$`)
 )
@@ -74,10 +76,12 @@ func parseMovie(file, parent string) (string, int) {
 }
 
 type episodeInfo struct {
-	Show    string
-	Year    int
-	Season  int
-	Episode int
+	Show       string
+	Year       int
+	Season     int
+	Episode    int
+	EpisodeEnd int  // multi-episode file: the last one (0 = single)
+	Strong     bool // an explicit S01E02 / 1x02 / "season 1 episode 2" in the file name
 }
 
 // parseEpisode understands "Show.S01E02", "Show 1x02", "Show/Season 1/02 - Title" and similar.
@@ -86,12 +90,29 @@ func parseEpisode(file string, dirs []string) (episodeInfo, bool) {
 	n := cleanName(file)
 	var ei episodeInfo
 	found := false
-	for _, re := range episodeRes {
-		if m := re.FindStringSubmatch(n); m != nil {
-			ei.Show = cutQuality(m[1])
-			ei.Season, _ = strconv.Atoi(m[2])
-			ei.Episode, _ = strconv.Atoi(m[3])
-			found = true
+	for i, re := range episodeRes {
+		if loc := re.FindStringSubmatchIndex(n); loc != nil {
+			ei.Show = cutQuality(n[loc[2]:loc[3]])
+			ei.Season, _ = strconv.Atoi(n[loc[4]:loc[5]])
+			ei.Episode, _ = strconv.Atoi(n[loc[6]:loc[7]])
+			found, ei.Strong = true, true
+			if i == 0 {
+				rest, last := n[loc[1]:], ei.Episode
+				for {
+					m := moreEpRe.FindStringSubmatchIndex(rest)
+					if m == nil {
+						break
+					}
+					e, _ := strconv.Atoi(rest[m[2]:m[3]])
+					if e <= last || e > last+30 {
+						break
+					}
+					last, rest = e, rest[m[1]:]
+				}
+				if last > ei.Episode {
+					ei.EpisodeEnd = last
+				}
+			}
 			break
 		}
 	}

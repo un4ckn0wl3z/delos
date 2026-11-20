@@ -49,7 +49,7 @@ Future<void> openVideo(BuildContext context, AppCtx app, LibData d, Item it, {bo
   app.audio.pause();
   FocusManager.instance.primaryFocus?.unfocus(); // a search field's keyboard would squeeze the player
   Item? next;
-  if (d.info.type == 'tv') {
+  if (it.show.isNotEmpty) {
     final eps = d.items.where((e) => e.show == it.show).toList()..sort(episodeOrder);
     final i = eps.indexWhere((e) => e.path == it.path);
     if (i >= 0 && i + 1 < eps.length) next = eps[i + 1];
@@ -529,7 +529,7 @@ class _HomeViewState extends State<HomeView> {
         for (final (d, it) in cont.take(20))
           PosterCard(
             title: d.movieOf(it)?.title ?? d.showOf(it)?.title ?? it.name,
-            subtitle: d.info.type == 'tv' ? 'S${it.season}E${it.episode} · ${fmtDur(it.pos)}' : fmtDur(it.pos),
+            subtitle: it.show.isNotEmpty ? 'S${it.season}E${it.episode} · ${fmtDur(it.pos)}' : fmtDur(it.pos),
             image: it.still.isNotEmpty ? it.still : (d.movieOf(it)?.backdrop ?? d.showOf(it)?.backdrop ?? ''),
             aspect: 16 / 9,
             progress: it.progress,
@@ -538,7 +538,7 @@ class _HomeViewState extends State<HomeView> {
               if (mounted) setState(() {});
             },
             onLongPress: () => showItemMenu(context, app, d,
-                title: d.labelOf(it), items: [it], play: it, showKey: d.info.type == 'tv' ? it.show : null, onChanged: _refresh),
+                title: d.labelOf(it), items: [it], play: it, showKey: it.show.isNotEmpty ? it.show : null, onChanged: _refresh),
           ),
       ]));
     }
@@ -641,9 +641,18 @@ class _VideosViewState extends State<VideosView> {
   Widget build(BuildContext context) {
     if (d == null) return const Center(child: CircularProgressIndicator());
     final words = q.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
-    final files = d!.items.where((f) => words.every((w) => f.path.toLowerCase().contains(w))).toList()
+    final files = d!.items.where((f) => f.show.isEmpty && words.every((w) => f.path.toLowerCase().contains(w))).toList()
       ..sort((a, b) => '${a.dir}/${a.name}'.toLowerCase().compareTo('${b.dir}/${b.name}'.toLowerCase()));
     final rows = <Widget>[SearchField(onChanged: (v) => setState(() => q = v))];
+    // S01E02 files group into series, on top
+    final series = seriesCards(context, widget.app, d!, q, () => widget.app.repo.lib(widget.lib, force: true).then((v) {
+          if (mounted) setState(() => d = v);
+        }));
+    if (series.isNotEmpty) {
+      rows.add(const SectionTitle('Series'));
+      rows.add(CardGrid(shrink: true, children: series));
+      if (files.isNotEmpty) rows.add(const SectionTitle('Files'));
+    }
     String? last;
     for (final f in files) {
       if (f.dir != last) {

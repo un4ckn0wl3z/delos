@@ -130,3 +130,27 @@ func TestTorrentIdentity(t *testing.T) {
 		t.Error("garbage accepted")
 	}
 }
+
+func TestMultiEpisode(t *testing.T) {
+	cases := []struct {
+		name          string
+		season, ep, e2 int
+		strong        bool
+	}{
+		{"The.Remarried.Empress.S01E07-S01E08.1080p.DSNP.WEB-DL.DDP5.1.H.265-THEREINFORCE.mkv", 1, 7, 8, true},
+		{"Show.S02E03E04.720p.mkv", 2, 3, 4, true},
+		{"Show S01E05-E06 1080p.mkv", 1, 5, 6, true},
+		{"Show.S01E09.1080p.x265.mkv", 1, 9, 0, true},
+		{"Show.S01E09.E10bit.mkv", 1, 9, 0, true},
+		{"Show 1x02.mkv", 1, 2, 0, true},
+	}
+	for _, c := range cases {
+		ei, ok := parseEpisode(c.name, nil)
+		if !ok || ei.Season != c.season || ei.Episode != c.ep || ei.EpisodeEnd != c.e2 || ei.Strong != c.strong {
+			t.Errorf("%s → %+v ok=%v", c.name, ei, ok)
+		}
+	}
+	if ei, _ := parseEpisode("The.Remarried.Empress.S01E07-S01E08.1080p.mkv", nil); ei.Show != "The Remarried Empress" {
+		t.Errorf("show = %q", ei.Show)
+	}
+}

@@ -39,6 +39,11 @@
   tr:last-child td{border-bottom:none}
   td.file{max-width:420px;word-break:break-word}
   .empty{padding:16px;color:var(--dim)}
+  tr.dlg{cursor:pointer;background:rgba(128,128,128,.06)}
+  tr.dlg:hover{background:rgba(128,128,128,.12)}
+  .dlg-tw{display:inline-block;width:12px;color:#8b95a5;transition:transform .15s}
+  tr.dlg.open .dlg-tw{transform:rotate(90deg)}
+  tr.dlg-m td:first-child{padding-left:28px}
   .badge{display:inline-block;font-size:11px;padding:0 7px;border-radius:9px;background:#23402a;color:#8fe0a0;margin-left:6px}
   .badge.you{background:#1e3352;color:#9cc8ff}
   .badge.k-transcode,.badge.k-transcode\+burn{background:#4a3a1c;color:#ffcf7a}
@@ -140,7 +145,7 @@
     <h2>Downloads <span class="count" id="n-dl">0</span><span class="sp"></span><span class="dim" style="font-weight:normal;font-size:12px" id="rt-status"></span></h2>
     <form class="add" id="dl-form" style="border-top:none;flex-wrap:wrap">
       <input type="text" name="source" placeholder="https://… link or magnet:?xt=… (or pick a .torrent file →)" autocomplete="off" style="flex:1;min-width:260px">
-      <label class="dim" style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="file" name="file" accept=".torrent,application/x-bittorrent" style="max-width:170px"></label>
+      <label class="dim" style="display:flex;align-items:center;gap:6px;cursor:pointer" title="You can pick several .torrent files"><input type="file" name="file" multiple accept=".torrent,application/x-bittorrent" style="max-width:170px"></label>
       <select name="lib"></select>
       <input type="text" name="subdir" list="dl-dirs" placeholder="folder (optional)" style="width:180px">
       <datalist id="dl-dirs"></datalist>
@@ -789,6 +794,33 @@
   let dlTimer = null, dlLibsKey = '';
   const dlState = { queued: 'Queued', downloading: 'Downloading', done: 'Done', failed: 'Failed', canceled: 'Canceled' };
   let lastDl = null;
+  const dlOpen = new Set((() => { try { return JSON.parse(localStorage.getItem('dlOpen') || '[]'); } catch { return []; } })());
+  const isTor = (j) => j.kind === 'torrent' && j.hash && j.tstate && j.tstate !== 'removed';
+  const BULK = { pause: ['downloading', 'seeding'], resume: ['paused'], stop: ['seeding'], start: ['stopped', 'finished'] };
+  // "Show.Name.S01E07-S01E08.1080p…", "Show Name Season 2", "Show.Name.2x05" → the series it belongs to
+  function seriesOf(name) {
+    const m = /^(.+?)[\s._\-[(]+(?:S\d{1,2}(?:[\s._-]?E\d{1,3})?|Season[\s._-]?\d{1,2}|\d{1,2}x\d{2,3})(?![\p{L}\p{N}])/iu.exec(name || '');
+    if (!m) return null;
+    const title = m[1].replace(/[._]+/g, ' ').replace(/\s*[[(]?(19|20)\d{2}[\])]?\s*$/, '').replace(/[\s-]+$/, '').trim();
+    const key = title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    return key ? { key, title } : null;
+  }
+  function seriesGroups(jobs) {
+    const all = new Map();
+    for (const j of jobs) {
+      const s = seriesOf(j.name);
+      if (!s) continue;
+      if (!all.has(s.key)) all.set(s.key, { title: s.title, jobs: [] });
+      all.get(s.key).jobs.push(j);
+    }
+    const out = new Map(); out.byJob = new Map();
+    for (const [k, g] of all) {
+      if (g.jobs.length < 2) continue;
+      g.jobs.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' }));
+      out.set(k, g); g.jobs.forEach((j) => out.byJob.set(j.id, k));
+    }
+    return out;
+  }
   function renderDownloads(d) {
     lastDl = d;
     const f = $('#dl-form'), key = d.libraries.map((l) => l.id).join();
@@ -807,13 +839,38 @@
     $('#n-dl').textContent = d.jobs.length;
     lastJobs = d.jobs;
     const libName = Object.fromEntries(d.libraries.map((l) => [l.id, l.name]));
-    const pd = page('dl', d.jobs, () => renderDownloads(lastDl));
-    $('#dl-list').innerHTML = d.jobs.length ? `<table><tr><th>Name</th><th class="h-m">To</th><th>Progress</th><th></th></tr>${pd.items.map((j) => {
+    // episodes / seasons of the same series fold into one row (one entry for paging)
+    const groups = seriesGroups(d.jobs), entries = [], seen = new Set();
+    for (const j of d.jobs) {
+      const k = groups.byJob.get(j.id);
+      if (!k) entries.push({ j });
+      else if (!seen.has(k)) { seen.add(k); entries.push({ k }); }
+    }
+    const pd = page('dl', entries, () => renderDownloads(lastDl));
+    const groupRows = (k) => {
+      const g = groups.get(k), js = g.jobs, open = dlOpen.has(k);
+      const sz = js.reduce((a, j) => a + (j.size || 0), 0), got = js.reduce((a, j) => a + Math.min(j.done || 0, j.size || 0), 0);
+      const rate = js.reduce((a, j) => a + (j.rate || 0), 0), up = js.reduce((a, j) => a + (j.up || 0), 0), counts = {};
+      js.forEach((j) => { const st = j.kind === 'torrent' && j.tstate ? tName[j.tstate] || j.tstate : dlState[j.state] || j.state; counts[st] = (counts[st] || 0) + 1; });
+      const tors = js.filter((j) => isTor(j));
+      const lbl = { pause: '⏸ Pause all', resume: '▶ Resume all', stop: '⏹ Stop seeding all', start: '▶ Start all' };
+      const bulk = Object.keys(BULK).filter((a) => tors.some((j) => BULK[a].includes(j.tstate))).map((a) => `<button data-g="${a}">${lbl[a]}</button>`).join('');
+      const libs = [...new Set(js.map((j) => libName[j.lib] || j.lib))].join(', '), users = [...new Set(js.map((j) => j.user))].join(', ');
+      const color = js.some((j) => j.state === 'failed') ? '#ff6b6b' : js.every((j) => j.state === 'done') ? '#3ecf8e' : '#4a9eff';
+      return `<tr class="dlg${open ? ' open' : ''}" data-k="${esc(k)}">
+        <td><b class="file"><span class="dlg-tw">▸</span> 📺 ${esc(g.title)}</b><span class="badge t-tv">${js.length} downloads</span>
+          <div class="dim" style="font-size:12px">${esc(users)} · ${ago(Math.max(...js.map((j) => j.created || 0)))}</div></td>
+        <td class="h-m dim file">${esc(libs)}</td>
+        <td style="min-width:150px"><div style="height:6px;background:rgba(128,128,128,.25);border-radius:3px;overflow:hidden"><div style="height:100%;width:${(sz ? got / sz * 100 : 0).toFixed(1)}%;background:${color}"></div></div>
+          <div class="dim" style="font-size:12px">${Object.entries(counts).map(([s, n]) => `${n} ${esc(s.toLowerCase())}`).join(' · ')}${sz ? ` · ${size(got)} / ${size(sz)}` : ''}${rate > 0 ? ` · ↓ ${size(rate)}/s` : ''}${up > 0 ? ` · ↑ ${size(up)}/s` : ''}</div></td>
+        <td><div class="actions">${bulk}</div></td></tr>${open ? js.map((j) => row(j, true)).join('') : ''}`;
+    };
+    const row = (j, inGroup) => {
       const yt = j.kind === 'youtube', frac = j.size > 0 ? Math.min(1, j.done / j.size) : 0;
       const pct = yt ? (j.state === 'done' ? 100 : j.items > 0 ? Math.min(100, ((j.itemIndex || 1) - 1 + frac) / j.items * 100) : frac * 100) : frac * 100;
       const st = j.kind === 'torrent' && j.tstate ? tName[j.tstate] || j.tstate : dlState[j.state] || j.state;
       const tor = j.kind === 'torrent' && j.hash && j.tstate && j.tstate !== 'removed';
-      return `<tr data-j="${esc(j.id)}">
+      return `<tr data-j="${esc(j.id)}"${inGroup ? ' class="dlg-m"' : ''}>
         <td><b class="file">${esc(j.name || j.source)}</b><span class="badge ${j.kind === 'torrent' ? 't-tv' : yt ? 't-music' : 't-movies'}">${j.kind}${j.playlist ? ' · playlist' : ''}</span>
           <div class="dim" style="font-size:12px">${esc(j.user)} · ${ago(j.created)}${j.error ? ` · <span style="color:#ff6b6b">${esc(j.error)}</span>` : ''}</div>
           ${j.dupes && j.dupes.length ? `<div style="font-size:12px;color:#f5a623" title="${esc(j.dupes.join('\n'))}">⚠ Also in the library: ${esc(j.dupes.slice(0, 2).join(' · '))}${j.dupes.length > 2 ? ` +${j.dupes.length - 2}` : ''}</div>` : ''}</td>
@@ -829,11 +886,27 @@
           ${tor ? '<button data-a="more" title="Recheck, seeding limit, trackers & files">⋯</button>' : ''}
           <button data-a="remove">${j.state === 'queued' || j.state === 'downloading' ? 'Cancel' : 'Remove'}</button>
         </div></td></tr>`;
-    }).join('')}</table>${pd.bar}` : '<div class="empty">No downloads yet.</div>';
+    };
+    $('#dl-list').innerHTML = d.jobs.length ? `<table><tr><th>Name</th><th class="h-m">To</th><th>Progress</th><th></th></tr>${pd.items.map((e) => e.j ? row(e.j) : groupRows(e.k)).join('')}</table>${pd.bar}` : '<div class="empty">No downloads yet.</div>';
     bindPager($('#dl-list'), 'dl');
     $('#dl-list').querySelectorAll('button[data-a]').forEach((b) => {
       const j = d.jobs.find((x) => x.id === b.closest('tr').dataset.j);
       b.onclick = () => dlAction(b.dataset.a, j);
+    });
+    $('#dl-list').querySelectorAll('tr.dlg').forEach((tr) => tr.onclick = (e) => {
+      if (e.target.closest('button')) return;
+      const k = tr.dataset.k;
+      if (dlOpen.has(k)) dlOpen.delete(k); else dlOpen.add(k);
+      try { localStorage.setItem('dlOpen', JSON.stringify([...dlOpen].slice(-100))); } catch { /* private mode */ }
+      renderDownloads(lastDl);
+    });
+    $('#dl-list').querySelectorAll('button[data-g]').forEach((b) => b.onclick = async () => {
+      const a = b.dataset.g, ts = groups.get(b.closest('tr').dataset.k).jobs.filter((j) => isTor(j) && BULK[a].includes(j.tstate));
+      b.disabled = true;
+      let bad = 0;
+      for (const j of ts) { try { await api(`downloads/${encodeURIComponent(j.id)}/torrent`, { method: 'POST', body: { action: a } }); } catch (_) { bad++; } }
+      toast(bad ? `${ts.length - bad} done, ${bad} failed` : `${ts.length} torrents updated`);
+      loadDownloads(); loadTorrents();
     });
     clearTimeout(dlTimer);
     if (d.jobs.some((j) => j.state === 'queued' || j.state === 'downloading' || j.seeding || j.tstate === 'checking' || j.tstate === 'paused')) dlTimer = setTimeout(loadDownloads, 3000);
@@ -878,8 +951,7 @@
         });
     });
   }
-  async function submitDownload(f, force) {
-    const file = f.file.files[0];
+  async function submitDownload(f, force, file) {
     if (file) {
       const fd = new FormData(); fd.append('file', file); fd.append('lib', f.lib.value); fd.append('subdir', f.subdir.value);
       if (force) fd.append('force', '1');
@@ -892,17 +964,29 @@
   }
   $('#dl-form').onsubmit = async (e) => {
     e.preventDefault();
-    const f = e.target;
-    if (!f.file.files[0] && !f.source.value.trim()) return toast('Paste a link or choose a .torrent file');
+    const f = e.target, files = [...f.file.files], link = f.source.value.trim();
+    if (!files.length && !link) return toast('Paste a link or choose .torrent files');
+    const btn = f.querySelector('button.primary'); btn.disabled = true;
+    let added = 0; const failed = [];
+    const one = async (file) => {
+      try {
+        try { await submitDownload(f, false, file); }
+        catch (x) {
+          if (x.status !== 409 && x.status !== 422) throw x;
+          if (files.length > 1 && file) x.message = `${file.name}: ${x.message}`;
+          if (!(await confirmDuplicate(x))) return;
+          await submitDownload(f, true, file);
+        }
+        added++;
+      } catch (x) { failed.push(file && files.length > 1 && !x.message.startsWith(file.name) ? `${file.name}: ${x.message}` : x.message); }
+    };
     try {
-      try { await submitDownload(f, false); }
-      catch (x) {
-        if (x.status !== 409 && x.status !== 422) throw x;
-        if (!(await confirmDuplicate(x))) return;
-        await submitDownload(f, true);
-      }
-      f.source.value = ''; f.file.value = ''; toast('Download added'); loadDownloads();
-    } catch (x) { toast(x.message); }
+      for (const [i, file] of files.entries()) { if (files.length > 1) btn.textContent = `${i + 1} / ${files.length}…`; await one(file); }
+      if (link) await one(null);
+    } finally { btn.disabled = false; btn.textContent = 'Download'; }
+    if (added) { f.source.value = ''; f.file.value = ''; loadDownloads(); }
+    if (failed.length) toast(`${added ? `${added} added · ` : ''}${failed.length} failed — ${failed.slice(0, 3).join(' · ')}`);
+    else if (added) toast(added > 1 ? `${added} downloads added` : 'Download added');
   };
   $('#lim-form').onsubmit = async (e) => {
     e.preventDefault();

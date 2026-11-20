@@ -6,6 +6,7 @@ import '../library.dart';
 import '../util.dart';
 import '../widgets.dart';
 import 'home_screen.dart';
+import 'shows.dart' show seriesCards;
 
 class MovieGroup {
   MovieGroup(this.key, this.meta);
@@ -21,6 +22,7 @@ class MovieGroup {
 List<MovieGroup> movieGroups(LibData d) {
   final m = <String, MovieGroup>{};
   for (final it in d.items) {
+    if (it.show.isNotEmpty) continue; // an episode: it's in a series card
     final k = it.movieId != 0 ? '${it.movieId}' : it.path;
     m.putIfAbsent(k, () => MovieGroup(k, d.movieOf(it))).items.add(it);
   }
@@ -71,6 +73,7 @@ class _MoviesViewState extends State<MoviesView> {
       default:
         list.sort((a, b) => b.added.compareTo(a.added));
     }
+    final series = seriesCards(context, widget.app, d!, q, () => _load(force: true), genre: genre);
     return Column(children: [
       SearchField(onChanged: (v) => setState(() => q = v), trailing: [
         const SizedBox(width: 8),
@@ -94,11 +97,12 @@ class _MoviesViewState extends State<MoviesView> {
         ),
       ]),
       Expanded(
-        child: list.isEmpty
+        child: list.isEmpty && series.isEmpty
             ? const Center(child: Text('No movies'))
             : RefreshIndicator(
                 onRefresh: () => _load(force: true),
                 child: CardGrid(children: [
+                  ...series, // series first (episodes found in this movie library)
                   for (final g in list)
                     PosterCard(
                       title: g.title,

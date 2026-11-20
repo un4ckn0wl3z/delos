@@ -60,6 +60,14 @@ class Item {
   String get show => _s(j['show']);
   int get season => _i(j['season']);
   int get episode => _i(j['episode']);
+  /// "S01E07-E08" in one file: the last episode (0 = a single one)
+  int get episodeEnd => _i(j['episodeEnd']);
+  Iterable<int> get episodes sync* {
+    for (var n = episode; n <= (episodeEnd > episode ? episodeEnd : episode); n++) {
+      yield n;
+    }
+  }
+  String get epLabel => episode == 0 ? '' : episodeEnd > episode ? 'E$episode–$episodeEnd' : 'E$episode';
   String get episodeTitle => _s(j['episodeTitle']);
   String get episodeOverview => _s(j['episodeOverview']);
   String get still => _s(j['still']);
@@ -77,19 +85,66 @@ class Item {
       MediaFile(path: path, name: label, dir: dir, size: size, pos: pos, duration: duration);
 }
 
+/// An episode the series has (per TMDB, or a gap before the last one we have) but this server doesn't.
+class MissingEp {
+  MissingEp(this.episode, this.title, this.aired, this.future);
+  final int episode;
+  final String title, aired;
+  final bool future; // not aired yet
+}
+
 class LibData {
-  LibData(this.info, this.items, this.movies, this.shows);
+  LibData(this.info, this.items, this.movies, this.shows, [this.seasons = const {}]);
   final LibraryInfo info;
   final List<Item> items;
   final Map<int, Meta> movies;
   final Map<String, Meta> shows;
+  /// "<tmdb id>/<season>" → {"<episode>": {title, aired, …}}
+  final Map<String, Map> seasons;
+
+  /// Episode files grouped by series (TV libraries, and S01E02 files in movie / plain-folder libraries).
+  Map<String, List<Item>> get series {
+    final out = <String, List<Item>>{};
+    for (final it in items) {
+      if (it.show.isNotEmpty) out.putIfAbsent(it.show, () => []).add(it);
+    }
+    return out;
+  }
+
+  List<MissingEp> missing(String show, List<Item> eps, int season) {
+    if (season <= 0) return const [];
+    final have = {for (final e in eps.where((e) => e.season == season)) ...e.episodes};
+    final id = shows[show]?.tmdbId ?? 0;
+    final meta = id > 0 ? seasons['$id/$season'] : null;
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    if (meta != null && meta.isNotEmpty) {
+      final out = <MissingEp>[];
+      meta.forEach((k, v) {
+        final n = int.tryParse('$k') ?? 0;
+        if (n <= 0 || have.contains(n)) return;
+        final m = v is Map ? v : const {};
+        final aired = _s(m['aired']);
+        out.add(MissingEp(n, _s(m['title']), aired, aired.isNotEmpty && aired.compareTo(today) > 0));
+      });
+      return out..sort((a, b) => a.episode.compareTo(b.episode));
+    }
+    final last = have.isEmpty ? 0 : have.reduce((a, b) => a > b ? a : b);
+    return [for (var n = 1; n < last; n++) if (!have.contains(n)) MissingEp(n, '', '', false)];
+  }
+
+  int missingCount(String show, List<Item> eps) =>
+      eps.map((e) => e.season).toSet().fold(0, (t, s) => t + missing(show, eps, s).where((m) => !m.future).length);
 
   factory LibData.fromJson(LibraryInfo info, Map j) {
     final movies = <int, Meta>{};
     (j['movies'] as Map? ?? const {}).forEach((k, v) => movies[int.tryParse('$k') ?? 0] = Meta(v as Map));
     final shows = <String, Meta>{};
     (j['shows'] as Map? ?? const {}).forEach((k, v) => shows['$k'] = Meta(v as Map));
-    return LibData(info, (j['items'] as List? ?? const []).map((e) => Item(e as Map)).toList(), movies, shows);
+    final seasons = <String, Map>{};
+    (j['seasons'] as Map? ?? const {}).forEach((k, v) {
+      if (v is Map) seasons['$k'] = v;
+    });
+    return LibData(info, (j['items'] as List? ?? const []).map((e) => Item(e as Map)).toList(), movies, shows, seasons);
   }
 
   Meta? movieOf(Item it) => it.movieId != 0 ? movies[it.movieId] : null;
@@ -98,7 +153,7 @@ class LibData {
   String labelOf(Item it) {
     final m = movieOf(it);
     if (m != null) return m.title;
-    final s = info.type == 'tv' ? showOf(it) : null;
+    final s = it.show.isNotEmpty ? showOf(it) : null;
     if (s != null) {
       final se = 'S${it.season.toString().padLeft(2, '0')}E${it.episode.toString().padLeft(2, '0')}';
       return '${s.title} · $se${it.episodeTitle.isNotEmpty ? ' · ${it.episodeTitle}' : ''}';

@@ -19,6 +19,8 @@ var editable = map[string]map[string]bool{
 	LibMovies: {"title": true, "year": true, "overview": true, "genres": true, "poster": true, "backdrop": true, "director": true},
 	"show":    {"title": true, "year": true, "overview": true, "genres": true, "poster": true, "backdrop": true},
 	LibTV:     {"showTitle": true, "season": true, "episode": true, "episodeTitle": true, "episodeOverview": true, "still": true},
+	// episodes found in movie / plain-folder libraries
+	"episode": {"showTitle": true, "season": true, "episode": true, "episodeTitle": true, "episodeOverview": true, "still": true},
 	LibMusic:  {"title": true, "artist": true, "album": true, "albumArtist": true, "genres": true, "track": true, "disc": true, "year": true, "cover": true},
 }
 
@@ -45,6 +47,9 @@ func (ix *Indexer) applyEdits(lib Library, li *LibIndex) {
 		used := map[int]bool{}
 		for _, it := range li.Items {
 			e := li.Edits[it.Path]
+			if it.Show != "" || e["showTitle"] != "" {
+				continue // an episode: below
+			}
 			if len(e) == 0 {
 				if it.MovieID > 0 {
 					used[it.MovieID] = true
@@ -86,9 +91,21 @@ func (ix *Indexer) applyEdits(lib Library, li *LibIndex) {
 				delete(li.Movies, id)
 			}
 		}
-	case LibTV:
+	}
+	switch lib.Type {
+	case LibTV, LibMovies, LibVideos:
 		for _, it := range li.Items {
-			for k, v := range li.Edits[it.Path] {
+			e := li.Edits[it.Path]
+			if lib.Type != LibTV && it.Show == "" && e["showTitle"] == "" {
+				continue // a movie / plain file
+			}
+			if it.Show == "" && e["showTitle"] != "" {
+				it.Title, it.Year, it.MovieID = e["showTitle"], 0, 0 // joined a series by hand
+				if it.Season == 0 {
+					it.Season = 1
+				}
+			}
+			for k, v := range e {
 				switch k {
 				case "showTitle":
 					it.Title = v
@@ -261,8 +278,8 @@ func (s *Server) editRoutes(mux *http.ServeMux) {
 // GET /api/meta/search?lib=&q=&year= — TMDB candidates for "fix match"
 func (s *Server) handleMetaSearch(w http.ResponseWriter, r *http.Request) {
 	lib, ok := s.libs.Get(r.URL.Query().Get("lib"))
-	if !ok || !s.canAccess(r, lib.ID) || (lib.Type != LibMovies && lib.Type != LibTV) {
-		httpErr(w, 400, "search is only for movie and tv libraries")
+	if !ok || !s.canAccess(r, lib.ID) || lib.Type == LibMusic {
+		httpErr(w, 400, "search is only for video libraries")
 		return
 	}
 	tm := s.index.tmdb()
@@ -271,7 +288,7 @@ func (s *Server) handleMetaSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	kind := "movie"
-	if lib.Type == LibTV {
+	if lib.Type == LibTV || r.URL.Query().Get("kind") == "tv" {
 		kind = "tv"
 	}
 	yr, _ := strconv.Atoi(r.URL.Query().Get("year"))
@@ -301,12 +318,21 @@ func (s *Server) handleMetaEdit(w http.ResponseWriter, r *http.Request) {
 	allowed := editable[lib.Type]
 	if strings.HasPrefix(b.Key, "show:") {
 		allowed = editable["show"]
-		if lib.Type != LibTV {
+		if lib.Type == LibMusic {
 			allowed = nil
 		}
 	} else if libID, _ := splitPath(b.Key); libID != lib.ID {
 		httpErr(w, 400, "key does not belong to this library")
 		return
+	} else if lib.Type == LibMovies || lib.Type == LibVideos {
+		// a movie / plain file can also get episode fields (that's how a file joins a series)
+		allowed = map[string]bool{}
+		for k := range editable[lib.Type] {
+			allowed[k] = true
+		}
+		for k := range editable["episode"] {
+			allowed[k] = true
+		}
 	}
 	if allowed == nil {
 		httpErr(w, 400, "this library has no editable metadata")

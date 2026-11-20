@@ -430,10 +430,15 @@
       for (const x of all.filter(Boolean)) {
         const items = [...x.d.items].sort((a, b) => b.added - a.added);
         let cards = '';
-        if (x.l.type === 'movies') {
+        const showCard = (it) => { const sh = (x.d.shows || {})[it.show] || {}; return posterCard({ key: 's:' + x.l.id + ':' + it.show, title: sh.title || it.title, sub: 'New episodes', img: sh.poster }); };
+        if (x.l.type === 'movies' || (x.l.type === 'videos' && items.some((it) => it.show))) {
           const seen = new Set();
-          cards = items.filter((it) => { const k = it.movieId || it.path; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 16)
-            .map((it) => { const m = it.movieId ? x.d.movies[it.movieId] : null; return posterCard({ key: 'm:' + x.l.id + ':' + (it.movieId || it.path), title: m ? m.title : it.title, sub: String((m && m.year) || it.year || ''), img: m && m.poster }); }).join('');
+          cards = items.filter((it) => { const k = it.show ? 's' + it.show : it.movieId || it.path; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 16)
+            .map((it) => {
+              if (it.show) return showCard(it);
+              if (x.l.type === 'videos') return posterCard({ key: 'f:' + it.path, title: it.name, sub: it.dir || '', img: '' });
+              const m = it.movieId ? x.d.movies[it.movieId] : null; return posterCard({ key: 'm:' + x.l.id + ':' + (it.movieId || it.path), title: m ? m.title : it.title, sub: String((m && m.year) || it.year || ''), img: m && m.poster });
+            }).join('');
         } else if (x.l.type === 'tv') {
           const seen = new Set();
           cards = items.filter((it) => { if (seen.has(it.show)) return false; seen.add(it.show); return true; }).slice(0, 16)
@@ -459,10 +464,53 @@
     }
 
     // ------------------------------------------------------------ movies
+    // ---- series (TV libraries, and S01E02 files found in movie / plain-folder libraries)
+    const epNums = (e) => { const out = []; for (let n = e.episode; n <= Math.max(e.episode, e.episodeEnd || 0); n++) out.push(n); return out; };
+    const epLabel = (e) => e.episode ? (e.episodeEnd > e.episode ? `E${e.episode}–${e.episodeEnd}` : 'E' + e.episode) : '';
+    // episodes not on the server: from TMDB's season list when matched, otherwise the gaps before the last one we have
+    function missingEps(d, sh, eps, season) {
+      if (!season) return [];
+      const have = new Set(eps.filter((e) => e.season === season).flatMap(epNums));
+      const meta = sh && sh.tmdbId && d.seasons ? d.seasons[sh.tmdbId + '/' + season] : null;
+      const today = new Date().toISOString().slice(0, 10);
+      if (meta && Object.keys(meta).length) {
+        return Object.entries(meta).map(([n, m]) => ({ episode: +n, meta: m, future: !!(m.aired && m.aired > today) }))
+          .filter((x) => x.episode > 0 && !have.has(x.episode)).sort((a, b) => a.episode - b.episode);
+      }
+      const out = [];
+      for (let n = 1; n < Math.max(0, ...have); n++) if (!have.has(n)) out.push({ episode: n, meta: null, future: false });
+      return out;
+    }
+    function missingCount(d, sh, eps) {
+      return [...new Set(eps.map((e) => e.season))].reduce((t, s) => t + missingEps(d, sh, eps, s).filter((x) => !x.future).length, 0);
+    }
+    function seriesOfLib(d) {
+      const shows = new Map();
+      for (const it of d.items) {
+        if (!it.show) continue;
+        if (!shows.has(it.show)) shows.set(it.show, { key: it.show, meta: (d.shows || {})[it.show] || { title: it.title }, eps: [] });
+        shows.get(it.show).eps.push(it);
+      }
+      return shows;
+    }
+    const seriesCard = (d, s) => {
+      const miss = missingCount(d, s.meta, s.eps);
+      return posterCard({ key: s.key, title: s.meta.title, img: s.meta.poster, badge: miss ? `${miss} missing` : '',
+        sub: `${s.eps.length} file${s.eps.length > 1 ? 's' : ''}${s.meta.year ? ' · ' + s.meta.year : ''}` });
+    };
+    // the "Series" row on top of a movie / plain-folder library
+    function seriesRow(lib, d, genre) {
+      const list = [...seriesOfLib(d).values()].filter((s) => (!genre || (s.meta.genres || []).includes(genre)) && matchQ(s.meta.title, s.meta.originalTitle, ...s.eps.map((e) => e.name)))
+        .sort((a, b) => Math.max(...b.eps.map((e) => e.added)) - Math.max(...a.eps.map((e) => e.added)));
+      return list.length ? `<h3 class="smkv-h">📺 Series</h3><div class="smkv-grid smkv-series">${list.map((s) => seriesCard(d, s)).join('')}</div>` : '';
+    }
+    const bindSeries = (lib) => view.querySelectorAll('.smkv-series .smkv-card').forEach((c) => c.onclick = (e) => { e.stopPropagation(); location.hash = `#/show/${encodeURIComponent(lib)}/${encodeURIComponent(c.dataset.k)}`; });
+
     async function moviesView(lib, genre) {
       const d = await libData(lib);
       const groups = new Map(); // movieId|path → {meta, items}
       for (const it of d.items) {
+        if (it.show) continue; // an episode: in the Series row
         const k = it.movieId ? 'id' + it.movieId : it.path;
         if (!groups.has(k)) groups.set(k, { key: it.movieId || it.path, meta: it.movieId ? d.movies[it.movieId] : null, items: [] });
         groups.get(k).items.push(it);
@@ -487,12 +535,14 @@
           rating: (a, b) => (b.meta?.rating || 0) - (a.meta?.rating || 0),
         }[sort];
         list.sort(cmp);
-        view.innerHTML = list.length ? `<div class="smkv-grid">${list.map((g) => {
+        const series = seriesRow(lib, d, genre);
+        view.innerHTML = series + (series && list.length ? '<h3 class="smkv-h">🎬 Movies</h3>' : '') + (list.length ? `<div class="smkv-grid smkv-movies">${list.map((g) => {
           const it = g.items.find((i) => i.pos) || g.items[0];
           return posterCard({ key: String(g.key), title: g.meta?.title || it.title || it.name, sub: [g.meta?.year || it.year, g.meta?.rating ? '★ ' + g.meta.rating.toFixed(1) : ''].filter(Boolean).join(' · '),
             img: g.meta?.poster, bar: progressBar(it), badge: g.items.length > 1 ? g.items.length + ' versions' : '' });
-        }).join('')}</div>` : '<div class="smkv-dim">No movies</div>';
-        bindCards(view, (k) => movieDetail(lib, k));
+        }).join('')}</div>` : series ? '' : '<div class="smkv-dim">No movies</div>');
+        view.querySelectorAll('.smkv-movies .smkv-card').forEach((c) => c.onclick = () => movieDetail(lib, c.dataset.k));
+        bindSeries(lib);
       }
       draw();
     }
@@ -625,7 +675,7 @@
               const box = root.querySelector('#eres');
               box.innerHTML = '<div class="smkv-dim">Searching…</div>';
               try {
-                const r = await api('meta/search', { lib: o.lib, q: root.querySelector('#eq').value, year: root.querySelector('#ey').value });
+                const r = await api('meta/search', { lib: o.lib, kind: o.search, q: root.querySelector('#eq').value, year: root.querySelector('#ey').value });
                 box.innerHTML = r.results.length ? r.results.map((x) => `<div class="smkv-eitem" data-id="${x.id}">
                   ${x.poster ? `<img src="${esc(x.poster)}">` : '<div class="smkv-enop"></div>'}
                   <div><b>${esc(x.title)}</b> ${x.year ? `(${x.year})` : ''}${x.originalTitle ? `<div class="smkv-dim2">${esc(x.originalTitle)}</div>` : ''}
@@ -695,8 +745,7 @@
       function draw() {
         const list = [...shows.values()].filter((s) => (!genre || (s.meta.genres || []).includes(genre)) && matchQ(s.meta.title, s.meta.originalTitle))
           .sort((a, b) => Math.max(...b.eps.map((e) => e.added)) - Math.max(...a.eps.map((e) => e.added)));
-        view.innerHTML = list.length ? `<div class="smkv-grid">${list.map((s) => posterCard({ key: s.key, title: s.meta.title, img: s.meta.poster,
-          sub: `${s.eps.length} episode${s.eps.length > 1 ? 's' : ''}${s.meta.year ? ' · ' + s.meta.year : ''}` })).join('')}</div>` : '<div class="smkv-dim">No shows</div>';
+        view.innerHTML = list.length ? `<div class="smkv-grid">${list.map((s) => seriesCard(d, s)).join('')}</div>` : '<div class="smkv-dim">No shows</div>';
         bindCards(view, (k) => (location.hash = `#/show/${encodeURIComponent(lib)}/${encodeURIComponent(k)}`));
       }
       draw();
@@ -715,18 +764,22 @@
     async function showView(lib, key) {
       const d = await libData(lib);
       const eps = d.items.filter((it) => it.show === key).sort(epSort);
-      const sh = d.shows[key] || { title: eps[0]?.title || key };
+      const sh = (d.shows || {})[key] || { title: eps[0]?.title || key };
       const seasons = [...new Set(eps.map((e) => e.season))].sort((a, b) => a - b);
       const next = nextUp(eps);
       let season = lsGet('season:' + lib + ':' + key, next ? next.season : seasons[0]);
       if (!seasons.includes(season)) season = seasons[0];
       setToolbar(`<a class="smkv-back" href="#/lib/${encodeURIComponent(lib)}">← ${esc((BR.libs.find((l) => l.id === lib) || {}).name || 'Back')}</a>`, draw);
+      const missing = missingCount(d, sh, eps);
       function draw() {
+        const rows = eps.filter((e) => e.season === season && matchQ(e.episodeTitle, e.name, e.episodeOverview)).map((e) => ({ n: e.episode || 0, e }))
+          .concat(searchQ ? [] : missingEps(d, sh, eps, season).map((m) => ({ n: m.episode, m })))
+          .sort((a, b) => a.n - b.n || (a.e ? 0 : 1));
         view.innerHTML = `
           <div class="smkv-showhead"${sh.backdrop ? ` style="background-image:linear-gradient(90deg,#0d0f13 30%,rgba(13,15,19,.6)),url('${esc(sh.backdrop)}')"` : ''}>
             ${sh.poster ? `<img class="smkv-dposter" src="${esc(sh.poster)}">` : ''}
             <div><h2>${esc(sh.title)}</h2>
-              <div class="smkv-facts">${[sh.year, sh.rating ? '★ ' + sh.rating.toFixed(1) : '', eps.length + ' episodes'].filter(Boolean).join(' · ')}</div>
+              <div class="smkv-facts">${[sh.year, sh.rating ? '★ ' + sh.rating.toFixed(1) : '', eps.length + (eps.length > 1 ? ' files' : ' file'), missing ? `<span class="smkv-miss">${missing} episode${missing > 1 ? 's' : ''} missing</span>` : ''].filter(Boolean).join(' · ')}</div>
               <div class="smkv-chips">${(sh.genres || []).map((g) => `<a href="#/lib/${encodeURIComponent(lib)}/${encodeURIComponent(g)}">${esc(g)}</a>`).join('')}</div>
               ${sh.overview ? `<p class="smkv-ov">${esc(sh.overview)}</p>` : ''}
               ${next ? `<button class="smkv-primary" id="smkv-next">▶ ${next.pos ? 'Resume' : 'Play'} S${next.season}E${next.episode}${next.episodeTitle ? ' · ' + esc(next.episodeTitle) : ''}</button>` : ''}
@@ -735,15 +788,20 @@
           </div>
           ${castRow(sh.cast)}
           <div class="smkv-tabs">${seasons.map((s) => `<button data-s="${s}" class="${s === season ? 'on' : ''}">${s ? 'Season ' + s : 'Other'}</button>`).join('')}</div>
-          <div class="smkv-eps">${eps.filter((e) => e.season === season && matchQ(e.episodeTitle, e.name, e.episodeOverview)).map((e) => `
+          <div class="smkv-eps">${rows.map(({ e, m }) => m ? `
+            <div class="smkv-ep smkv-skel${m.future ? ' future' : ''}" title="${m.future ? 'Not aired yet' : 'Not on the server yet'}">
+              <div class="smkv-still"><span>${m.future ? '🗓' : '＋'}</span></div>
+              <div style="flex:1"><b>E${m.episode}${m.meta && m.meta.title ? ' · ' + esc(m.meta.title) : ''}</b>
+                <div class="smkv-dim2">${m.future ? `Airs ${esc(m.meta.aired)}` : `Missing${m.meta && m.meta.aired ? ' · aired ' + esc(m.meta.aired) : ''}`}</div></div>
+            </div>` : `
             <div class="smkv-ep" data-p="${esc(e.path)}">
               <div class="smkv-still">${e.still ? `<img loading="lazy" src="${esc(e.still)}">` : '<span>▶</span>'}${progressBar(e)}</div>
-              <div style="flex:1"><b>${e.episode ? 'E' + e.episode + ' · ' : ''}${esc(e.episodeTitle || e.name)}</b>${canEdit() ? `<button class="smkv-epedit" data-p="${esc(e.path)}" title="Edit episode">✎</button>` : ''}${canDelete(lib) ? `<button class="smkv-epedit smkv-epdel" data-p="${esc(e.path)}" title="Delete this episode file">🗑</button>` : ''}
+              <div style="flex:1"><b>${e.episode ? epLabel(e) + ' · ' : ''}${esc(e.episodeTitle || e.name)}</b>${canEdit() ? `<button class="smkv-epedit" data-p="${esc(e.path)}" title="Edit episode">✎</button>` : ''}${canDelete(lib) ? `<button class="smkv-epedit smkv-epdel" data-p="${esc(e.path)}" title="Delete this episode file">🗑</button>` : ''}
                 <div class="smkv-dim2">${[e.duration ? fmtTime(e.duration) : '', e.pos ? 'watched to ' + fmtTime(e.pos) : ''].filter(Boolean).join(' · ')}</div>
                 ${e.episodeOverview ? `<p>${esc(e.episodeOverview)}</p>` : ''}</div>
             </div>`).join('')}</div>`;
         view.querySelectorAll('.smkv-tabs button').forEach((b) => b.onclick = () => { season = +b.dataset.s; lsSet('season:' + lib + ':' + key, season); draw(); });
-        view.querySelectorAll('.smkv-ep').forEach((r) => r.onclick = () => playVideo(r.dataset.p));
+        view.querySelectorAll('.smkv-ep[data-p]').forEach((r) => r.onclick = () => playVideo(r.dataset.p));
         const n = view.querySelector('#smkv-next');
         if (n) n.onclick = () => playVideo(next.path);
         const fix = view.querySelector('.smkv-fix');
@@ -1110,6 +1168,31 @@
     }
 
     // ------------------------------------------------------------ downloads
+    // "Show.Name.S01E07-S01E08.1080p…", "Show Name Season 2", "Show.Name.2x05" → the series it belongs to
+    function seriesOf(name) {
+      const m = /^(.+?)[\s._\-[(]+(?:S\d{1,2}(?:[\s._-]?E\d{1,3})?|Season[\s._-]?\d{1,2}|\d{1,2}x\d{2,3})(?![\p{L}\p{N}])/iu.exec(name || '');
+      if (!m) return null;
+      const title = m[1].replace(/[._]+/g, ' ').replace(/\s*[[(]?(19|20)\d{2}[\])]?\s*$/, '').replace(/[\s-]+$/, '').trim();
+      const key = title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+      return key ? { key, title } : null;
+    }
+    // groups of 2+ jobs of the same series (episodes sorted), plus byJob: job id → group key
+    function seriesGroups(jobs) {
+      const all = new Map();
+      for (const j of jobs) {
+        const s = seriesOf(j.name);
+        if (!s) continue;
+        if (!all.has(s.key)) all.set(s.key, { title: s.title, jobs: [] });
+        all.get(s.key).jobs.push(j);
+      }
+      const out = new Map(); out.byJob = new Map();
+      for (const [k, g] of all) {
+        if (g.jobs.length < 2) continue;
+        g.jobs.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' }));
+        out.set(k, g); g.jobs.forEach((j) => out.byJob.set(j.id, k));
+      }
+      return out;
+    }
     async function downloadsView() {
       setToolbar('', null);
       toolbar.querySelector('#smkv-q').style.display = 'none';
@@ -1120,7 +1203,7 @@
         <form id="smkv-dlf" class="smkv-dlform">
           <input name="source" placeholder="https://… link, YouTube link / playlist, or magnet:?xt=…" autocomplete="off">
           <label class="smkv-check" id="smkv-ytpl" hidden title="This YouTube link is in a playlist: download every video of it"><input type="checkbox" name="playlist"> Whole playlist</label>
-          <label class="smkv-tfile" title="Upload a .torrent file"><input type="file" name="file" accept=".torrent,application/x-bittorrent"><span>📎 .torrent</span></label>
+          <label class="smkv-tfile" title="Upload .torrent files (you can pick several)"><input type="file" name="file" multiple accept=".torrent,application/x-bittorrent"><span>📎 .torrent</span></label>
           <select name="lib">${libs.map((l) => `<option value="${esc(l.id)}">${typeIcon[l.type] || '📁'} ${esc(l.name)}${esc(ownerTag(l))}</option>`).join('')}</select>
           <input name="subdir" list="smkv-dldirs" placeholder="folder (optional)" autocomplete="off"><datalist id="smkv-dldirs"></datalist>
           <button class="smkv-primary">⬇ Download</button>
@@ -1144,33 +1227,47 @@
         let u = null; try { u = new URL(f.source.value.trim()); } catch { /* not a URL */ }
         $('#smkv-ytpl').hidden = !(u && /(^|\.)(youtube\.com|youtu\.be)$/.test(u.hostname) && u.searchParams.get('list') && u.searchParams.get('v'));
       };
-      f.file.onchange = () => { f.querySelector('.smkv-tfile span').textContent = f.file.files[0] ? '📎 ' + f.file.files[0].name : '📎 .torrent'; };
-      const send = (force) => {
-        if (f.file.files[0]) {
-          const fd = new FormData(); fd.append('file', f.file.files[0]); fd.append('lib', f.lib.value); fd.append('subdir', f.subdir.value);
-          if (force) fd.append('force', '1');
-          return fetch(new URL('api/downloads/torrent', BASE), { method: 'POST', body: fd, credentials: 'same-origin' });
-        }
-        return fetch(new URL('api/downloads', BASE), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ source: f.source.value.trim(), lib: f.lib.value, subdir: f.subdir.value, force, playlist: !$('#smkv-ytpl').hidden && f.playlist.checked }) });
+      f.file.onchange = () => {
+        const n = f.file.files.length;
+        f.querySelector('.smkv-tfile span').textContent = n > 1 ? `📎 ${n} files` : n ? '📎 ' + f.file.files[0].name : '📎 .torrent';
+        f.querySelector('.smkv-tfile').title = n ? [...f.file.files].map((x) => x.name).join('\n') : 'Upload .torrent files (you can pick several)';
       };
+      const sendFile = (file) => (force) => {
+        const fd = new FormData(); fd.append('file', file); fd.append('lib', f.lib.value); fd.append('subdir', f.subdir.value);
+        if (force) fd.append('force', '1');
+        return fetch(new URL('api/downloads/torrent', BASE), { method: 'POST', body: fd, credentials: 'same-origin' });
+      };
+      const sendLink = (force) => fetch(new URL('api/downloads', BASE), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: f.source.value.trim(), lib: f.lib.value, subdir: f.subdir.value, force, playlist: !$('#smkv-ytpl').hidden && f.playlist.checked }) });
+      // one download; a duplicate asks first (409 = may download anyway, 422 = can't, e.g. already in rtorrent). false = skipped
+      async function addOne(send, label) {
+        let r = await send(false);
+        if (r.status === 409 || r.status === 422) {
+          const j = await r.json().catch(() => ({}));
+          const items = ((j.duplicate && j.duplicate.items) || []).slice(0, 6).map((i) => `• ${i.libName} · ${i.name}`).join('\n');
+          if (!j.canForce) throw new Error(j.error || 'Already downloaded');
+          if (!confirm(`${label ? label + '\n\n' : ''}${j.error}${items ? '\n\n' + items : ''}\n\nDownload anyway?`)) return false;
+          r = await send(true);
+        }
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+        return true;
+      }
       f.onsubmit = async (e) => {
         e.preventDefault();
-        if (!f.file.files[0] && !f.source.value.trim()) return toast('Paste a link or choose a .torrent file');
+        const files = [...f.file.files], link = f.source.value.trim();
+        if (!files.length && !link) return toast('Paste a link or choose .torrent files');
+        const btn = f.querySelector('button.smkv-primary'); btn.disabled = true;
+        let added = 0; const failed = [];
         try {
-          let r = await send(false);
-          if (r.status === 409 || r.status === 422) {
-            // looks like a duplicate: 409 = may download anyway, 422 = can't (already in rtorrent)
-            const j = await r.json().catch(() => ({}));
-            const items = ((j.duplicate && j.duplicate.items) || []).slice(0, 6).map((i) => `• ${i.libName} · ${i.name}`).join('\n');
-            if (!j.canForce) { toast(j.error || 'Already downloaded', 6000); return; }
-            if (!confirm(`${j.error}${items ? '\n\n' + items : ''}\n\nDownload anyway?`)) return;
-            r = await send(true);
+          for (const [i, file] of files.entries()) {
+            if (files.length > 1) btn.textContent = `⬇ ${i + 1} / ${files.length}…`;
+            try { if (await addOne(sendFile(file), files.length > 1 ? file.name : '')) added++; } catch (x) { failed.push(`${file.name}: ${x.message}`); }
           }
-          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
-          f.source.value = ''; f.file.value = ''; f.file.onchange(); f.source.oninput();
-          toast('Download added'); refresh();
-        } catch (x) { toast(x.message, 5000); }
+          if (link) { try { if (await addOne(sendLink, '')) added++; } catch (x) { failed.push(x.message); } }
+        } finally { btn.disabled = false; btn.textContent = '⬇ Download'; }
+        if (added) { f.source.value = ''; f.file.value = ''; f.file.onchange(); f.source.oninput(); refresh(); }
+        if (failed.length) toast(`${added ? `${added} added · ` : ''}${failed.length} failed — ${failed.slice(0, 3).join(' · ')}${failed.length > 3 ? ' …' : ''}`, 8000);
+        else if (added) toast(added > 1 ? `${added} downloads added` : 'Download added');
       };
       async function drawMine() {
         let m;
@@ -1277,11 +1374,32 @@
         const cur = j.state === 'downloading' && j.current && j.current !== j.name ? ` · ${esc(j.current)}` : '';
         return `${j.playlist ? ' · ▶ playlist' : ''}${n}${cur}`;
       }
+      const dlOpen = new Set(lsGet('dlOpen', []));
+      const mineJ = (j) => BR.me.admin || j.user === BR.me.user;
+      const isTor = (j) => j.kind === 'torrent' && j.hash && j.tstate && j.tstate !== 'removed';
+      const BULK = { pause: ['downloading', 'seeding'], resume: ['paused'], stop: ['seeding'], start: ['stopped', 'finished'] };
+      let groups = new Map();
+      function groupHtml(key, g, one) {
+        const js = g.jobs, size = js.reduce((a, j) => a + (j.size || 0), 0), got = js.reduce((a, j) => a + Math.min(j.done || 0, j.size || 0), 0);
+        const rate = js.reduce((a, j) => a + (j.rate || 0), 0), up = js.reduce((a, j) => a + (j.up || 0), 0);
+        const counts = {};
+        js.forEach((j) => { const st = j.kind === 'torrent' && j.tstate ? tName[j.tstate] || j.tstate : state[j.state] || j.state; counts[st] = (counts[st] || 0) + 1; });
+        const tors = js.filter((j) => mineJ(j) && isTor(j)), has = (a) => tors.some((j) => BULK[a].includes(j.tstate));
+        const lbl = { pause: '⏸ Pause all', resume: '▶ Resume all', stop: '⏹ Stop seeding all', start: '▶ Start all' };
+        const bulk = Object.keys(BULK).filter(has).map((a) => `<button data-g="${a}">${lbl[a]}</button>`).join('');
+        const failed = js.some((j) => j.state === 'failed');
+        const allDone = js.every((j) => j.state === 'done');
+        return `<details class="smkv-dlg${failed ? ' failed' : ''}${allDone ? ' alldone' : ''}" data-k="${esc(key)}" ${dlOpen.has(key) ? 'open' : ''}><summary>
+          <div class="smkv-dlgh"><b>📺 ${esc(g.title)}</b><span class="smkv-dim2">${js.length} downloads${size ? ` · ${fmtSize(got)} / ${fmtSize(size)}` : ''} · ${Object.entries(counts).map(([k, n]) => `${n} ${esc(k.toLowerCase())}`).join(' · ')}${rate > 0 ? ` · ↓ ${fmtSize(rate)}/s` : ''}${up > 0 ? ` · ↑ ${fmtSize(up)}/s` : ''}</span></div>
+          ${bulk ? `<span class="smkv-dlgb">${bulk}</span>` : ''}
+          <div class="smkv-pbar big"><i style="width:${(size ? got / size * 100 : 0).toFixed(1)}%"></i></div></summary>${js.map(one).join('')}</details>`;
+      }
       function draw() {
         const t = d.torrent || {};
         $('#smkv-dlrt').innerHTML = t.ok ? `Torrents go to rtorrent ${esc(t.version || '')}` : `⚠ Torrents unavailable: ${esc(t.error || '')} — http(s) links still work`;
         const names = Object.fromEntries(d.libraries.map((l) => [l.id, l.name]));
-        $('#smkv-dllist').innerHTML = d.jobs.length ? d.jobs.map((j) => {
+        groups = seriesGroups(d.jobs);
+        const one = (j) => {
           const yt = j.kind === 'youtube';
           const itemFrac = j.size > 0 ? Math.min(1, j.done / j.size) : 0;
           const pct = yt ? (j.state === 'done' ? 100 : j.items > 0 ? Math.min(100, ((j.itemIndex || 1) - 1 + itemFrac) / j.items * 100) : itemFrac * 100)
@@ -1294,7 +1412,29 @@
             <div class="smkv-pbar big"><i style="width:${pct.toFixed(1)}%"></i></div>
             <div class="smkv-dlf2"><span class="smkv-dim2">${st}${yt ? ytLine(j) : j.size > 0 ? ` · ${fmtSize(j.done)} / ${fmtSize(j.size)}` : ''}${j.rate > 0 ? ` · ↓ ${fmtSize(j.rate)}/s` : ''}${j.up > 0 ? ` · ↑ ${fmtSize(j.up)}/s` : ''}${j.kind === 'torrent' && j.tstate ? `<br>ratio <b>${(j.ratio || 0).toFixed(2)}</b> · ↑ ${fmtSize(j.uploaded || 0)}${tor ? ` · ${j.peers || 0} peers (${j.seeds || 0} seeds)` : ''} · ${seedTxt(j)}${j.autoStopped ? ` · <span style="color:#f5a623">auto-stopped: ${esc(j.autoStopped)}</span>` : ''}` : ''}${j.error ? ` · <span class="smkv-err">${esc(j.error)}</span>` : ''}${j.dupes && j.dupes.length ? `<br><span style="color:#f5a623" title="${esc(j.dupes.join('\n'))}">⚠ Also in the library: ${esc(j.dupes.slice(0, 2).join(' · '))}${j.dupes.length > 2 ? ` +${j.dupes.length - 2}` : ''}</span>` : ''}</span>
               ${mine ? `${(j.kind === 'http' || yt) && (j.state === 'failed' || j.state === 'canceled') ? '<button data-a="retry">Retry</button>' : ''}${yt && j.playlist && j.state === 'done' ? '<button data-a="retry" title="Download what was added to the playlist since">🔄 Update</button>' : ''}${tor ? torBtns(j.tstate) + '<button data-a="more" title="Recheck, seeding limit, trackers & files">⋯</button>' : ''}<button data-a="rm">${j.state === 'queued' || j.state === 'downloading' ? 'Cancel' : 'Remove'}</button>` : ''}</div></div>`;
+        };
+        // episodes / seasons of the same series sit together under one fold-out
+        const shown = new Set();
+        $('#smkv-dllist').innerHTML = d.jobs.length ? d.jobs.map((j) => {
+          const k = groups.byJob.get(j.id);
+          if (!k) return one(j);
+          if (shown.has(k)) return '';
+          shown.add(k); return groupHtml(k, groups.get(k), one);
         }).join('') : '<div class="smkv-dim">No downloads yet.</div>';
+        $('#smkv-dllist').querySelectorAll('details.smkv-dlg').forEach((el) => el.ontoggle = () => {
+          if (el.open) dlOpen.add(el.dataset.k); else dlOpen.delete(el.dataset.k);
+          lsSet('dlOpen', [...dlOpen].slice(-100));
+        });
+        $('#smkv-dllist').querySelectorAll('button[data-g]').forEach((b) => b.onclick = async (e) => {
+          e.preventDefault(); e.stopPropagation();
+          const g = groups.get(b.closest('.smkv-dlg').dataset.k), a = b.dataset.g;
+          const ts = g.jobs.filter((j) => mineJ(j) && isTor(j) && BULK[a].includes(j.tstate));
+          b.disabled = true;
+          let bad = 0;
+          for (const j of ts) { try { await apiPost(`downloads/${encodeURIComponent(j.id)}/torrent`, { action: a }); } catch (_) { bad++; } }
+          toast(bad ? `${ts.length - bad} done, ${bad} failed` : `${ts.length} torrents: ${b.textContent.replace(/^\S+\s/, '').toLowerCase()}`);
+          refresh();
+        });
         $('#smkv-dllist').querySelectorAll('button[data-a]').forEach((b) => b.onclick = async () => {
           const j = d.jobs.find((x) => x.id === b.closest('.smkv-dl').dataset.id);
           try {
@@ -1331,15 +1471,22 @@
       const d = await libData(lib);
       setToolbar('', draw);
       function draw() {
-        const files = d.items.filter((f) => matchQ(f.path, f.name)).sort((a, b) => (a.dir || '').localeCompare(b.dir || '') || a.name.localeCompare(b.name));
-        let html = '', lastDir = null;
+        const files = d.items.filter((f) => !f.show && matchQ(f.path, f.name)).sort((a, b) => (a.dir || '').localeCompare(b.dir || '') || a.name.localeCompare(b.name));
+        const series = seriesRow(lib, d, '');
+        let html = series ? series + (files.length ? '<h3 class="smkv-h">📁 Files</h3>' : '') : '', lastDir = null;
         for (const f of files) {
           if (f.dir !== lastDir) { lastDir = f.dir; html += `<div class="smkv-dir">${esc(f.dir || '/')}</div>`; }
-          html += `<div class="smkv-item" data-path="${esc(f.path)}"><div class="smkv-name">${esc(f.name)}${canDelete(lib) ? '<button class="smkv-epedit smkv-fdel" title="Delete this file">🗑</button>' : ''}</div>
+          html += `<div class="smkv-item" data-path="${esc(f.path)}"><div class="smkv-name">${esc(f.name)}${canEdit() ? '<button class="smkv-epedit smkv-fser" title="Put this file in a series">📺</button>' : ''}${canDelete(lib) ? '<button class="smkv-epedit smkv-fdel" title="Delete this file">🗑</button>' : ''}</div>
             <div class="smkv-sub">${fmtSize(f.size)}${f.pos ? ` · <span class="smkv-resume">⏵ ${fmtTime(f.pos)}</span>` : ''}</div></div>`;
         }
         view.innerHTML = html || '<div class="smkv-dim">No files</div>';
+        bindSeries(lib);
         view.querySelectorAll('.smkv-item').forEach((el) => el.onclick = () => playVideo(el.dataset.path));
+        view.querySelectorAll('.smkv-fser').forEach((b) => b.onclick = (ev) => {
+          ev.stopPropagation();
+          const f = d.items.find((x) => x.path === b.closest('.smkv-item').dataset.path);
+          editDialog({ lib, title: f.name, keys: [f.path], fields: { showTitle: '', season: 1, episode: '', episodeTitle: '' } });
+        });
         view.querySelectorAll('.smkv-fdel').forEach((b) => b.onclick = (ev) => { ev.stopPropagation(); const p = b.closest('.smkv-item').dataset.path; deleteFiles([p], p.split('/').pop()); });
       }
       draw();
@@ -2719,6 +2866,24 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-tfile{position:relative;overflow:hidden;background:#1c212a;border:1px solid #2a313c;border-radius:6px;padding:6px 10px;cursor:pointer;white-space:nowrap;max-width:200px;text-overflow:ellipsis}
 .smkv-tfile input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .smkv-dl{background:#141820;border:1px solid #20262f;border-radius:10px;padding:10px 12px;margin:8px 0}
+.smkv-dlg{background:#10141a;border:1px solid #232a34;border-radius:12px;padding:0 12px;margin:8px 0}
+.smkv-dlg[open]{padding-bottom:4px}
+.smkv-dlg.failed{border-color:#5a2a2a}
+.smkv-dlg>summary{list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:11px 0;cursor:pointer;user-select:none}
+.smkv-dlg>summary::-webkit-details-marker{display:none}
+.smkv-dlg>summary::before{content:'▸';color:#6f7988;font-size:12px;width:10px;transition:transform .15s}
+.smkv-dlg[open]>summary::before{transform:rotate(90deg)}
+.smkv-dlgh{flex:1;min-width:220px;display:flex;flex-direction:column;gap:2px;word-break:break-word}
+.smkv-dlgb{display:flex;gap:6px;flex-wrap:wrap}
+.smkv-dlg>summary .smkv-pbar{flex-basis:100%;margin:0}
+.smkv-dlg .smkv-dl{margin:6px 0 6px 18px}
+.smkv-dlg.alldone>summary .smkv-pbar i{background:#3ecf8e}
+.smkv-ep.smkv-skel{cursor:default;opacity:.55;outline:1px dashed #2a313c;outline-offset:-1px}
+.smkv-ep.smkv-skel:hover{background:transparent}
+.smkv-ep.smkv-skel .smkv-still{background:repeating-linear-gradient(135deg,#171b22 0 10px,#1b2028 10px 20px)}
+.smkv-ep.smkv-skel .smkv-still span{color:#5d6675;font-size:22px}
+.smkv-ep.smkv-skel.future{opacity:.4}
+.smkv-miss{color:#f5a623}
 .smkv-dlh{display:flex;flex-direction:column;gap:2px;word-break:break-all}
 .smkv-pbar.big{position:relative;height:6px;border-radius:3px;margin:8px 0 6px;background:#252b35}
 .smkv-pbar.big i{display:block;height:100%;border-radius:3px;background:#4a9eff}

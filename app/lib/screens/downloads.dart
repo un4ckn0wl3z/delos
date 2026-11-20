@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../series.dart';
 import '../util.dart';
 import 'home_screen.dart';
 
@@ -134,40 +135,147 @@ class _DownloadsViewState extends State<DownloadsView> {
     }
   }
 
-  /// Pick a .torrent file from the device and upload it into the chosen library.
+  /// Pick .torrent files (one or several) from the device and upload them into the chosen library.
   Future<void> _pickTorrent() async {
     if (lib == null) return;
+    final messenger = ScaffoldMessenger.of(context);
     FilePickerResult? r;
     try {
       // custom extensions aren't reliable for .torrent on Android, so pick any file and check
-      r = await FilePicker.platform.pickFiles(type: FileType.any, withData: true);
+      r = await FilePicker.platform.pickFiles(type: FileType.any, withData: true, allowMultiple: true);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not open files: $e')));
+      messenger.showSnackBar(SnackBar(content: Text('Could not open files: $e')));
       return;
     }
-    final f = r?.files.firstOrNull;
-    if (f == null) return;
-    final bytes = f.bytes;
-    if (bytes == null || bytes.isEmpty || !f.name.toLowerCase().endsWith('.torrent') && bytes.first != 0x64 /* 'd' */) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Choose a .torrent file')));
-      return;
-    }
-    if (bytes.length > 10 * 1024 * 1024) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('That file is too big for a .torrent (max 10 MB)')));
-      return;
-    }
+    final files = r?.files ?? const <PlatformFile>[];
+    if (files.isEmpty) return;
+    var added = 0;
+    final failed = <String>[];
     setState(() => busy = true);
     try {
-      await _withDupCheck((force) => widget.app.api.addTorrentFile(f.name, bytes, lib!, _sub.text.trim(), force: force));
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added ${f.name}')));
-      await _load();
-    } on _Skipped {
-      // not downloading the duplicate
-    } on ApiException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      for (final f in files) {
+        final bytes = f.bytes;
+        if (bytes == null || bytes.isEmpty || !f.name.toLowerCase().endsWith('.torrent') && bytes.first != 0x64 /* 'd' */) {
+          failed.add('${f.name}: not a .torrent file');
+          continue;
+        }
+        if (bytes.length > 10 * 1024 * 1024) {
+          failed.add('${f.name}: too big for a .torrent (max 10 MB)');
+          continue;
+        }
+        try {
+          await _withDupCheck((force) => widget.app.api.addTorrentFile(f.name, bytes, lib!, _sub.text.trim(), force: force));
+          added++;
+        } on _Skipped {
+          // not downloading this duplicate
+        } on ApiException catch (e) {
+          failed.add(files.length > 1 ? '${f.name}: ${e.message}' : e.message);
+        }
+      }
+      if (failed.isNotEmpty) {
+        messenger.showSnackBar(SnackBar(
+            duration: const Duration(seconds: 8),
+            content: Text('${added > 0 ? '$added added · ' : ''}${failed.length} failed — ${failed.take(3).join(' · ')}${failed.length > 3 ? ' …' : ''}')));
+      } else if (added > 0) {
+        messenger.showSnackBar(SnackBar(content: Text(added > 1 ? '$added torrents added' : 'Added ${files.first.name}')));
+      }
+      if (added > 0) await _load();
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  // ---- episodes / seasons of the same series sit together under one fold-out
+  final _open = <String>{};
+  static const _bulk = {'pause': ['downloading', 'seeding'], 'resume': ['paused'], 'stop': ['seeding'], 'start': ['stopped', 'finished']};
+  static const _bulkLabel = {'pause': 'Pause all', 'resume': 'Resume all', 'stop': 'Stop seeding all', 'start': 'Start all'};
+  static const _bulkIcon = {'pause': Icons.pause, 'resume': Icons.play_arrow, 'stop': Icons.stop, 'start': Icons.play_arrow};
+
+  bool _isTor(Map j) => j['kind'] == 'torrent' && '${j['hash'] ?? ''}'.isNotEmpty && '${j['tstate'] ?? ''}'.isNotEmpty && j['tstate'] != 'removed';
+
+  Future<void> _bulkAction(List<Map> js, String a) async {
+    final me = widget.app;
+    final targets = js.where((j) => (me.admin || j['user'] == me.api.settings.username) && _isTor(j) && _bulk[a]!.contains(j['tstate'])).toList();
+    final messenger = ScaffoldMessenger.of(context);
+    var bad = 0;
+    for (final j in targets) {
+      try {
+        await me.api.torrentAction('${j['id']}', a);
+      } catch (_) {
+        bad++;
+      }
+    }
+    messenger.showSnackBar(SnackBar(content: Text(bad > 0 ? '${targets.length - bad} done, $bad failed' : '${targets.length} torrents: ${_bulkLabel[a]!.toLowerCase().replaceAll(' all', '')}')));
+    _load();
+  }
+
+  Widget _group(String key, String title, List<Map> js, Map<String, String> names, AppCtx me) {
+    num sum(String f) => js.fold<num>(0, (a, j) => a + (j[f] as num? ?? 0));
+    final size = js.fold<num>(0, (a, j) => a + ((j['size'] as num? ?? 0) > 0 ? j['size'] as num : 0));
+    final got = js.fold<num>(0, (a, j) {
+      final sz = (j['size'] as num? ?? 0), dn = (j['done'] as num? ?? 0);
+      return a + (sz > 0 ? (dn < sz ? dn : sz) : 0);
+    });
+    final counts = <String, int>{};
+    for (final j in js) {
+      final ts = '${j['tstate'] ?? ''}';
+      final l = j['kind'] == 'torrent' && ts.isNotEmpty
+          ? _tName[ts] ?? ts
+          : {'queued': 'Queued', 'downloading': 'Downloading', 'done': 'Done', 'failed': 'Failed', 'canceled': 'Canceled'}['${j['state']}'] ?? '${j['state']}';
+      counts[l] = (counts[l] ?? 0) + 1;
+    }
+    final mineTors = js.where((j) => (me.admin || j['user'] == me.api.settings.username) && _isTor(j)).toList();
+    final actions = _bulk.keys.where((a) => mineTors.any((j) => _bulk[a]!.contains(j['tstate']))).toList();
+    final failed = js.any((j) => j['state'] == 'failed'), allDone = js.every((j) => j['state'] == 'done');
+    final rate = sum('rate'), up = sum('up');
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        key: PageStorageKey('dlg:$key'),
+        initiallyExpanded: _open.contains(key),
+        onExpansionChanged: (v) => v ? _open.add(key) : _open.remove(key),
+        shape: const Border(),
+        collapsedShape: const Border(),
+        tilePadding: const EdgeInsets.fromLTRB(14, 4, 8, 4),
+        childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 4),
+        leading: const Icon(Icons.live_tv_outlined, color: Color(0xFF8B95A5)),
+        title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(
+            [
+              '${js.length} downloads',
+              if (size > 0) '${fmtSize(got.round())} / ${fmtSize(size.round())}',
+              for (final e in counts.entries) '${e.value} ${e.key.toLowerCase()}',
+              if (rate > 0) '↓ ${fmtSize(rate.round())}/s',
+              if (up > 0) '↑ ${fmtSize(up.round())}/s',
+            ].join(' · '),
+            style: const TextStyle(fontSize: 12, color: Color(0xFF9AA3B2)),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: LinearProgressIndicator(
+                value: size > 0 ? (got / size).clamp(0.0, 1.0).toDouble() : 0.0,
+                minHeight: 4,
+                color: failed ? Colors.redAccent : allDone ? const Color(0xFF3ECF8E) : Theme.of(context).colorScheme.primary),
+          ),
+          if (actions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Wrap(spacing: 6, runSpacing: 4, children: [
+                for (final a in actions)
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 10)),
+                    icon: Icon(_bulkIcon[a], size: 16),
+                    label: Text(_bulkLabel[a]!, style: const TextStyle(fontSize: 12.5)),
+                    onPressed: () => _bulkAction(js, a),
+                  ),
+              ]),
+            ),
+        ]),
+        children: [for (final j in js) _job(j, names, me)],
+      ),
+    );
   }
 
   Future<void> _remove(Map j) async {
@@ -285,7 +393,8 @@ class _DownloadsViewState extends State<DownloadsView> {
         ),
         const Divider(height: 28),
         if (_jobs.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Center(child: Text('No downloads yet'))),
-        for (final j in _jobs) _job(j, names, me),
+        for (final g in groupBySeries<Map>(_jobs, (j) => '${j['name'] ?? ''}'))
+          g.key == null ? _job(g.members.first, names, me) : _group(g.key!, g.title, g.members, names, me),
         const Divider(height: 28),
         ..._myLibraries(),
       ]),

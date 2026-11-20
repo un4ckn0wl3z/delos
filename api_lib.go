@@ -94,8 +94,9 @@ func (s *Server) handleLib(w http.ResponseWriter, r *http.Request) {
 	if lib.Type == LibMovies {
 		resp["movies"] = snap.Movies
 	}
-	if lib.Type == LibTV {
+	if lib.Type == LibTV || (lib.Type != LibMusic && len(snap.Shows) > 0) {
 		resp["shows"] = snap.Shows
+		resp["seasons"] = snap.Seasons
 	}
 	if s.canEdit(r) {
 		resp["edits"] = snap.Edits // so editors can change one field without dropping others
@@ -287,12 +288,11 @@ func (s *Server) handleAdminMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := b.Path
-	if lib.Type == LibTV {
-		if b.Show == "" {
-			httpErr(w, 400, "show is required for tv libraries")
-			return
-		}
+	if b.Show != "" && lib.Type != LibMusic { // a series, in any video library
 		key = "show:" + b.Show
+	} else if lib.Type == LibTV {
+		httpErr(w, 400, "show is required for tv libraries")
+		return
 	} else if lib.Type != LibMovies || b.Path == "" {
 		httpErr(w, 400, "matching is only for movie and tv libraries")
 		return

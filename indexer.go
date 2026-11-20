@@ -30,6 +30,7 @@ type Item struct {
 	Show            string `json:"show,omitempty"` // key into Shows
 	Season          int    `json:"season,omitempty"`
 	Episode         int    `json:"episode,omitempty"`
+	EpisodeEnd      int    `json:"episodeEnd,omitempty"` // "S01E07-E08" in one file
 	EpisodeTitle    string `json:"episodeTitle,omitempty"`
 	EpisodeOverview string `json:"episodeOverview,omitempty"`
 	Still           string `json:"still,omitempty"`
@@ -255,6 +256,7 @@ type LibSnapshot struct {
 	Items   []Item
 	Movies  map[int]*MovieMeta
 	Shows   map[string]*ShowMeta
+	Seasons map[string]map[int]EpisodeMeta // "<tmdb id>/<season>" → episodes (to show the missing ones)
 	Edits   map[string]map[string]string
 	Scanned int64
 }
@@ -279,9 +281,13 @@ func (ix *Indexer) Snapshot(lib string) LibSnapshot {
 		c := *v
 		snap.Movies[k] = &c
 	}
+	snap.Seasons = map[string]map[int]EpisodeMeta{}
 	for k, v := range li.Shows {
 		c := *v
 		snap.Shows[k] = &c
+	}
+	for k, v := range li.Seasons {
+		snap.Seasons[k] = v // never modified in place: a scan replaces the whole map
 	}
 	return snap
 }
@@ -406,6 +412,9 @@ func (ix *Indexer) scan(lib Library, refresh bool) error {
 		prev, had := old[rel]
 		if had && prev.Size == info.Size() && prev.MTime == info.ModTime().Unix() && prev.Name != "" {
 			c := prev
+			if lib.Type != LibMusic { // names are cheap to re-read (and the rules improve); music keeps its tags
+				parseItem(lib.Type, &c)
+			}
 			found[rel] = &c
 			return nil
 		}
@@ -444,8 +453,23 @@ func (ix *Indexer) scan(lib Library, refresh bool) error {
 	ix.mu.Unlock()
 
 	switch lib.Type {
-	case LibMovies:
-		ix.scrapeMovies(lib, li)
+	case LibMovies, LibVideos:
+		if lib.Type == LibMovies {
+			ix.scrapeMovies(lib, li)
+		}
+		// episodes in a movie / plain-folder library still group into series
+		ix.mu.RLock()
+		hasEp := false
+		for _, it := range li.Items {
+			if it.Show != "" {
+				hasEp = true
+				break
+			}
+		}
+		ix.mu.RUnlock()
+		if hasEp || len(li.Shows) > 0 {
+			ix.scrapeShows(lib, li)
+		}
 	case LibTV:
 		ix.scrapeShows(lib, li)
 	case LibMusic:
@@ -469,12 +493,22 @@ func parseItem(typ string, it *Item) {
 		dirs = strings.Split(it.Dir, "/")
 		parent = dirs[len(dirs)-1]
 	}
+	it.Show, it.Season, it.Episode, it.EpisodeEnd = "", 0, 0, 0
 	switch typ {
-	case LibMovies:
-		it.Title, it.Year = parseMovie(it.Name, parent)
+	case LibMovies, LibVideos:
+		// "Show.S01E02…" is an episode wherever it is; anything else stays a movie / a plain file
+		if ei, ok := parseEpisode(it.Name, dirs); ok && ei.Strong {
+			it.Title, it.Year, it.Season, it.Episode, it.EpisodeEnd = ei.Show, ei.Year, ei.Season, ei.Episode, ei.EpisodeEnd
+			it.Show = showKey(it.Title, it.Year)
+			it.MovieID = 0
+		} else if typ == LibMovies {
+			it.Title, it.Year = parseMovie(it.Name, parent)
+		} else {
+			it.Title, it.Year = "", 0
+		}
 	case LibTV:
 		if ei, ok := parseEpisode(it.Name, dirs); ok {
-			it.Title, it.Year, it.Season, it.Episode = ei.Show, ei.Year, ei.Season, ei.Episode
+			it.Title, it.Year, it.Season, it.Episode, it.EpisodeEnd = ei.Show, ei.Year, ei.Season, ei.Episode, ei.EpisodeEnd
 		} else {
 			// not recognisable: group by the top folder, no season/episode
 			top := cleanName(it.Name)
@@ -525,6 +559,9 @@ func (ix *Indexer) scrapeMovies(lib Library, li *LibIndex) {
 	ix.mu.RLock()
 	queries := map[string]q{}
 	for _, it := range li.Items {
+		if it.Show != "" {
+			continue
+		}
 		k := strings.ToLower(it.Title) + "|" + strconv.Itoa(it.Year)
 		if _, done := li.MovieMatch[k]; !done && li.Manual[it.Path] == 0 && it.Title != "" {
 			queries[k] = q{it.Title, it.Year}
@@ -558,6 +595,10 @@ func (ix *Indexer) scrapeMovies(lib Library, li *LibIndex) {
 	need := map[int]bool{}
 	ix.mu.Lock()
 	for _, it := range li.Items {
+		if it.Show != "" {
+			it.MovieID = 0
+			continue
+		}
 		id := li.Manual[it.Path]
 		if id == 0 {
 			id = li.MovieMatch[strings.ToLower(it.Title)+"|"+strconv.Itoa(it.Year)]
@@ -600,6 +641,9 @@ func (ix *Indexer) scrapeShows(lib Library, li *LibIndex) {
 	ix.mu.Lock()
 	shows := map[string]q{}
 	for _, it := range li.Items {
+		if it.Show == "" {
+			continue
+		}
 		if _, ok := shows[it.Show]; !ok {
 			shows[it.Show] = q{it.Title, it.Year}
 		}
