@@ -47,6 +47,8 @@ for i in 1 2 3 4 5 6; do   # the notification is re-posted when the track change
   grep -E "NotificationRecord.*pkg=$PKG" "$OUT/notification.txt" | grep -q "category=transport" && { notif=1; break; }
   sleep 2
 done
-[ $notif = 1 ] || { echo "::warning::no media notification"; ok=0; }
+[ $notif = 1 ] || { echo "::warning::no media notification"; ok=0;
+  echo "---- system log about the app's notification / foreground service"
+  adb logcat -d | grep -iE "shedding|NotificationService|notification.*$PKG|$PKG.*notif|ForegroundService|startForeground|fgs" | grep -v "^\s*at " | tail -40; }
 grep -q "AUTOTEST: offline playing=true file=true" "$OUT/logcat.txt" || { echo "::warning::saved song didn't play from the device"; ok=0; }
 [ $ok = 1 ] && echo "Media session, notification and offline music OK" || exit 1
