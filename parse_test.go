@@ -133,9 +133,9 @@ func TestTorrentIdentity(t *testing.T) {
 
 func TestMultiEpisode(t *testing.T) {
 	cases := []struct {
-		name          string
+		name           string
 		season, ep, e2 int
-		strong        bool
+		strong         bool
 	}{
 		{"The.Remarried.Empress.S01E07-S01E08.1080p.DSNP.WEB-DL.DDP5.1.H.265-THEREINFORCE.mkv", 1, 7, 8, true},
 		{"Show.S02E03E04.720p.mkv", 2, 3, 4, true},

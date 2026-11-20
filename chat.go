@@ -32,6 +32,8 @@ type Activity struct {
 	Pos   float64 `json:"pos,omitempty"`
 	Dur   float64 `json:"dur,omitempty"`
 	At    int64   `json:"at"`
+	// nil = an older app that doesn't say (music is only reported while playing)
+	Playing *bool `json:"playing,omitempty"`
 }
 
 type presence struct {
@@ -432,7 +434,40 @@ func activityKey(a *Activity) string {
 	if a == nil {
 		return ""
 	}
-	return a.Kind + "|" + a.Path + "|" + a.Title + "|" + a.Sub
+	p := ""
+	if a.Playing != nil {
+		p = strconv.FormatBool(*a.Playing)
+	}
+	return a.Kind + "|" + a.Path + "|" + a.Title + "|" + a.Sub + "|" + p
+}
+
+// NowPlaying: everyone online with something open in a player (admin "Watching now").
+// While playing, the position is moved on by the time since their last heartbeat.
+func (c *Chat) NowPlaying() []map[string]any {
+	now := time.Now().Unix()
+	c.pmu.Lock()
+	defer c.pmu.Unlock()
+	out := []map[string]any{}
+	for u, p := range c.pres {
+		if p.activity == nil || !c.online(u) {
+			continue
+		}
+		a := *p.activity
+		playing := a.Kind == "music" // music is only reported while it plays
+		if a.Playing != nil {
+			playing = *a.Playing
+		}
+		pos := a.Pos
+		if playing && a.At > 0 {
+			pos += float64(now - a.At)
+			if a.Dur > 0 && pos > a.Dur {
+				pos = a.Dur
+			}
+		}
+		out = append(out, map[string]any{"user": u, "kind": a.Kind, "path": a.Path, "title": a.Title, "sub": a.Sub,
+			"pos": pos, "duration": a.Dur, "playing": playing, "updated": a.At})
+	}
+	return out
 }
 
 func clip(s string, n int) string {

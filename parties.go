@@ -41,9 +41,9 @@ type Party struct {
 	ID         string           `json:"id"`
 	Title      string           `json:"title"`
 	Host       string           `json:"host"`
-	Kind       string           `json:"kind"` // video | music
-	Path       string           `json:"path"` // what's playing ("<lib>/<file>")
-	Name       string           `json:"name"` // its title
+	Kind       string           `json:"kind"`       // video | music
+	Path       string           `json:"path"`       // what's playing ("<lib>/<file>")
+	Name       string           `json:"name"`       // its title
 	Visibility string           `json:"visibility"` // public | private
 	PassHash   string           `json:"passHash,omitempty"`
 	ChatOn     bool             `json:"chatOn"`
@@ -65,11 +65,11 @@ type Party struct {
 }
 
 type Parties struct {
-	mu   sync.Mutex
-	s    *Server
-	file string
-	by   map[string]*Party
-	asks map[string]map[string]int64 // friend → asker → when ("can I join you?")
+	mu    sync.Mutex
+	s     *Server
+	file  string
+	by    map[string]*Party
+	asks  map[string]map[string]int64 // friend → asker → when ("can I join you?")
 	dirty bool
 }
 
@@ -215,7 +215,9 @@ func (p *Parties) people(m map[string]int64) []partyPerson {
 	for u, t := range m {
 		out = append(out, partyPerson{u, p.s.chat.isOnline(u), t})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Since < out[j].Since || (out[i].Since == out[j].Since && out[i].Name < out[j].Name) })
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Since < out[j].Since || (out[i].Since == out[j].Since && out[i].Name < out[j].Name)
+	})
 	return out
 }
 
@@ -347,17 +349,17 @@ func (s *Server) handlePartyList(w http.ResponseWriter, r *http.Request) {
 }
 
 type partyCreate struct {
-	Title      string  `json:"title"`
-	Kind       string  `json:"kind"`
-	Path       string  `json:"path"`
-	Name       string  `json:"name"`
-	Visibility string  `json:"visibility"`
-	Password   string  `json:"password"`
-	Scheduled  int64   `json:"scheduled"`
-	Note       string  `json:"note"`
+	Title      string   `json:"title"`
+	Kind       string   `json:"kind"`
+	Path       string   `json:"path"`
+	Name       string   `json:"name"`
+	Visibility string   `json:"visibility"`
+	Password   string   `json:"password"`
+	Scheduled  int64    `json:"scheduled"`
+	Note       string   `json:"note"`
 	Invite     []string `json:"invite"`
-	Pos        float64 `json:"pos"`
-	Playing    bool    `json:"playing"`
+	Pos        float64  `json:"pos"`
+	Playing    bool     `json:"playing"`
 }
 
 func (s *Server) canOpen(user, path string) bool {
@@ -497,9 +499,10 @@ func (s *Server) handlePartyEnd(w http.ResponseWriter, r *http.Request) {
 var errPartyGone = errors.New("this party has ended")
 
 // POST /api/parties/{id}/{action}
-//   join {password} · leave · request · answer {user, accept} · invite {users} · kick {user}
-//   state {path, kind, name, playing, pos} (host) · settings {title, visibility, password, chatOn, note, scheduled, host} (host)
-//   msg {text} · react {emoji} · start (host, a scheduled party now)
+//
+//	join {password} · leave · request · answer {user, accept} · invite {users} · kick {user}
+//	state {path, kind, name, playing, pos} (host) · settings {title, visibility, password, chatOn, note, scheduled, host} (host)
+//	msg {text} · react {emoji} · start (host, a scheduled party now)
 func (s *Server) handlePartyAction(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		Password   *string  `json:"password"`
@@ -611,7 +614,9 @@ func (s *Server) handlePartyAction(w http.ResponseWriter, r *http.Request) {
 		}
 		x.Requests[me] = time.Now().Unix()
 		sum, hostName := p.summaryLocked(x, ""), x.Host
-		after = append(after, func() { s.chat.send(hostName, "party-notice", map[string]any{"kind": "request", "party": sum, "from": me}) })
+		after = append(after, func() {
+			s.chat.send(hostName, "party-notice", map[string]any{"kind": "request", "party": sum, "from": me})
+		})
 		partyChanged = true
 	case "answer":
 		if !host {

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -280,9 +281,33 @@ func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
 		"memory":    ms.Sys,
 		"users":     s.users.Count(),
 		"conns":     s.conns.List(),
-		"watching":  s.progress.Recent(90 * time.Second),
+		"watching":  s.watchingNow(),
 		"recent":    s.progress.Recent(7 * 24 * time.Hour),
 	})
+}
+
+// watchingNow: the live player status of everyone online, plus anyone whose app saved a
+// position in the last 90 s without being on the live stream (older apps).
+func (s *Server) watchingNow() []map[string]any {
+	out := s.chat.NowPlaying()
+	seen := map[string]bool{}
+	for _, w := range out {
+		seen[w["user"].(string)+"\x00"+w["path"].(string)] = true
+	}
+	for _, w := range s.progress.Recent(90 * time.Second) {
+		if seen[w.User+"\x00"+w.Path] {
+			continue
+		}
+		out = append(out, map[string]any{"user": w.User, "kind": "video", "path": w.Path, "pos": w.Pos, "duration": w.Duration, "playing": true, "updated": w.Updated})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		pi, pj := out[i]["playing"].(bool), out[j]["playing"].(bool)
+		if pi != pj {
+			return pi
+		}
+		return out[i]["user"].(string) < out[j]["user"].(string)
+	})
+	return out
 }
 
 func keys(m map[string]bool) []string {

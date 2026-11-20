@@ -193,6 +193,7 @@ class Social extends ChangeNotifier {
         if (t.cover.isNotEmpty) 'image': 'cover:${t.cover}',
         'pos': audio.position.inSeconds,
         'dur': t.duration.round(),
+        'playing': true,
       };
     }
     return null;
@@ -200,7 +201,7 @@ class Social extends ChangeNotifier {
 
   Future<void> heartbeat({bool force = false}) async {
     final a = _activity();
-    final key = a == null ? '' : '${a['kind']}|${a['path']}|${a['title']}';
+    final key = a == null ? '' : '${a['kind']}|${a['path']}|${a['title']}|${a['playing']}';
     if (!force && key == _lastAct && !_due()) return;
     _lastAct = key;
     _lastBeat = DateTime.now();

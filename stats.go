@@ -214,7 +214,7 @@ func (st *Stats) streakLocked(user string, now time.Time) int {
 }
 
 var hourBadges = []struct {
-	hours           float64
+	hours             float64
 	vID, vIcon, vName string
 	mID, mIcon, mName string
 }{
@@ -284,7 +284,6 @@ func hoursText(h float64) string {
 	}
 	return strconv.Itoa(int(h)) + " hours"
 }
-
 
 // Badges by user (for the people list); people who hide their activity get none.
 func (s *Server) userBadges() map[string][]Badge {

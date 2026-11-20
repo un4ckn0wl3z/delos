@@ -1771,16 +1771,16 @@
         const sh = it && it.show && BR.data[it.path.split('/')[0]]?.shows?.[it.show];
         return { kind: 'video', path: S.file.path, title: sh ? sh.title : (m ? m.title : S.file.name),
           sub: it && it.show ? `S${it.season}E${it.episode}${it.episodeTitle ? ' · ' + it.episodeTitle : ''}` : (m && m.year ? String(m.year) : ''),
-          image: (sh && sh.poster) || (m && m.poster) || '', pos: Math.round(cur()), dur: Math.round(S.info.duration || 0) };
+          image: (sh && sh.poster) || (m && m.poster) || '', pos: Math.round(cur()), dur: Math.round(S.info.duration || 0), playing: !media.paused };
       }
       if (A.cur && !A.el.paused) {
         return { kind: 'music', path: A.cur.path, title: A.cur.title || A.cur.name, sub: [A.cur.artist, A.cur.album].filter(Boolean).join(' — '),
-          image: A.cur.cover ? 'cover:' + A.cur.cover : '', pos: Math.round(A.el.currentTime + (A.off || 0)), dur: Math.round(A.cur.duration || 0) };
+          image: A.cur.cover ? 'cover:' + A.cur.cover : '', pos: Math.round(aTime()), dur: Math.round(A.cur.duration || 0), playing: true };
       }
       return null;
     }
     async function heartbeat(force) {
-      const a = myActivity(), key = a ? a.kind + a.path + a.title : '';
+      const a = myActivity(), key = a ? a.kind + a.path + a.title + a.playing : '';
       if (!force && key === SO.lastAct && heartbeat.at && Date.now() - heartbeat.at < 30000) return;
       SO.lastAct = key; heartbeat.at = Date.now();
       try { await apiPost('presence', { activity: a }); } catch (_) {}

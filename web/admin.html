@@ -432,10 +432,14 @@
 
     $('#n-watch').textContent = o.watching.length;
     const pw = page('watch', o.watching, () => renderOverview(lastOv));
-    $('#watching').innerHTML = o.watching.length ? `<table><tr><th>User</th><th>File</th><th>Position</th><th class="h-m">Updated</th></tr>${
-      pw.items.map((w) => `<tr><td>${esc(w.user)}</td><td class="file" title="${esc(w.path)}">${esc(base(w.path))}</td>
-        <td><span class="mini"><i style="width:${w.duration ? (w.pos / w.duration * 100).toFixed(1) : 0}%"></i></span>${tm(w.pos)} / ${tm(w.duration)}</td>
-        <td class="h-m dim">${ago(w.updated)}</td></tr>`).join('')}</table>${pw.bar}` : '<div class="empty">Nobody is watching right now.</div>';
+    const playingN = o.watching.filter((w) => w.playing).length;
+    $('#n-watch').textContent = o.watching.length;
+    $('#n-watch').title = `${playingN} playing · ${o.watching.length - playingN} paused`;
+    $('#watching').innerHTML = o.watching.length ? `<table><tr><th>User</th><th>What</th><th>Position</th><th>State</th><th class="h-m">Updated</th></tr>${
+      pw.items.map((w) => `<tr><td>${esc(w.user)}</td><td class="file" title="${esc(w.path)}">${w.kind === 'music' ? '🎵' : '🎬'} ${esc(w.title || base(w.path))}${w.sub ? `<div class="dim" style="font-size:12px">${esc(w.sub)}</div>` : ''}</td>
+        <td>${w.duration ? `<span class="mini"><i style="width:${(w.pos / w.duration * 100).toFixed(1)}%"></i></span>${tm(w.pos)} / ${tm(w.duration)}` : w.pos ? tm(w.pos) : '—'}</td>
+        <td>${w.playing ? '<span class="badge" style="margin:0">▶ playing</span>' : '<span class="badge" style="margin:0;background:#3a3320;color:#f5c542">⏸ paused</span>'}</td>
+        <td class="h-m dim">${w.updated ? ago(w.updated) : ''}</td></tr>`).join('')}</table>${pw.bar}` : '<div class="empty">Nobody has a player open right now.</div>';
     bindPager($('#watching'), 'watch');
 
     $('#n-conn').textContent = o.conns.length;

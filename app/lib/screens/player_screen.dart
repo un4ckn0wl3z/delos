@@ -141,6 +141,11 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
       _player.stream.playing.listen((playing) {
         if (!mounted) return;
         if (widget.party?.isHost ?? false) widget.party!.hostChanged();
+        if (NowWatching.activity?['path'] == path) {
+          NowWatching.activity!['playing'] = playing;
+          NowWatching.activity!['pos'] = _position.round();
+          NowWatching.onChange?.call();
+        }
         setState(() {});
         if (playing) {
           _scheduleHide();
@@ -237,7 +242,7 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
       await _tuneAudio();
       await _open(start, play: !widget.startPaused);
       if (widget.party?.isHost ?? false) widget.party!.hostChanged();
-      NowWatching.set({'kind': 'video', 'path': path, 'title': widget.file.name, 'pos': start.round(), 'dur': _duration.round()});
+      NowWatching.set({'kind': 'video', 'path': path, 'title': widget.file.name, 'pos': start.round(), 'dur': _duration.round(), 'playing': !widget.startPaused});
       _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) => _saveProgress());
       if (start > 0 && mounted && !partyStart) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
