@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         StreamMKV (retired — no longer needed)
 // @namespace    https://github.com/un4ckn0wl3z/streammkv
-// @version      2.6.3
+// @version      2.6.4
 // @description  StreamMKV is now a website: open your server's address in any browser. You can remove this userscript.
 // @author       un4ckn0wl3z
 // @homepageURL  https://github.com/un4ckn0wl3z/delos

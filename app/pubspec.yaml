@@ -1,7 +1,7 @@
 name: streammkv
 description: Delos — films and music from your seedbox.
 publish_to: 'none'
-version: 2.6.3
+version: 2.6.4
 
 environment:
   sdk: ^3.5.0
