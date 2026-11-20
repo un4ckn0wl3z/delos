@@ -239,6 +239,15 @@ class OfflineStore extends ChangeNotifier {
       paused: const TaskNotification('Download paused', '{displayName}'),
       progressBar: true,
     );
+    // songs (a whole album / playlist at once): one combined notification instead of one per song
+    fd.configureNotificationForGroup(
+      'music',
+      running: const TaskNotification('Saving music', '{numFinished} of {numTotal} songs'),
+      complete: const TaskNotification('Music saved', '{numTotal} songs on this device'),
+      error: const TaskNotification('Some songs could not be saved', '{numFailed} failed'),
+      progressBar: true,
+      groupNotificationId: 'music',
+    );
     fd.updates.listen(_onUpdate);
     // an album or playlist queues many files: fetch a few at a time
     try {
@@ -319,6 +328,7 @@ class OfflineStore extends ChangeNotifier {
       retries: 3,
       requiresWiFi: settings?.wifiOnly ?? false,
       displayName: '${info['title'] ?? name}',
+      group: info['kind'] == 'music' ? 'music' : FileDownloader.defaultGroup,
     );
     final it = OfflineItem(id: id, source: 'server')
       ..name = name

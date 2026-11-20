@@ -19,6 +19,7 @@ class MusicSession extends BaseAudioHandler with QueueHandler, SeekHandler {
   int _lastIndex = -2;
   DateTime _lastPush = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _pauseTimer;
+  String? _durFor;
   DateTime? _pauseSince;
 
   /// Why the media session couldn't start (shown in Settings → About).
@@ -88,7 +89,10 @@ class MusicSession extends BaseAudioHandler with QueueHandler, SeekHandler {
         for (final q in c.queue) MediaItem(id: q.path, title: q.title.isNotEmpty ? q.title : q.name, artist: q.artist, album: q.album),
       ]);
     }
-    if (c.duration > Duration.zero && mediaItem.value?.duration != c.duration && mediaItem.value?.id == t.path) {
+    // the real length, once per song (each media item update rebuilds the notification)
+    if (c.duration > Duration.zero && _durFor != t.path && mediaItem.value?.id == t.path &&
+        (mediaItem.value?.duration == null || (mediaItem.value!.duration! - c.duration).abs() > const Duration(seconds: 2))) {
+      _durFor = t.path;
       mediaItem.add(mediaItem.value!.copyWith(duration: c.duration));
     }
     // Loading the next song stops the player for a moment. Telling the OS "paused" then
