@@ -73,6 +73,7 @@ Future<void> openVideo(BuildContext context, AppCtx app, LibData d, Item it, {bo
       nextLabel: next == null ? null : 'S${next.season}E${next.episode}${next.episodeTitle.isNotEmpty ? ' · ${next.episodeTitle}' : ''}',
       onProgress: (pos) => app.repo.setPos(it.path, pos),
       onPlayNext: next == null ? null : () => openVideo(context, app, d, next!),
+      saveInfo: app.offline ? offlineInfo(d, it) : null,
     ),
   ));
 }
@@ -107,6 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
       app.editor = m['editor'] == true || app.admin;
       app.downloader = m['downloader'] == true || app.admin;
       app.offline = m['offline'] == true || app.admin;
+      app.audio.canSave = app.offline;
       if (!app.downloader && section == 3) section = 0;
       if (mounted) setState(() {});
     }).catchError((_) {});

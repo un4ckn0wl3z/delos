@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 
 import 'api.dart';
 import 'library.dart';
+import 'offline/save_button.dart';
 import 'offline/store.dart';
 import 'widgets.dart';
 
@@ -40,6 +41,8 @@ class AudioController extends ChangeNotifier {
   }
 
   final Api api;
+  /// The user may save songs to this device ("offline" permission).
+  bool canSave = false;
   final player = Player(configuration: const PlayerConfiguration(title: 'Delos music'));
   final _subs = <StreamSubscription>[];
   List<Item> queue = [];
@@ -265,6 +268,12 @@ class NowPlaying extends StatelessWidget {
                     Navigator.pop(context);
                   },
                 ),
+                if (audio.canSave && !t.path.startsWith('file:'))
+                  SaveButton(
+                    api: audio.api,
+                    path: t.path,
+                    onSave: () async => OfflineStore.instance.downloadMusic(audio.api, [t]),
+                  ),
               ]),
               const Divider(height: 28),
               const Text('Queue', style: TextStyle(fontWeight: FontWeight.w600)),

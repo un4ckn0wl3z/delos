@@ -1883,6 +1883,8 @@
       const t = A.queue[A.idx];
       if (!t) return;
       A.cur = t;
+      const adl = $('#smkv-adl');
+      adl.hidden = !canSave(); adl.href = dlUrl(t.path);
       const ext = (t.name.split('.').pop() || '').toLowerCase();
       A.transcoded = !(aMime[ext] && A.el.canPlayType(aMime[ext]));
       A.offset = A.transcoded ? start : 0;
@@ -2052,6 +2054,7 @@
     // ------------------------------------------------------------ open file
     async function openFile(f, opts = {}) {
       savePos(true);
+      { const v = $('#smkv-vdl'); v.hidden = !canSave(); v.href = dlUrl(f.path); }
       S.file = f; S.info = null; S.cues = []; S.sub = null; S.forceTranscode = false; S.errCount = 0; S.subDelay = 0;
       S.browserFail = null;
       S.loadSeq++;
@@ -2550,7 +2553,7 @@
     </div>
   </div>
   <section id="smkv-bar">
-    <div class="smkv-titlerow"><button id="smkv-close" title="Back to library (Esc)">← Back</button><h2 id="smkv-title"></h2></div>
+    <div class="smkv-titlerow"><button id="smkv-close" title="Back to library (Esc)">← Back</button><h2 id="smkv-title"></h2><a id="smkv-vdl" class="smkv-dlbtn" title="Save this file to this computer" download hidden>⬇ Save</a></div>
     <div id="smkv-meta"></div>
     <div class="smkv-opts">
       <label>Audio <select id="smkv-audio"><option>—</option></select></label>
@@ -2576,7 +2579,7 @@
     <div class="smkv-abtns"><button id="smkv-aprev" title="Previous">⏮</button><button id="smkv-app-pp" class="big" title="Play/Pause (space)">▶</button><button id="smkv-anext" title="Next">⏭</button><button id="smkv-arep">🔁</button></div>
     <div class="smkv-aseekrow"><input id="smkv-aseek" type="range" min="0" max="0" step="0.1" value="0"><span id="smkv-atime">0:00 / 0:00</span></div>
   </div>
-  <div class="smkv-aright"><button id="smkv-aqueue" title="Queue">☰</button><input id="smkv-avol" type="range" min="0" max="1" step="0.05"><button id="smkv-aclose" title="Stop">✕</button></div>
+  <div class="smkv-aright"><a id="smkv-adl" class="smkv-dlbtn" title="Save this song to this computer" download hidden>⬇</a><button id="smkv-aqueue" title="Queue">☰</button><input id="smkv-avol" type="range" min="0" max="1" step="0.05"><button id="smkv-aclose" title="Stop">✕</button></div>
   <audio id="smkv-aud" preload="auto"></audio>
 </div>
 <div id="smkv-detail"></div>
@@ -2720,6 +2723,9 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 #smkv-chat .smkv-msg:hover .smkv-rxadd,#smkv-chat .smkv-msg.act .smkv-rxadd{visibility:visible}
 @media (hover:none){#smkv-chat .smkv-rxadd{visibility:visible;opacity:.55}}
 .smkv-from{color:#9db7d8}
+.smkv-dlbtn{color:#c9cfd8;text-decoration:none;border:1px solid #2a313c;border-radius:6px;padding:4px 10px;font-size:13px;white-space:nowrap}
+.smkv-dlbtn:hover{color:#fff;border-color:#4a9eff}.smkv-dlbtn[hidden]{display:none}
+.smkv-titlerow .smkv-dlbtn{margin-left:auto}
 .smkv-tagline{color:#8b95a5;font-size:13px;margin:-4px 0 14px}
 .smkv-plpop{display:flex;flex-direction:column;min-width:220px;max-height:min(60vh,420px);overflow:auto;padding:6px}
 .smkv-plpop .smkv-plh{font:600 11px system-ui,sans-serif;color:#7d8696;text-transform:uppercase;letter-spacing:.5px;padding:6px 10px 4px}

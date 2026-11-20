@@ -10,6 +10,8 @@ import 'package:media_kit_video/media_kit_video.dart';
 import '../api.dart';
 import '../social.dart';
 import '../models.dart';
+import '../offline/save_button.dart';
+import '../offline/store.dart';
 import '../util.dart';
 import '../widgets.dart';
 
@@ -19,7 +21,10 @@ import '../widgets.dart';
 ///  * transcode — server sends H.264/AAC fMP4 starting at [_offset]. Seeking re-opens the
 ///                stream; text subs are fetched as WebVTT, image subs are burned in.
 class PlayerScreen extends StatefulWidget {
-  const PlayerScreen({super.key, required this.api, required this.file, this.nextLabel, this.onPlayNext, this.onProgress, this.startOver = false});
+  const PlayerScreen(
+      {super.key, required this.api, required this.file, this.nextLabel, this.onPlayNext, this.onProgress, this.startOver = false, this.saveInfo});
+  /// Title / poster… for saving this video to the device (null: the user can't save).
+  final Map<String, dynamic>? saveInfo;
   /// Ignore the saved position and play from the beginning.
   final bool startOver;
   final Api api;
@@ -778,6 +783,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           tooltip: 'Lock screen',
                           icon: const Icon(Icons.lock_open, color: Colors.white),
                           onPressed: _lock),
+                    if (widget.saveInfo != null)
+                      SaveButton(
+                        api: widget.api,
+                        path: widget.file.path,
+                        color: Colors.white,
+                        onSave: () => OfflineStore.instance.download(widget.api, widget.file.path, widget.saveInfo!),
+                      ),
                     IconButton(
                         tooltip: 'Audio',
                         icon: const Icon(Icons.audiotrack, color: Colors.white),
