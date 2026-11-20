@@ -1070,8 +1070,8 @@
       $('#smkv-np-prev').onclick = aPrev;
       $('#smkv-np-next').onclick = () => aNext(true);
       $('#smkv-np-rep').onclick = () => { $('#smkv-arep').click(); drawNow(); };
-      $('#smkv-np-shuf').onclick = () => { A.queue = A.queue.slice(0, A.idx + 1).concat(shuffle(A.queue.slice(A.idx + 1))); drawNow(); toast('Shuffled'); };
-      $('#smkv-np-clear').onclick = () => { A.queue = A.queue.slice(0, A.idx + 1); drawNow(); renderNav(); };
+      $('#smkv-np-shuf').onclick = () => { A.queue = A.queue.slice(0, A.idx + 1).concat(shuffle(A.queue.slice(A.idx + 1))); drawNow(); toast('Shuffled'); aSave(); };
+      $('#smkv-np-clear').onclick = () => { A.queue = A.queue.slice(0, A.idx + 1); drawNow(); renderNav(); aSave(); };
       const sk = $('#smkv-np-seek');
       sk.addEventListener('input', () => { A.dragging = true; $('#smkv-np-t').textContent = fmtTime(+sk.value); });
       sk.addEventListener('change', () => { A.dragging = false; aSeek(+sk.value); });
@@ -1102,7 +1102,7 @@
         if (i === A.idx) return;
         const td = document.createElement('td'); td.className = 'e';
         td.innerHTML = '<button class="smkv-qrm" title="Remove from the queue">✕</button>';
-        td.firstChild.onclick = (e) => { e.stopPropagation(); A.queue.splice(i, 1); if (i < A.idx) A.idx--; drawNow(); renderNav(); };
+        td.firstChild.onclick = (e) => { e.stopPropagation(); A.queue.splice(i, 1); if (i < A.idx) A.idx--; drawNow(); renderNav(); aSave(); };
         tr.appendChild(td);
       });
       const on = q.querySelector('tr.on');
@@ -1919,12 +1919,13 @@
       if (next) A.queue.splice(A.idx + 1, 0, ...list); else A.queue.push(...list);
       renderNav();
       if (location.hash.startsWith('#/music/now')) drawNow();
+      aSave();
       toast(`${next ? 'Playing next' : 'Added to queue'}: ${list.length > 1 ? list.length + ' songs' : list[0].title || list[0].name}`);
     }
-    function loadTrack(start) {
+    function loadTrack(start, play = true) {
       const t = A.queue[A.idx];
       if (!t) return;
-      A.cur = t;
+      A.cur = t; A.want = play;
       const adl = $('#smkv-adl');
       adl.hidden = !canSave(); adl.href = dlUrl(t.path);
       const ext = (t.name.split('.').pop() || '').toLowerCase();
@@ -1938,7 +1939,9 @@
         A.el.src = rawUrl(t.path);
         if (start) A.el.currentTime = start;
       }
-      A.el.play().catch(() => {});
+      if (play) A.el.play().catch(() => { if (A.restoring) toast('Press ▶ to continue where you left off', 4000); });
+      else $('#smkv-app-pp').textContent = '▶';
+      A.restoring = false;
       $('#smkv-abar').classList.add('show');
       document.body.classList.add('smkv-audio-on');
       const img = coverUrl(t.cover);
@@ -1951,7 +1954,22 @@
       document.querySelectorAll('.smkv-tracks tr').forEach((tr) => tr.classList.remove('on'));
       document.title = `♪ ${t.title || t.name} — Delos`;
       drawNow.scrolled = false;
-      drawNow(); drawMini();
+      drawNow(); drawMini(); aSave();
+    }
+    // Remember the queue, the song and the spot in it, so a page refresh carries on where it was.
+    function aSave() {
+      if (!A.cur) return lsSet('aState', null);
+      const lo = Math.max(0, A.idx - 200);
+      lsSet('aState', { u: BR.me?.user || '', q: A.queue.slice(lo, A.idx + 800), i: A.idx - lo, t: Math.floor(aTime()), p: !A.el.paused || A.want, at: Date.now() });
+    }
+    function aRestore() {
+      const s = lsGet('aState', null);
+      if (!s || !Array.isArray(s.q) || !s.q.length || A.cur) return;
+      if ((s.u && BR.me?.user && s.u !== BR.me.user) || Date.now() - (s.at || 0) > 14 * 864e5) return lsSet('aState', null);
+      A.queue = s.q; A.idx = Math.min(Math.max(0, s.i | 0), s.q.length - 1);
+      A.restoring = !!s.p;
+      loadTrack(Math.max(0, (s.t || 0) - 2), !!s.p);
+      renderNav();
     }
     const aTime = () => A.offset + (A.el.currentTime || 0);
     const aDur = () => A.cur?.duration || (isFinite(A.el.duration) ? A.el.duration : 0);
@@ -1959,6 +1977,7 @@
       if (A.repeat === 'one' && !manual) return loadTrack(0);
       if (A.idx + 1 < A.queue.length) { A.idx++; loadTrack(0); }
       else if (A.repeat === 'all' && A.queue.length) { A.idx = 0; loadTrack(0); }
+      else { A.want = false; aSave(); }
     }
     function aPrev() {
       if (aTime() > 4 || A.idx === 0) return aSeek(0);
@@ -1971,10 +1990,13 @@
     }
     function aToggle() { if (!A.cur) return; A.el.paused ? A.el.play().catch(() => {}) : A.el.pause(); }
     A.el.addEventListener('ended', () => aNext(false));
-    A.el.addEventListener('play', () => { $('#smkv-app-pp').textContent = '❚❚'; drawMini(); drawNow(); });
-    A.el.addEventListener('pause', () => { $('#smkv-app-pp').textContent = '▶'; drawMini(); drawNow(); });
+    A.el.addEventListener('play', () => { A.want = true; $('#smkv-app-pp').textContent = '❚❚'; drawMini(); drawNow(); aSave(); });
+    A.el.addEventListener('pause', () => { if (!A.el.ended) A.want = false; $('#smkv-app-pp').textContent = '▶'; drawMini(); drawNow(); aSave(); });
+    window.addEventListener('pagehide', aSave);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) aSave(); });
     A.el.addEventListener('timeupdate', () => {
       const t = aTime(), dd = aDur();
+      if (Date.now() - (A.savedAt || 0) > 5000) { A.savedAt = Date.now(); aSave(); }
       const s = $('#smkv-aseek');
       if (!A.dragging) { s.max = String(dd || 0); s.value = String(t); s.style.setProperty('--p', (dd ? t / dd * 100 : 0) + '%'); }
       $('#smkv-atime').textContent = `${fmtTime(t)} / ${fmtTime(dd)}`;
@@ -1986,7 +2008,7 @@
       if (!A.transcoded) { // browser could not decode it after all: let the server convert it
         A.transcoded = true; A.offset = 0;
         const u = new URL('api/audio', BASE); u.searchParams.set('path', A.cur.path); u.searchParams.set('fmt', 'mp3');
-        A.el.src = u.href; A.el.play().catch(() => {});
+        A.el.src = u.href; if (A.want) A.el.play().catch(() => {});
       } else { toast('Cannot play ' + (A.cur.title || A.cur.name), 4000); aNext(true); }
     });
     $('#smkv-app-pp').onclick = aToggle;
@@ -2000,7 +2022,7 @@
     function drawRepeat() { const b = $('#smkv-arep'); b.textContent = repeatIcon[A.repeat]; b.classList.toggle('on', A.repeat !== 'off'); b.title = 'Repeat: ' + A.repeat; }
     $('#smkv-arep').onclick = () => { A.repeat = { off: 'all', all: 'one', one: 'off' }[A.repeat]; lsSet('repeat', A.repeat); drawRepeat(); };
     drawRepeat();
-    $('#smkv-aclose').onclick = () => { A.el.pause(); A.el.removeAttribute('src'); A.cur = null; A.queue = []; $('#smkv-abar').classList.remove('show'); document.body.classList.remove('smkv-audio-on'); drawMini(); if (location.hash.startsWith('#/music/now')) route(); };
+    $('#smkv-aclose').onclick = () => { A.el.pause(); A.el.removeAttribute('src'); A.cur = null; A.queue = []; lsSet('aState', null); $('#smkv-abar').classList.remove('show'); document.body.classList.remove('smkv-audio-on'); drawMini(); if (location.hash.startsWith('#/music/now')) route(); };
     // the bar opens the full player; the sidebar pill (videos side) jumps back to music
     $('#smkv-acover').onclick = () => (location.hash = '#/music/now');
     $('.smkv-ainfo').onclick = () => (location.hash = '#/music/now');
@@ -2546,6 +2568,7 @@
       } catch { /* old server */ }
       await loadLibs();
       route();
+      aRestore();
       startSocial();
     })();
   }
