@@ -80,6 +80,26 @@ class AudioController extends ChangeNotifier {
     await _load();
   }
 
+  /// Queue songs: [next] plays them right after the current one, otherwise at the end.
+  Future<void> enqueue(List<Item> items, {bool next = false}) async {
+    if (items.isEmpty) return;
+    if (current == null) return playQueue(items, 0);
+    if (next) {
+      queue.insertAll(index + 1, items);
+    } else {
+      queue.addAll(items);
+    }
+    notifyListeners();
+  }
+
+  /// Take a song out of the queue (not the one playing).
+  void removeAt(int i) {
+    if (i < 0 || i >= queue.length || i == index) return;
+    queue.removeAt(i);
+    if (i < index) index--;
+    notifyListeners();
+  }
+
   Future<void> _load() async {
     final t = current;
     if (t == null) return;
@@ -278,13 +298,29 @@ class NowPlaying extends StatelessWidget {
               const Divider(height: 28),
               const Text('Queue', style: TextStyle(fontWeight: FontWeight.w600)),
               for (var i = 0; i < audio.queue.length; i++)
-                ListTile(
-                  dense: true,
-                  selected: i == audio.index,
-                  leading: Text('${i + 1}', style: const TextStyle(color: Color(0xFF7D8696))),
-                  title: Text(audio.queue[i].title.isNotEmpty ? audio.queue[i].title : audio.queue[i].name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(audio.queue[i].artist, maxLines: 1),
-                  onTap: () => audio.jump(i),
+                Dismissible(
+                  key: ValueKey('q$i|${audio.queue[i].path}|${audio.queue.length}'),
+                  direction: i == audio.index ? DismissDirection.none : DismissDirection.endToStart,
+                  background: Container(
+                      color: Colors.red.shade900,
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 16),
+                      child: const Icon(Icons.remove_circle_outline)),
+                  onDismissed: (_) => audio.removeAt(i),
+                  child: ListTile(
+                    dense: true,
+                    selected: i == audio.index,
+                    leading: Text('${i + 1}', style: const TextStyle(color: Color(0xFF7D8696))),
+                    title: Text(audio.queue[i].title.isNotEmpty ? audio.queue[i].title : audio.queue[i].name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(audio.queue[i].artist, maxLines: 1),
+                    trailing: i == audio.index
+                        ? null
+                        : IconButton(
+                            tooltip: 'Remove from the queue',
+                            icon: const Icon(Icons.close, size: 18, color: Color(0xFF7D8696)),
+                            onPressed: () => audio.removeAt(i)),
+                    onTap: () => audio.jump(i),
+                  ),
                 ),
             ]),
           );

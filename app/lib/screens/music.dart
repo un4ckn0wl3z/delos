@@ -233,10 +233,10 @@ class TrackList extends StatelessWidget {
                 if (isSaved(app, t)) const Padding(padding: EdgeInsets.only(right: 6), child: Icon(Icons.offline_pin, size: 15, color: Color(0xFF1F9D63))),
                 Text(t.duration > 0 ? fmtDur(t.duration) : '', style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))),
                 IconButton(
-                  tooltip: 'Add to playlist',
+                  tooltip: 'Play next · add to queue · playlist · save',
                   visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.playlist_add, size: 20, color: Color(0xFF8B95A5)),
-                  onPressed: () => addToPlaylist(context, app, [t]),
+                  icon: const Icon(Icons.more_vert, size: 20, color: Color(0xFF8B95A5)),
+                  onPressed: () => songMenu(context, app, t),
                 ),
               ]),
               onTap: () => app.audio.playQueue(tracks, i),
@@ -285,6 +285,7 @@ class AlbumScreen extends StatelessWidget {
                     Wrap(spacing: 8, children: [
                       FilledButton.icon(icon: const Icon(Icons.play_arrow), label: const Text('Play'), onPressed: () => app.audio.playQueue(album.tracks, 0)),
                       OutlinedButton.icon(icon: const Icon(Icons.shuffle), label: const Text('Shuffle'), onPressed: () => app.audio.playQueue(album.tracks, 0, shuffled: true)),
+                      OutlinedButton.icon(icon: const Icon(Icons.queue_music), label: const Text('Queue'), onPressed: () => queueMenu(context, app, album.tracks)),
                       OutlinedButton.icon(icon: const Icon(Icons.playlist_add), label: const Text('Playlist'), onPressed: () => addToPlaylist(context, app, album.tracks)),
                       if (app.offline)
                         OutlinedButton.icon(icon: const Icon(Icons.download_for_offline_outlined), label: const Text('Save'), onPressed: () => saveMusic(context, app, album.tracks)),
@@ -314,6 +315,7 @@ class ArtistScreen extends StatelessWidget {
       ..sort((a, b) => a.album.compareTo(b.album) != 0 ? a.album.compareTo(b.album) : trackOrder(a, b));
     return Scaffold(
       appBar: AppBar(title: Text(artist), actions: [
+        IconButton(tooltip: 'Play next / add to queue', icon: const Icon(Icons.queue_music), onPressed: () => queueMenu(context, app, songs)),
         IconButton(tooltip: 'Add to playlist', icon: const Icon(Icons.playlist_add), onPressed: () => addToPlaylist(context, app, songs)),
         if (app.offline)
           IconButton(tooltip: 'Save to this device', icon: const Icon(Icons.download_for_offline_outlined), onPressed: () => saveMusic(context, app, songs)),

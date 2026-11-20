@@ -252,6 +252,8 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     final missing = all.length - rows.length;
     return Scaffold(
       appBar: AppBar(title: Text('${pl!['name']}'), actions: [
+        if (tracks.isNotEmpty)
+          IconButton(tooltip: 'Play next / add to queue', icon: const Icon(Icons.queue_music), onPressed: () => queueMenu(context, app, tracks)),
         if (app.offline && tracks.isNotEmpty)
           IconButton(tooltip: 'Save to this device', icon: const Icon(Icons.download_for_offline_outlined), onPressed: () => saveMusic(context, app, tracks)),
         PopupMenuButton<String>(
