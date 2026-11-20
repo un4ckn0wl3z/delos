@@ -159,6 +159,21 @@ func (ps *ProgressStore) PrefixKeys(prefix string) {
 	ps.dirty = true
 }
 
+// MovePrefix renames keys starting with from to start with to (a folder moved to another library).
+func (ps *ProgressStore) MovePrefix(from, to string) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	for _, m := range ps.users {
+		for k, v := range m {
+			if strings.HasPrefix(k, from) {
+				delete(m, k)
+				m[to+strings.TrimPrefix(k, from)] = v
+				ps.dirty = true
+			}
+		}
+	}
+}
+
 func (ps *ProgressStore) Clear(user string) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()

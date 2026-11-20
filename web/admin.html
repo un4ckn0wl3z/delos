@@ -44,6 +44,9 @@
   .dlg-tw{display:inline-block;width:12px;color:#8b95a5;transition:transform .15s}
   tr.dlg.open .dlg-tw{transform:rotate(90deg)}
   tr.dlg-m td:first-child{padding-left:28px}
+  .clients{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+  .client{font-size:11.5px;border:1px solid rgba(128,128,128,.3);border-radius:8px;padding:0 6px;color:#9aa3b2;white-space:nowrap}
+  .client.old{border-color:#a7792a;color:#f5c542}
   .badge{display:inline-block;font-size:11px;padding:0 7px;border-radius:9px;background:#23402a;color:#8fe0a0;margin-left:6px}
   .badge.you{background:#1e3352;color:#9cc8ff}
   .badge.k-transcode,.badge.k-transcode\+burn{background:#4a3a1c;color:#ffcf7a}
@@ -231,7 +234,7 @@
   </section>
 
   <section>
-    <h2>Recently watched <span class="dim" style="font-weight:normal;font-size:12px">· last 7 days</span></h2>
+    <h2>Recently watched <span class="count" id="n-recent">0</span> <span class="dim" style="font-weight:normal;font-size:12px">· last 7 days</span></h2>
     <div id="recent"></div>
   </section>
 </main>
@@ -436,7 +439,7 @@
     $('#n-watch').textContent = o.watching.length;
     $('#n-watch').title = `${playingN} playing · ${o.watching.length - playingN} paused`;
     $('#watching').innerHTML = o.watching.length ? `<table><tr><th>User</th><th>What</th><th>Position</th><th>State</th><th class="h-m">Updated</th></tr>${
-      pw.items.map((w) => `<tr><td>${esc(w.user)}</td><td class="file" title="${esc(w.path)}">${w.kind === 'music' ? '🎵' : '🎬'} ${esc(w.title || base(w.path))}${w.sub ? `<div class="dim" style="font-size:12px">${esc(w.sub)}</div>` : ''}</td>
+      pw.items.map((w) => `<tr><td>${esc(w.user)}${w.client ? `<div class="dim" style="font-size:11.5px">${esc(w.client)}</div>` : ''}</td><td class="file" title="${esc(w.path)}">${w.kind === 'music' ? '🎵' : '🎬'} ${esc(w.title || base(w.path))}${w.sub ? `<div class="dim" style="font-size:12px">${esc(w.sub)}</div>` : ''}</td>
         <td>${w.duration ? `<span class="mini"><i style="width:${(w.pos / w.duration * 100).toFixed(1)}%"></i></span>${tm(w.pos)} / ${tm(w.duration)}` : w.pos ? tm(w.pos) : '—'}</td>
         <td>${w.playing ? '<span class="badge" style="margin:0">▶ playing</span>' : '<span class="badge" style="margin:0;background:#3a3320;color:#f5c542">⏸ paused</span>'}</td>
         <td class="h-m dim">${w.updated ? ago(w.updated) : ''}</td></tr>`).join('')}</table>${pw.bar}` : '<div class="empty">Nobody has a player open right now.</div>';
@@ -453,11 +456,13 @@
         <td class="h-m dim">${ago(c.since)}</td></tr>`).join('')}</table>${pc.bar}` : '<div class="empty">No open streams.</div>';
     bindPager($('#conns'), 'conns');
 
-    const recent = (o.recent || []).slice(0, 25);
-    $('#recent').innerHTML = recent.length ? `<table><tr><th>User</th><th>File</th><th>Progress</th><th class="h-m">When</th></tr>${
-      recent.map((w) => `<tr><td>${esc(w.user)}</td><td class="file" title="${esc(w.path)}">${esc(base(w.path))}</td>
+    const recentAll = o.recent || [], pr = page('recent', recentAll, () => renderOverview(lastOv));
+    $('#n-recent') && ($('#n-recent').textContent = recentAll.length);
+    $('#recent').innerHTML = recentAll.length ? `<table><tr><th>User</th><th>File</th><th>Progress</th><th class="h-m">When</th></tr>${
+      pr.items.map((w) => `<tr><td>${esc(w.user)}</td><td class="file" title="${esc(w.path)}">${esc(base(w.path))}</td>
         <td>${w.pos ? `<span class="mini"><i style="width:${w.duration ? (w.pos / w.duration * 100).toFixed(1) : 0}%"></i></span>${tm(w.pos)} / ${tm(w.duration)}` : '<span class="dim">finished</span>'}</td>
-        <td class="h-m dim">${ago(w.updated)}</td></tr>`).join('')}</table>` : '<div class="empty">Nothing yet.</div>';
+        <td class="h-m dim">${ago(w.updated)}</td></tr>`).join('')}</table>${pr.bar}` : '<div class="empty">Nothing yet.</div>';
+    bindPager($('#recent'), 'recent');
   }
 
   // ---------------------------------------------------------- announcements
@@ -526,6 +531,8 @@
   $('#ann-new').onclick = () => annEditor(null);
 
   let lastUsers = null;
+  const clientIcon = (c) => c.kind === 'app' ? ({ Android: '🤖', iOS: '📱', Windows: '🪟', macOS: '🍎', Linux: '🐧' }[(c.os || '').split(' ')[0]] || '📱') : '🌐';
+  const clientLabel = (c) => c.kind === 'app' ? `${c.os || 'App'} app ${c.version || ''}`.trim() : `${c.browser || 'Browser'}${c.os ? ' · ' + c.os : ''}${c.version ? ' · web ' + c.version : ''}`;
   function renderUsers(d) {
     lastUsers = d;
     $('#n-users').textContent = d.users.length;
@@ -533,7 +540,8 @@
     $('#users').innerHTML = `<table><tr><th>User</th><th class="h-m">Last seen</th><th class="h-m">Watching</th><th class="h-m">Created</th><th></th></tr>${
       pu.items.map((u) => `<tr data-u="${esc(u.name)}">
         <td>${u.avatar ? `<img src="${BASE}api/avatar/${encodeURIComponent(u.name)}?v=${u.avatar}" alt="" style="width:26px;height:26px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:7px">` : ''}<b>${esc(u.name)}</b>${u.admin ? '<span class="badge">admin</span>' : ''}${!u.admin && u.editor ? '<span class="badge t-tv">editor</span>' : ''}${!u.admin && u.downloader ? '<span class="badge t-music">downloader</span>' : ''}${!u.admin && u.offline ? '<span class="badge t-videos" title="May save files to their own device">offline</span>' : ''}${u.name === d.me ? '<span class="badge you">you</span>' : ''}
-          ${u.streams ? `<span class="dim"> · ${u.streams} stream${u.streams > 1 ? 's' : ''}</span>` : ''}</td>
+          ${u.streams ? `<span class="dim"> · ${u.streams} stream${u.streams > 1 ? 's' : ''}</span>` : ''}
+          ${(u.clients || []).length ? `<div class="clients">${u.clients.slice(0, 4).map((c) => `<span class="client${c.outdated ? ' old' : ''}" title="${esc(clientLabel(c))} · last used ${ago(c.last)}${c.outdated ? ' · older than the server — update the app' : ''}">${clientIcon(c)} ${esc(clientLabel(c))}${c.outdated ? ' ⚠' : ''}</span>`).join('')}</div>` : ''}</td>
         <td class="h-m dim">${ago(u.lastSeen)}</td>
         <td class="h-m dim">${u.inProgress} in progress · ${u.watched} total${u.usage ? `<br>📦 ${u.usage.items}${u.maxItems ? '/' + u.maxItems : ''} items · ${size(u.usage.bytes)}${u.maxBytes ? ' / ' + size(u.maxBytes) : ''}` : ''}</td>
         <td class="h-m dim">${new Date(u.created * 1000).toLocaleDateString()}</td>
@@ -658,16 +666,19 @@
     $('#n-libs').textContent = libs.length;
     const st = d.status || {};
     $('#scan-status').textContent = st.running ? `${st.phase || 'Scanning'}${st.total ? ` ${st.done}/${st.total}` : ''} · ${st.lib}` : (st.lastError ? '⚠ ' + st.lastError : '');
+    const pl = page('libs', libs, () => renderLibs(d));
     $('#libs').innerHTML = libs.length ? `<table><tr><th>Library</th><th class="h-m">Path</th><th>Items</th><th class="h-m">Scanned</th><th></th></tr>${
-      libs.map((l) => `<tr data-l="${esc(l.id)}">
+      pl.items.map((l) => `<tr data-l="${esc(l.id)}">
         <td><b>${esc(l.name)}</b><span class="badge t-${esc(l.type)}">${typeName[l.type] || l.type}</span>${l.owner ? `<span class="badge" title="Personal library">👤 ${esc(l.owner)}${l.shared ? ' · shared' : ' · private'}</span>` : ''}${l.scanning ? ' <span class="dim">· scanning…</span>' : ''}</td>
         <td class="h-m dim file">${esc(l.path)}${l.exclude && l.exclude.length ? `<br><span title="${esc(l.exclude.join('\n'))}">${l.exclude.length} folder${l.exclude.length > 1 ? 's' : ''} excluded</span>` : ''}</td><td>${l.count}</td><td class="h-m dim">${ago(l.scanned)}</td>
         <td><div class="actions">
           <button data-a="scan" title="Look for new and removed files">Scan</button>
           ${l.type === 'movies' || l.type === 'tv' || l.type === 'music' ? '<button data-a="refresh" title="Re-download all metadata">Refresh metadata</button>' : ''}
           <button data-a="edit">Edit</button>
+          <button data-a="owner" title="Make it a library of the server, or give it to someone">Owner…</button>
           <button class="danger" data-a="delete">Delete</button>
-        </div></td></tr>`).join('')}</table>` : '<div class="empty">No libraries yet — add one below.</div>';
+        </div></td></tr>`).join('')}</table>${pl.bar}` : '<div class="empty">No libraries yet — add one below.</div>';
+    bindPager($('#libs'), 'libs');
     $('#libs').querySelectorAll('button[data-a]').forEach((b) => {
       const l = libs.find((x) => x.id === b.closest('tr').dataset.l);
       b.onclick = () => libAction(b.dataset.a, l);
@@ -685,6 +696,25 @@
         confirmBox(`Remove library "${l.name}"? Files on disk are not touched.`, 'Remove', async () => {
           await api(`admin/libraries/${id}`, { method: 'DELETE' }); toast('Removed'); loadLibs();
         });
+      } else if (a === 'owner') {
+        const us = await api('admin/users');
+        const names = (us.users || us).map((u) => u.name).sort();
+        modal(`<h3>Owner of “${esc(l.name)}”</h3>
+          <select id="o"><option value="">🌐 Everyone — a library of the server</option>${names.map((n) => `<option value="${esc(n)}" ${n === l.owner ? 'selected' : ''}>👤 ${esc(n)}</option>`).join('')}</select>
+          <label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="sh" ${l.shared ? 'checked' : ''}> Shared with everyone (for a personal library: others can see it, labelled with the owner)</label>
+          <div class="dim" style="font-size:12px;margin-top:6px">Files stay where they are. A personal library counts toward its owner's space and they can delete it; a server library only admins manage.</div>
+          <div class="err" id="e"></div><div class="row"><button data-close>Cancel</button><button class="primary" id="ok">Save</button></div>`,
+          (b, close) => {
+            const sel = b.querySelector('#o'), sh = b.querySelector('#sh');
+            const sync = () => { sh.disabled = !sel.value; sh.parentElement.style.opacity = sel.value ? 1 : .5; };
+            sel.onchange = sync; sync();
+            b.querySelector('#ok').onclick = async () => {
+              try {
+                await api(`admin/libraries/${id}/owner`, { method: 'POST', body: { owner: sel.value, shared: sh.checked } });
+                close(); toast(sel.value ? `Now ${sel.value}'s library` : 'Now a library of the server'); loadLibs();
+              } catch (x) { b.querySelector('#e').textContent = x.message; }
+            };
+          });
       } else if (a === 'edit') {
         modal(`<h3>Edit library</h3>
           <input type="text" id="n" value="${esc(l.name)}">

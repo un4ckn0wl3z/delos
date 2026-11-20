@@ -198,10 +198,12 @@
       });
     }
 
+    // tells admins which app / version people use (the page's version = the server's when it loaded)
+    const clientHdr = () => ({ 'X-Delos-Client': 'web/' + ((BR.me && BR.me.version) || '') });
     async function api(path, params = {}, opts = {}, retried = false) {
       const u = new URL('api/' + path, BASE);
       for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-      const r = await fetch(u, { credentials: 'same-origin' });
+      const r = await fetch(u, { credentials: 'same-origin', headers: clientHdr() });
       if (r.status === 401 && !retried) { await ensureLogin(); return api(path, params, opts, true); }
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
       return opts.text ? r.text() : r.json();
@@ -210,7 +212,7 @@
     async function apiPost(path, body, retried = false) {
       const r = await fetch(new URL('api/' + path, BASE), {
         method: 'POST', credentials: 'same-origin', keepalive: true,
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        headers: Object.assign({ 'Content-Type': 'application/json' }, clientHdr()), body: JSON.stringify(body),
       });
       if (r.status === 401 && !retried) { await ensureLogin(); return apiPost(path, body, true); }
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
@@ -1343,6 +1345,59 @@
         };
       }));
     }
+    // give a personal library to everyone: as a server library, or moved into one
+    function giveLibrary(l, all) {
+      const music = l.type === 'music';
+      const targets = all.filter((x) => !x.owner && (x.type === 'music') === music);
+      return new Promise((res) => detailModal(`<h2>🎁 Give “${esc(l.name)}” to everyone</h2>
+        <div class="smkv-dim2">It stops being yours: it no longer counts toward your space, and only admins can change or delete it.</div>
+        <form id="smkv-gvf" class="smkv-pform">
+          <label class="smkv-check"><input type="radio" name="mode" value="own" checked> As its own library — everyone sees “${esc(l.name)}”</label>
+          <label class="smkv-check"><input type="radio" name="mode" value="into" ${targets.length ? '' : 'disabled'}> Into a library everyone has${targets.length ? '' : ' (none of this kind)'}</label>
+          <div id="smkv-gvinto" hidden style="display:flex;flex-direction:column;gap:8px;padding-left:24px">
+            <select class="smkv-inp" name="into">${targets.map((x) => `<option value="${esc(x.id)}">${typeIcon[x.type] || '📁'} ${esc(x.name)}</option>`).join('')}</select>
+            <label>as the folder <input class="smkv-inp" name="folder" value="${esc(l.name)}"></label>
+            <div class="smkv-dim2">The files move there and this library is removed. Torrents still seeding from it stop (the files stay). Watch positions and playlists follow.</div>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="smkv-btn2" id="smkv-gvno">Cancel</button><button class="smkv-primary">🎁 Give</button></div>
+        </form>`, (root, close) => {
+        const f = root.querySelector('#smkv-gvf');
+        f.onchange = () => { root.querySelector('#smkv-gvinto').hidden = f.mode.value !== 'into'; };
+        root.querySelector('#smkv-gvno').onclick = () => { close(); res(false); };
+        f.onsubmit = async (e) => {
+          e.preventDefault();
+          const body = { mode: f.mode.value, into: f.into ? f.into.value : '', folder: f.folder.value };
+          if (!confirm(body.mode === 'own' ? `Give “${l.name}” to everyone? You can't take it back yourself.` : `Move everything in “${l.name}” into “${(targets.find((x) => x.id === body.into) || {}).name}”? You can't take it back yourself.`)) return;
+          try {
+            await apiPost(`my/libraries/${encodeURIComponent(l.id)}/give`, body);
+            close(); toast(body.mode === 'own' ? `🎁 “${l.name}” is now everyone's` : '🎁 Moved — the library is being scanned', 5000);
+            await loadLibs(); res(true);
+          } catch (x) { toast(x.message, 6000); }
+        };
+      }));
+    }
+    // simple pages for long lists: pager(key, list, redraw) → {items, bar, bind(root)}; page size remembered
+    const PG = {};
+    function pager(key, list, redraw) {
+      const st = PG[key] || (PG[key] = { p: 0, n: lsGet('pg:' + key, 20) });
+      const pages = Math.max(1, Math.ceil(list.length / st.n));
+      st.p = Math.min(st.p, pages - 1);
+      const items = list.slice(st.p * st.n, st.p * st.n + st.n);
+      const bar = list.length > 10 ? `<div class="smkv-pager" data-pg="${esc(key)}">
+          <button data-go="0" ${st.p ? '' : 'disabled'}>«</button><button data-go="${st.p - 1}" ${st.p ? '' : 'disabled'}>‹</button>
+          <span>${st.p * st.n + 1}–${Math.min(list.length, (st.p + 1) * st.n)} of ${list.length}</span>
+          <button data-go="${st.p + 1}" ${st.p < pages - 1 ? '' : 'disabled'}>›</button><button data-go="${pages - 1}" ${st.p < pages - 1 ? '' : 'disabled'}>»</button>
+          <select>${[10, 20, 50, 100].map((n) => `<option ${n === st.n ? 'selected' : ''}>${n}</option>`).join('')}</select><span class="smkv-dim2">per page</span></div>` : '';
+      return {
+        items, bar,
+        bind(root) {
+          const b = root.querySelector(`.smkv-pager[data-pg="${key}"]`);
+          if (!b) return;
+          b.querySelectorAll('[data-go]').forEach((x) => x.onclick = () => { st.p = +x.dataset.go; redraw(); root.scrollIntoView({ block: 'start' }); });
+          b.querySelector('select').onchange = (e) => { st.n = +e.target.value; st.p = 0; lsSet('pg:' + key, st.n); redraw(); };
+        },
+      };
+    }
     async function downloadsView() {
       setToolbar('', null);
       toolbar.querySelector('#smkv-q').style.display = 'none'; $('#smkv-rawbtn').hidden = true;
@@ -1438,7 +1493,7 @@
         $('#smkv-mylibs').innerHTML = m.libraries.length ? m.libraries.map((l) => `<div class="smkv-dl" data-id="${esc(l.id)}">
             <div class="smkv-dlf2"><span><b>${typeIcon[l.type] || '📁'} ${esc(l.name)}</b> <span class="smkv-dim2">${l.count} items · ${fmtSize(l.size || 0)}</span></span>
               <label class="smkv-check"><input type="checkbox" data-a="share" ${l.shared ? 'checked' : ''}> Shared</label>
-              <a href="#/lib/${encodeURIComponent(l.id)}">Open</a><button data-a="scan">Scan</button><button data-a="del">Delete…</button></div></div>`).join('')
+              <a href="#/lib/${encodeURIComponent(l.id)}">Open</a><button data-a="scan">Scan</button><button data-a="give" title="Give it to everyone: a library of the server, or into one">🎁 Give…</button><button data-a="del">Delete…</button></div></div>`).join('')
           : '<div class="smkv-dim2">Create a library to download into your own space. Private libraries are only visible to you; shared ones are visible to everyone, labelled with your name.</div>';
         $('#smkv-mylibs').querySelectorAll('[data-a]').forEach((el) => {
           const id = el.closest('.smkv-dl').dataset.id, l = m.libraries.find((x) => x.id === id);
@@ -1450,6 +1505,7 @@
             try {
               if (el.dataset.a === 'share') { await call('PUT', 'my/libraries/' + encodeURIComponent(id), { shared: el.checked }); toast(el.checked ? 'Shared with everyone' : 'Now private'); }
               else if (el.dataset.a === 'scan') { await call('POST', `my/libraries/${encodeURIComponent(id)}/scan`); toast('Scanning…'); }
+              else if (el.dataset.a === 'give') { if (!(await giveLibrary(l, d.libraries))) return; }
               else {
                 if (!confirm(`Delete the library “${l.name}”?`)) return;
                 const files = confirm(`Also delete its ${l.count} files from the server (${fmtSize(l.size || 0)})?\n\nOK = delete files · Cancel = keep them on disk`);
@@ -1575,13 +1631,17 @@
               ${mine ? `${(j.kind === 'http' || yt) && (j.state === 'failed' || j.state === 'canceled') ? '<button data-a="retry">Retry</button>' : ''}${yt && j.playlist && j.state === 'done' ? '<button data-a="retry" title="Download what was added to the playlist since">🔄 Update</button>' : ''}${tor ? torBtns(j.tstate) + '<button data-a="more" title="Recheck, seeding limit, trackers & files">⋯</button>' : ''}<button data-a="rm">${j.state === 'queued' || j.state === 'downloading' ? 'Cancel' : 'Remove'}</button>` : ''}</div></div>`;
         };
         // episodes / seasons of the same series sit together under one fold-out
-        const shown = new Set();
-        $('#smkv-dllist').innerHTML = d.jobs.length ? d.jobs.map((j) => {
+        // one entry per download or per series group, then paged
+        const shown = new Set(), entries = [];
+        for (const j of d.jobs) {
           const k = groups.byJob.get(j.id);
-          if (!k) return one(j);
-          if (shown.has(k)) return '';
-          shown.add(k); return groupHtml(k, groups.get(k), one);
-        }).join('') : '<div class="smkv-dim">No downloads yet.</div>';
+          if (!k) entries.push({ j });
+          else if (!shown.has(k)) { shown.add(k); entries.push({ k }); }
+        }
+        const pg = pager('downloads', entries, draw);
+        $('#smkv-dllist').innerHTML = entries.length ? pg.items.map((e) => e.j ? one(e.j) : groupHtml(e.k, groups.get(e.k), one)).join('') + pg.bar
+          : '<div class="smkv-dim">No downloads yet.</div>';
+        pg.bind($('#smkv-dllist'));
         $('#smkv-dllist').querySelectorAll('details.smkv-dlg').forEach((el) => el.ontoggle = () => {
           if (el.open) dlOpen.add(el.dataset.k); else dlOpen.delete(el.dataset.k);
           lsSet('dlOpen', [...dlOpen].slice(-100));
@@ -3486,6 +3546,10 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-ep.smkv-skel .smkv-still span{color:#5d6675;font-size:22px}
 .smkv-ep.smkv-skel.future{opacity:.4}
 .smkv-miss{color:#f5a623}
+.smkv-pager{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center;margin:12px 0;font-size:13px}
+.smkv-pager button{min-width:32px}
+.smkv-pager button:disabled{opacity:.35;cursor:default}
+.smkv-pager select{background:#151920;color:#c9cfd8;border:1px solid #2a313c;border-radius:6px;padding:3px 6px}
 /* ---- party */
 #smkv-party{position:fixed;right:12px;top:12px;bottom:88px;width:330px;z-index:18;display:flex;flex-direction:column;background:rgba(16,20,27,.97);border:1px solid #2a313c;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);overflow:hidden;color:#c9cfd8;font-size:13.5px}
 #smkv-party[hidden]{display:none}

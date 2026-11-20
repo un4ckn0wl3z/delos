@@ -8,6 +8,10 @@ import 'library.dart';
 import 'models.dart';
 import 'settings.dart';
 
+/// Sent with every request so admins see which app version / platform people use.
+const _appVersion = String.fromEnvironment('APP_VERSION', defaultValue: 'dev');
+final _clientHeader = 'app/$_appVersion/${Platform.operatingSystem}';
+
 class ApiException implements Exception {
   ApiException(this.status, this.message);
   final int status;
@@ -35,6 +39,7 @@ class Api {
     final headers = <String, String>{
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
+      'X-Delos-Client': _clientHeader,
     };
     http.Response r;
     try {
@@ -309,6 +314,10 @@ class Api {
   /// → the new library's id
   Future<String> createMyLibrary(String name, String type, bool shared) async =>
       '${((await _req('POST', 'my/libraries', body: {'name': name, 'type': type, 'shared': shared})) as Map?)?['id'] ?? ''}';
+
+  /// Give a personal library to everyone: mode "own" (a server library) or "into" (moved into [into]).
+  Future<void> giveMyLibrary(String id, String mode, {String? into, String? folder}) =>
+      _req('POST', 'my/libraries/${Uri.encodeComponent(id)}/give', body: {'mode': mode, if (into != null) 'into': into, if (folder != null) 'folder': folder});
 
   Future<void> shareMyLibrary(String id, bool shared) => _req('PUT', 'my/libraries/${Uri.encodeComponent(id)}', body: {'shared': shared});
 

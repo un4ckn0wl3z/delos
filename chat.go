@@ -39,6 +39,7 @@ type Activity struct {
 type presence struct {
 	seen     int64
 	activity *Activity
+	client   string // the app that reported the activity ("Android app 2.7.2")
 }
 
 type OnlinePerson struct {
@@ -422,6 +423,9 @@ func (s *Server) handlePresence(w http.ResponseWriter, r *http.Request) {
 	p := c.pres[user]
 	changed := !wasOnline || activityKey(p.activity) != activityKey(b.Activity)
 	p.activity = b.Activity
+	if b.Activity != nil {
+		p.client = s.clients.Seen(user, r).Label()
+	}
 	c.pmu.Unlock()
 	s.stats.Music(user, b.Activity)
 	if changed {
@@ -465,7 +469,7 @@ func (c *Chat) NowPlaying() []map[string]any {
 			}
 		}
 		out = append(out, map[string]any{"user": u, "kind": a.Kind, "path": a.Path, "title": a.Title, "sub": a.Sub,
-			"pos": pos, "duration": a.Dur, "playing": playing, "updated": a.At})
+			"pos": pos, "duration": a.Dur, "playing": playing, "updated": a.At, "client": p.client})
 	}
 	return out
 }

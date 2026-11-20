@@ -21,7 +21,8 @@ class _DownloadsViewState extends State<DownloadsView> {
   final _src = TextEditingController();
   final _sub = TextEditingController();
   Map? d, my;
-  int _libPick = 0; // rebuilds the library field after "＋ New library…" (so it doesn't stay on that entry)
+  int _libPick = 0;
+  int _show = 30; // downloads listed (more with "Show more") // rebuilds the library field after "＋ New library…" (so it doesn't stay on that entry)
   String? error, lib;
   List<String> dirs = [];
   bool busy = false;
@@ -403,8 +404,21 @@ class _DownloadsViewState extends State<DownloadsView> {
         ),
         const Divider(height: 28),
         if (_jobs.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Center(child: Text('No downloads yet'))),
-        for (final g in groupBySeries<Map>(_jobs, (j) => '${j['name'] ?? ''}'))
-          g.key == null ? _job(g.members.first, names, me) : _group(g.key!, g.title, g.members, names, me),
+        ...(() {
+          final entries = groupBySeries<Map>(_jobs, (j) => '${j['name'] ?? ''}');
+          return [
+            for (final g in entries.take(_show))
+              g.key == null ? _job(g.members.first, names, me) : _group(g.key!, g.title, g.members, names, me),
+            if (entries.length > _show)
+              Center(
+                child: TextButton.icon(
+                  icon: const Icon(Icons.expand_more),
+                  label: Text('Show more (${entries.length - _show} left)'),
+                  onPressed: () => setState(() => _show += 30),
+                ),
+              ),
+          ];
+        })(),
         const Divider(height: 28),
         ..._myLibraries(),
       ]),
@@ -480,6 +494,11 @@ class _DownloadsViewState extends State<DownloadsView> {
                 onChanged: (v) => run(() => api.shareMyLibrary('${l['id']}', v), v ? 'Shared with everyone' : 'Now private'),
               ),
               IconButton(
+                tooltip: 'Give it to everyone',
+                icon: const Icon(Icons.card_giftcard_outlined),
+                onPressed: () => _give(l, run),
+              ),
+              IconButton(
                 tooltip: 'Delete library',
                 icon: const Icon(Icons.delete_outline),
                 onPressed: () async {
@@ -509,6 +528,70 @@ class _DownloadsViewState extends State<DownloadsView> {
           ),
         ),
     ];
+  }
+
+  /// 🎁 Give a personal library to everyone: as a server library, or moved into one.
+  Future<void> _give(Map l, Future<void> Function(Future<void> Function(), String) run) async {
+    final music = l['type'] == 'music';
+    final targets = _libs.where((x) => '${x['owner'] ?? ''}'.isEmpty && (x['type'] == 'music') == music).toList();
+    var mode = 'own';
+    String? into = targets.isNotEmpty ? '${targets.first['id']}' : null;
+    final folder = TextEditingController(text: '${l['name']}');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, set) => AlertDialog(
+          title: Text('🎁 Give “${l['name']}” to everyone'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('It stops being yours: it no longer counts toward your space, and only admins can change or delete it.',
+                  style: TextStyle(color: Color(0xFF9AA3B2))),
+              RadioListTile<String>(
+                contentPadding: EdgeInsets.zero,
+                value: 'own',
+                groupValue: mode,
+                onChanged: (v) => set(() => mode = v!),
+                title: const Text('As its own library'),
+                subtitle: Text('Everyone sees “${l['name']}”'),
+              ),
+              RadioListTile<String>(
+                contentPadding: EdgeInsets.zero,
+                value: 'into',
+                groupValue: mode,
+                onChanged: targets.isEmpty ? null : (v) => set(() => mode = v!),
+                title: const Text('Into a library everyone has'),
+                subtitle: Text(targets.isEmpty ? 'None of this kind' : 'The files move there; this library is removed'),
+              ),
+              if (mode == 'into') ...[
+                DropdownButtonFormField<String>(
+                  value: into,
+                  decoration: const InputDecoration(labelText: 'Library'),
+                  items: [for (final t in targets) DropdownMenuItem(value: '${t['id']}', child: Text('${t['name']}'))],
+                  onChanged: (v) => set(() => into = v),
+                ),
+                TextField(controller: folder, decoration: const InputDecoration(labelText: 'As the folder')),
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text('Torrents still seeding from it stop (the files stay). Watch positions and playlists follow.',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF9AA3B2))),
+                ),
+              ],
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('🎁 Give')),
+          ],
+        ),
+      ),
+    );
+    final f = folder.text.trim();
+    folder.dispose();
+    if (ok != true) return;
+    await run(
+      () => widget.app.api.giveMyLibrary('${l['id']}', mode, into: mode == 'into' ? into : null, folder: mode == 'into' ? f : null),
+      mode == 'own' ? '🎁 “${l['name']}” is now everyone’s' : '🎁 Moved — the library is being scanned',
+    );
   }
 
   Future<void> _createLibrary(Future<void> Function(Future<void> Function(), String) run) async {

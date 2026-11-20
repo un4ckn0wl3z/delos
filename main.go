@@ -66,6 +66,7 @@ type Server struct {
 	playlists *Playlists
 	stats     *Stats
 	parties   *Parties
+	clients   *Clients
 	ann       *Announcements
 	started   time.Time
 }
@@ -196,6 +197,7 @@ func main() {
 	s.dl = NewDownloads(s)
 	s.chat = NewChat(s)
 	s.parties = NewParties(s, cfg.DataDir)
+	s.clients = NewClients(cfg.DataDir)
 	s.avatars = NewAvatars(cfg.DataDir)
 	s.ann = NewAnnouncements(s)
 	s.playlists = NewPlaylists(cfg.DataDir)
@@ -376,6 +378,9 @@ func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 		if !ok {
 			httpErr(w, http.StatusUnauthorized, "unauthorized")
 			return
+		}
+		if r.Header.Get("X-Delos-Client") != "" {
+			s.clients.Seen(user, r)
 		}
 		ctx := context.WithValue(context.WithValue(r.Context(), ctxUser, user), ctxAdmin, admin)
 		h(w, r.WithContext(ctx))

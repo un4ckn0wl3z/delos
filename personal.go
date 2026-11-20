@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -123,6 +125,7 @@ func (s *Server) personalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/my/libraries/{id}", s.downloader(s.handleMyLibraryUpdate))
 	mux.HandleFunc("DELETE /api/my/libraries/{id}", s.downloader(s.handleMyLibraryDelete))
 	mux.HandleFunc("POST /api/my/libraries/{id}/scan", s.downloader(s.handleMyLibraryScan))
+	mux.HandleFunc("POST /api/my/libraries/{id}/give", s.downloader(s.handleMyLibraryGive))
 	mux.HandleFunc("POST /api/files/delete", s.auth(s.handleDeleteFiles))
 	mux.HandleFunc("POST /api/admin/users/{name}/limits", s.adminOnly(s.handleAdminLimits))
 }
@@ -245,6 +248,124 @@ func (s *Server) handleMyLibraryDelete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// POST /api/admin/libraries/{id}/owner {"owner": "" | "<user>", "shared": bool}
+// Admins move any library between the server ("" = everyone's) and a user, or between users.
+func (s *Server) handleAdminLibraryOwner(w http.ResponseWriter, r *http.Request) {
+	l, ok := s.libs.Get(r.PathValue("id"))
+	if !ok {
+		httpErr(w, 404, "no such library")
+		return
+	}
+	var b struct {
+		Owner  string `json:"owner"`
+		Shared bool   `json:"shared"`
+	}
+	if !decodeJSON(w, r, &b) {
+		return
+	}
+	b.Owner = strings.TrimSpace(b.Owner)
+	if b.Owner != "" && !s.users.Exists(b.Owner) {
+		httpErr(w, 400, "no such user")
+		return
+	}
+	shared := b.Shared && b.Owner != ""
+	nl, err := s.libs.SetOwner(l.ID, b.Owner, shared)
+	if err != nil {
+		httpErr(w, 500, err.Error())
+		return
+	}
+	for _, u := range []string{l.Owner, b.Owner} {
+		if u != "" {
+			s.usageOf(u, true)
+		}
+	}
+	log.Printf("library %q: owner %q → %q (by %s)", l.Name, l.Owner, b.Owner, userOf(r))
+	writeJSON(w, 200, s.libInfo(nl, false))
+}
+
+// POST /api/my/libraries/{id}/give {"mode": "own" | "into", "into": "<library id>", "folder": "…"}
+// Give a personal library to everyone: "own" = it becomes a library of the server (no owner);
+// "into" = its folder moves into an existing server library (as a sub-folder) and it's gone.
+func (s *Server) handleMyLibraryGive(w http.ResponseWriter, r *http.Request) {
+	l, ok := s.ownLib(w, r)
+	if !ok {
+		return
+	}
+	var b struct{ Mode, Into, Folder string }
+	if !decodeJSON(w, r, &b) {
+		return
+	}
+	switch b.Mode {
+	case "own":
+		nl, err := s.libs.SetOwner(l.ID, "", false)
+		if err != nil {
+			httpErr(w, 500, err.Error())
+			return
+		}
+		s.usageOf(l.Owner, true)
+		log.Printf("library %q of %s given to everyone by %s", l.Name, l.Owner, userOf(r))
+		writeJSON(w, 200, s.libInfo(nl, false))
+	case "into":
+		t, ok := s.libs.Get(b.Into)
+		if !ok || t.Owner != "" || t.ID == l.ID {
+			httpErr(w, 400, "pick a library everyone has")
+			return
+		}
+		if (l.Type == LibMusic) != (t.Type == LibMusic) {
+			httpErr(w, 400, "music goes into a music library, videos into a video library")
+			return
+		}
+		s.dl.mu.Lock()
+		busy := false
+		for _, j := range s.dl.jobs {
+			if j.Lib == l.ID && (j.State == "queued" || j.State == "downloading") {
+				busy = true
+			}
+		}
+		s.dl.mu.Unlock()
+		if busy {
+			httpErr(w, 409, "something is still downloading into this library — wait until it's done")
+			return
+		}
+		folder := sanitizeFileName(firstNonEmpty(strings.TrimSpace(b.Folder), l.Name))
+		if folder == "" || folder == "." || folder == ".." {
+			folder = sanitizeFileName(l.Name)
+		}
+		dest := filepath.Join(t.Path, folder)
+		for i := 2; ; i++ {
+			if _, err := os.Lstat(dest); errors.Is(err, os.ErrNotExist) {
+				break
+			}
+			dest = filepath.Join(t.Path, folder+" ("+strconv.Itoa(i)+")")
+		}
+		// torrents seeding from the old folder stop (the files move with the folder)
+		s.eraseTorrentsUnder(l.Path)
+		if err := os.Rename(l.Path, dest); err != nil {
+			msg := err.Error()
+			if strings.Contains(msg, "cross-device") || strings.Contains(msg, "different") {
+				msg = "the two libraries are on different disks — move the folder by hand"
+			}
+			httpErr(w, 500, msg)
+			return
+		}
+		if err := s.libs.Delete(l.ID); err != nil {
+			httpErr(w, 500, err.Error())
+			return
+		}
+		s.index.Forget(l.ID)
+		// watch positions and playlists follow the files
+		newPrefix := t.ID + "/" + filepath.ToSlash(filepath.Base(dest)) + "/"
+		s.progress.MovePrefix(l.ID+"/", newPrefix)
+		s.playlists.MovePrefix(l.ID+"/", newPrefix)
+		s.index.Queue(t.ID, false)
+		s.usageOf(l.Owner, true)
+		log.Printf("library %q of %s moved into %q (%s) by %s", l.Name, l.Owner, t.Name, dest, userOf(r))
+		writeJSON(w, 200, map[string]any{"ok": true, "into": t.ID, "folder": filepath.Base(dest)})
+	default:
+		httpErr(w, 400, "mode is own or into")
+	}
 }
 
 func (s *Server) handleMyLibraryScan(w http.ResponseWriter, r *http.Request) {

@@ -24,6 +24,7 @@ func (s *Server) libraryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/admin/libraries/{id}", s.adminOnly(s.handleAdminLibraryUpdate))
 	mux.HandleFunc("DELETE /api/admin/libraries/{id}", s.adminOnly(s.handleAdminLibraryDelete))
 	mux.HandleFunc("POST /api/admin/libraries/{id}/scan", s.adminOnly(s.handleAdminLibraryScan))
+	mux.HandleFunc("POST /api/admin/libraries/{id}/owner", s.adminOnly(s.handleAdminLibraryOwner))
 	mux.HandleFunc("GET /api/admin/browse", s.adminOnly(s.handleAdminBrowse))
 	mux.HandleFunc("POST /api/admin/match", s.adminOnly(s.handleAdminMatch))
 	mux.HandleFunc("POST /api/admin/users/{name}/libraries", s.adminOnly(s.handleAdminUserLibraries))

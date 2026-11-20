@@ -52,6 +52,26 @@ func (p *Playlists) saveLocked() error {
 	return os.Rename(p.file+".tmp", p.file)
 }
 
+// MovePrefix: tracks under from now live under to (a folder moved to another library).
+func (p *Playlists) MovePrefix(from, to string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	changed := false
+	for _, list := range p.by {
+		for _, pl := range list {
+			for i, t := range pl.Tracks {
+				if strings.HasPrefix(t, from) {
+					pl.Tracks[i] = to + strings.TrimPrefix(t, from)
+					changed = true
+				}
+			}
+		}
+	}
+	if changed {
+		p.saveLocked()
+	}
+}
+
 func (p *Playlists) find(user, id string) *Playlist {
 	for _, x := range p.by[user] {
 		if x.ID == id {
