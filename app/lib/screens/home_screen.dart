@@ -124,7 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
           if (AutoTest.config?['offline'] == true && d.items.length > 1) {
             // save two songs, then play the saved copy from its file
             await OfflineStore.instance.downloadMusic(app.api, d.items.take(2).toList());
-            for (var i = 0; i < 60; i++) {
+            for (var i = 0; i < 150; i++) { // background downloads can take a while to be scheduled
               await Future.delayed(const Duration(seconds: 1));
               final saved = OfflineStore.instance.music.where((x) => x.ready).toList();
               if (saved.length >= 2) {
@@ -134,6 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 debugPrint('AUTOTEST: offline playing=${app.audio.playing} file=${app.audio.current?.path.startsWith('file:')}');
                 break;
               }
+              if (i == 149) debugPrint('AUTOTEST: offline save timed out (${OfflineStore.instance.music.map((x) => x.status).join(',')})');
             }
           }
         } catch (e) {

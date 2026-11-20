@@ -16,7 +16,12 @@ adb push /tmp/autotest.json "$FILES/autotest.json"
 adb shell pm grant "$PKG" android.permission.POST_NOTIFICATIONS 2>/dev/null || true
 adb logcat -c
 adb shell monkey -p "$PKG" -c android.intent.category.LAUNCHER 1 >/dev/null
-sleep 45
+# wait for the app to sign in, play, save two songs and play one of them from the device
+for i in $(seq 1 40); do
+  adb logcat -d | grep -qE "AUTOTEST: offline (playing|save timed out)" && break
+  sleep 5
+done
+sleep 8
 adb exec-out screencap -p > "$OUT/1-app.png"
 APP_PID=$(adb shell pidof "$PKG" | tr -d '\r')
 adb logcat -d --pid="$APP_PID" | grep -iE "AUTOTEST|media session|audio_service|AudioService|flutter|System.err|Exception" > "$OUT/logcat.txt"
