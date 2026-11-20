@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
@@ -17,6 +18,8 @@ class MusicSession extends BaseAudioHandler with QueueHandler, SeekHandler {
   bool? _lastPlaying;
   int _lastIndex = -2;
   DateTime _lastPush = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _pauseTimer;
+  DateTime? _pauseSince;
 
   /// Why the media session couldn't start (shown in Settings → About).
   static String? error;
@@ -87,6 +90,24 @@ class MusicSession extends BaseAudioHandler with QueueHandler, SeekHandler {
     }
     if (c.duration > Duration.zero && mediaItem.value?.duration != c.duration && mediaItem.value?.id == t.path) {
       mediaItem.add(mediaItem.value!.copyWith(duration: c.duration));
+    }
+    // Loading the next song stops the player for a moment. Telling the OS "paused" then
+    // "playing" within milliseconds can make Android drop the media notification (and with
+    // it the lock-screen controls), so a pause is only reported once it has lasted a bit.
+    if (!c.playing && _lastPlaying == true) {
+      if (_pauseTimer == null) {
+        _pauseTimer = Timer(const Duration(milliseconds: 900), () {
+          _pauseTimer = null;
+          _sync();
+        });
+        if (_pauseSince == null) {
+          _pauseSince = DateTime.now();
+          return;
+        }
+      }
+      if (DateTime.now().difference(_pauseSince!).inMilliseconds < 800) return;
+    } else {
+      _pauseSince = null;
     }
     // state changes right away; position only every few seconds (the OS interpolates)
     final now = DateTime.now();
