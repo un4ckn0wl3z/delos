@@ -1247,6 +1247,34 @@
       }
       return out;
     }
+    // the library picker of the download form; "＋ New library…" makes a typed one on the spot
+    const libOptions = (libs) => libs.map((l) => `<option value="${esc(l.id)}">${typeIcon[l.type] || '📁'} ${esc(l.name)}${esc(ownerTag(l))}</option>`).join('')
+      + '<option value="__new">＋ New library (movies / TV / music)…</option>';
+    function newLibraryDialog() {
+      return new Promise((res) => detailModal(`<h2>New library</h2>
+        <div class="smkv-dim2">A folder of its own in your space. Movies and TV series get posters and details from TMDB; episode files are grouped into series in any video library.</div>
+        <form id="smkv-nlf" style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
+          <input class="smkv-inp" name="name" placeholder="Name, e.g. Korean series" autocomplete="off" required>
+          <select class="smkv-inp" name="type"><option value="tv">📺 TV series</option><option value="movies">🎬 Movies</option><option value="music">🎵 Music</option><option value="videos">📁 Other videos</option></select>
+          <label class="smkv-check"><input type="checkbox" name="shared" ${BR.me.admin ? 'checked' : ''}> Share with everyone</label>
+          <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="smkv-btn2" id="smkv-nlno">Cancel</button><button class="smkv-primary">＋ Create</button></div>
+        </form>`, (root, close) => {
+        const f = root.querySelector('#smkv-nlf');
+        f.name.focus();
+        root.querySelector('#smkv-nlno').onclick = () => { close(); res(null); };
+        f.onsubmit = async (e) => {
+          e.preventDefault();
+          if (!f.name.value.trim()) return;
+          try {
+            const r = await fetch(new URL('api/my/libraries', BASE), { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: f.name.value.trim(), type: f.type.value, shared: f.shared.checked }) });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.error || r.statusText);
+            close(); res(j.id);
+          } catch (x) { toast(x.message, 5000); }
+        };
+      }));
+    }
     async function downloadsView() {
       setToolbar('', null);
       toolbar.querySelector('#smkv-q').style.display = 'none'; $('#smkv-rawbtn').hidden = true;
@@ -1258,7 +1286,7 @@
           <input name="source" placeholder="https://… link, YouTube link / playlist, or magnet:?xt=…" autocomplete="off">
           <label class="smkv-check" id="smkv-ytpl" hidden title="This YouTube link is in a playlist: download every video of it"><input type="checkbox" name="playlist"> Whole playlist</label>
           <label class="smkv-tfile" title="Upload .torrent files (you can pick several)"><input type="file" name="file" multiple accept=".torrent,application/x-bittorrent"><span>📎 .torrent</span></label>
-          <select name="lib">${libs.map((l) => `<option value="${esc(l.id)}">${typeIcon[l.type] || '📁'} ${esc(l.name)}${esc(ownerTag(l))}</option>`).join('')}</select>
+          <select name="lib">${libOptions(libs)}</select>
           <input name="subdir" list="smkv-dldirs" placeholder="folder (optional)" autocomplete="off"><datalist id="smkv-dldirs"></datalist>
           <button class="smkv-primary">⬇ Download</button>
         </form>
@@ -1276,7 +1304,18 @@
       const loadDirs = async () => {
         try { const r = await api('downloads/dirs', { lib: f.lib.value }); $('#smkv-dldirs').innerHTML = r.dirs.map((x) => `<option value="${esc(x)}">`).join(''); } catch (_) {}
       };
-      f.lib.onchange = loadDirs; loadDirs();
+      let lastLib = f.lib.value;
+      f.lib.onchange = async () => {
+        if (f.lib.value !== '__new') { lastLib = f.lib.value; return loadDirs(); }
+        f.lib.value = lastLib;
+        const id = await newLibraryDialog();
+        if (!id) return;
+        toast('Library created'); await loadLibs();
+        d = await api('downloads');
+        f.lib.innerHTML = libOptions(d.libraries);
+        f.lib.value = lastLib = id; loadDirs(); drawMine();
+      };
+      loadDirs();
       f.source.oninput = () => { // a YouTube video that's part of a playlist: offer the whole playlist
         let u = null; try { u = new URL(f.source.value.trim()); } catch { /* not a URL */ }
         $('#smkv-ytpl').hidden = !(u && /(^|\.)(youtube\.com|youtu\.be)$/.test(u.hostname) && u.searchParams.get('list') && u.searchParams.get('v'));
@@ -1365,7 +1404,7 @@
           if (!r.ok) throw new Error(j.error || r.statusText);
           f.reset(); toast('Library created'); await loadLibs();
           d = await api('downloads');
-          $('#smkv-dlf').lib.innerHTML = d.libraries.map((l) => `<option value="${esc(l.id)}">${typeIcon[l.type] || '📁'} ${esc(l.name)}${esc(ownerTag(l))}</option>`).join('');
+          $('#smkv-dlf').lib.innerHTML = libOptions(d.libraries);
           $('#smkv-dlf').lib.value = j.id; loadDirs(); drawMine();
         } catch (x) { toast(x.message, 5000); }
       };
@@ -2766,6 +2805,9 @@
         BR.me = await api('me');
         $('#smkv-admin').hidden = !BR.me.admin;
         $('#smkv-side header b').title = `Signed in as ${BR.me.user} · server ${BR.me.version || '?'}`;
+        const ver = $('#smkv-ver'), v = BR.me.version || '';
+        ver.textContent = v ? (/^\d/.test(v) ? 'v' + v : v) : '';
+        ver.title = `Delos ${v} · signed in as ${BR.me.user}`;
         drawSecBar();
       } catch { /* old server */ }
       await loadLibs();
@@ -2780,7 +2822,7 @@
 <div id="smkv-app">
   <aside id="smkv-side">
     <header>
-      <b title="Delos — Artemis for films, Apollo for music">Delos</b><span class="smkv-sp"></span>
+      <b title="Delos — Artemis for films, Apollo for music">Delos</b><small id="smkv-ver"></small><span class="smkv-sp"></span>
       <a id="smkv-admin" class="smkv-hb" href="admin" target="_blank" title="Admin dashboard" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 8.4-7 10-4-1.6-7-5.4-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></a>
       <button id="smkv-refresh" class="smkv-hb" title="Reload libraries" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>
       <button id="smkv-ann" class="smkv-hb" title="Announcements"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4a1 1 0 0 0 1 1h2l6 4V5L7 9H5a1 1 0 0 0-1 1z"/><path d="M17 9.5a3.5 3.5 0 0 1 0 5"/><path d="M19.5 7a7 7 0 0 1 0 10"/></svg><i hidden></i></button>
@@ -2939,6 +2981,7 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-ep.smkv-skel .smkv-still span{color:#5d6675;font-size:22px}
 .smkv-ep.smkv-skel.future{opacity:.4}
 .smkv-miss{color:#f5a623}
+#smkv-ver{font-size:11px;color:#6f7988;margin-left:6px;align-self:center;font-weight:500;letter-spacing:.2px}
 .smkv-badges{display:inline-flex;gap:1px;margin-left:5px;font-size:12px;vertical-align:1px}
 .smkv-badges i{font-style:normal;cursor:default}
 .smkv-ranks{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:8px 28px}

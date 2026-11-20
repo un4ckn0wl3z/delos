@@ -290,8 +290,9 @@ class Api {
   /// {"libraries": [...], "usage": {items, bytes}, "maxItems", "maxBytes"}
   Future<Map> myLibraries() async => await _req('GET', 'my/libraries') as Map;
 
-  Future<void> createMyLibrary(String name, String type, bool shared) =>
-      _req('POST', 'my/libraries', body: {'name': name, 'type': type, 'shared': shared});
+  /// → the new library's id
+  Future<String> createMyLibrary(String name, String type, bool shared) async =>
+      '${((await _req('POST', 'my/libraries', body: {'name': name, 'type': type, 'shared': shared})) as Map?)?['id'] ?? ''}';
 
   Future<void> shareMyLibrary(String id, bool shared) => _req('PUT', 'my/libraries/${Uri.encodeComponent(id)}', body: {'shared': shared});
 

@@ -21,6 +21,7 @@ class _DownloadsViewState extends State<DownloadsView> {
   final _src = TextEditingController();
   final _sub = TextEditingController();
   Map? d, my;
+  int _libPick = 0; // rebuilds the library field after "＋ New library…" (so it doesn't stay on that entry)
   String? error, lib;
   List<String> dirs = [];
   bool busy = false;
@@ -336,6 +337,7 @@ class _DownloadsViewState extends State<DownloadsView> {
         Row(children: [
           Expanded(
             child: DropdownButtonFormField<String>(
+              key: ValueKey('lib$_libPick'),
               value: lib,
               isExpanded: true,
               decoration: const InputDecoration(labelText: 'Library', border: OutlineInputBorder(), isDense: true),
@@ -343,10 +345,18 @@ class _DownloadsViewState extends State<DownloadsView> {
                 for (final l in _libs)
                   DropdownMenuItem(
                     value: '${l['id']}',
-                    child: Text('${l['name']}${'${l['owner'] ?? ''}'.isEmpty ? '' : l['owner'] == me.api.settings.username ? ' · mine' : ' · ${l['owner']}'}', overflow: TextOverflow.ellipsis),
+                    child: Text('${_typeIcon[l['type']] ?? '📁'} ${l['name']}${'${l['owner'] ?? ''}'.isEmpty ? '' : l['owner'] == me.api.settings.username ? ' · mine' : ' · ${l['owner']}'}', overflow: TextOverflow.ellipsis),
                   ),
+                if (my?['libraries'] != null) const DropdownMenuItem(value: '__new', child: Text('＋ New library (movies / TV / music)…')),
               ],
               onChanged: (v) {
+                if (v == '__new') {
+                  setState(() => _libPick++); // back to the current library until the new one exists
+                  _createLibrary(_run).then((_) {
+                    if (mounted) setState(() => _libPick++);
+                  });
+                  return;
+                }
                 setState(() => lib = v);
                 _loadDirs();
               },
@@ -402,6 +412,19 @@ class _DownloadsViewState extends State<DownloadsView> {
   }
 
   // ---------------------------------------------------------------- my libraries
+  Future<void> _run(Future<void> Function() f, String ok) async {
+    try {
+      await f();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ok)));
+      widget.app.repo.invalidate();
+      await _load();
+    } on ApiException catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    }
+  }
+
+  static const _typeIcon = {'movies': '🎬', 'tv': '📺', 'music': '🎵', 'videos': '📁'};
+
   List<Widget> _myLibraries() {
     final m = my;
     if (m == null || m['libraries'] == null) return const [];
@@ -409,16 +432,7 @@ class _DownloadsViewState extends State<DownloadsView> {
     final u = Map.from(m['usage'] as Map? ?? const {});
     final maxItems = (m['maxItems'] as num? ?? 0).toInt(), maxBytes = (m['maxBytes'] as num? ?? 0).toInt();
     final api = widget.app.api;
-    Future<void> run(Future<void> Function() f, String ok) async {
-      try {
-        await f();
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ok)));
-        widget.app.repo.invalidate();
-        await _load();
-      } on ApiException catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-      }
-    }
+    final run = _run;
 
     return [
       Row(children: [
@@ -538,8 +552,12 @@ class _DownloadsViewState extends State<DownloadsView> {
     final n = name.text.trim();
     name.dispose();
     if (ok == true && n.isNotEmpty) {
-      lib = null; // pick the new library once the list reloads
-      await run(() => widget.app.api.createMyLibrary(n, type, shared), 'Library created');
+      String? id;
+      await run(() async => id = await widget.app.api.createMyLibrary(n, type, shared), 'Library created');
+      if (mounted && id != null && id!.isNotEmpty && _libs.any((l) => l['id'] == id)) {
+        setState(() => lib = id); // download into it right away
+        _loadDirs();
+      }
     }
   }
 
