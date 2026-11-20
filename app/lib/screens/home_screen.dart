@@ -89,6 +89,10 @@ class _HomeScreenState extends State<HomeScreen> {
   late final AppCtx app = AppCtx(widget.api);
   List<LibraryInfo> libs = [];
   List<LibraryInfo> get videoLibs => libs.where((l) => l.type != 'music').toList();
+  List<LibraryInfo> get musicLibs => libs.where((l) => l.type == 'music').toList();
+  /// Music side: '_all' (everything) or one music library's id.
+  String musicSel = '_all';
+  bool get _musicNav => musicLibs.length > 1 || musicLibs.any((l) => l.owner.isNotEmpty);
   /// 0 = Videos, 1 = Music, 2 = Chat, 3 = Downloads, 4 = Offline — separate sides with their own menus
   static int section = 0;
   int _lastMedia = 0;
@@ -233,21 +237,23 @@ class _HomeScreenState extends State<HomeScreen> {
             Text('Delos', style: Theme.of(context).textTheme.titleLarge),
           ]),
         ),
-        ListTile(
-          leading: const Icon(Icons.home_outlined),
-          title: const Text('Home'),
-          selected: sel == 0,
-          onTap: () => _select(0, drawer),
-        ),
-        for (final (i, l) in videoLibs.indexed)
+        if (section == 1) ...[
           ListTile(
-            leading: Icon(_icon(l.type)),
-            title: Text(l.name),
-            subtitle: l.owner.isEmpty ? null : Text(l.owner == app.api.settings.username ? 'my library' : 'from ${l.owner}', style: const TextStyle(fontSize: 11.5)),
-            trailing: l.count > 0 ? Text('${l.count}', style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))) : null,
-            selected: sel == i + 1,
-            onTap: () => _select(i + 1, drawer),
+            leading: const Icon(Icons.library_music_outlined),
+            title: const Text('All music'),
+            selected: musicSel == '_all',
+            onTap: () => _selectMusic('_all', drawer),
           ),
+          ..._libGroups(musicLibs, (l) => musicSel == l.id, (l) => _selectMusic(l.id, drawer)),
+        ] else ...[
+          ListTile(
+            leading: const Icon(Icons.home_outlined),
+            title: const Text('Home'),
+            selected: sel == 0,
+            onTap: () => _select(0, drawer),
+          ),
+          ..._libGroups(videoLibs, (l) => sel == videoLibs.indexOf(l) + 1, (l) => _select(videoLibs.indexOf(l) + 1, drawer)),
+        ],
         const Divider(),
         ListTile(
           leading: const Icon(Icons.settings_outlined),
@@ -259,6 +265,48 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
       ]);
+
+  /// The server's libraries, then each person's (mine first) in a fold-out group.
+  List<Widget> _libGroups(List<LibraryInfo> list, bool Function(LibraryInfo) selected, void Function(LibraryInfo) open) {
+    final me = app.api.settings.username;
+    Widget tile(LibraryInfo l, {bool indent = false}) => ListTile(
+          contentPadding: EdgeInsets.only(left: indent ? 32 : 16, right: 16),
+          leading: Icon(_icon(l.type)),
+          title: Text(l.name),
+          trailing: l.count > 0 ? Text('${l.count}', style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))) : null,
+          selected: selected(l),
+          onTap: () => open(l),
+        );
+    final owners = {for (final l in list) if (l.owner.isNotEmpty) l.owner}.toList()
+      ..sort((a, b) => a == me ? -1 : (b == me ? 1 : a.toLowerCase().compareTo(b.toLowerCase())));
+    return [
+      if (owners.isNotEmpty)
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text('LIBRARIES', style: TextStyle(fontSize: 11, letterSpacing: .8, color: Color(0xFF7D8696))),
+        ),
+      for (final l in list.where((l) => l.owner.isEmpty)) tile(l),
+      for (final o in owners)
+        Builder(builder: (context) {
+          final mine = list.where((l) => l.owner == o).toList();
+          return ExpansionTile(
+            key: PageStorageKey('libs-$o'),
+            initiallyExpanded: mine.any(selected),
+            leading: app.social == null ? const Icon(Icons.person_outline) : UserAvatar(app.social!, o, radius: 13),
+            title: Text(o == me ? 'My libraries' : o),
+            trailing: Text('${mine.length}', style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))),
+            shape: const Border(),
+            collapsedShape: const Border(),
+            children: [for (final l in mine) tile(l, indent: true)],
+          );
+        }),
+    ];
+  }
+
+  void _selectMusic(String id, bool drawer) {
+    if (drawer) Navigator.pop(context);
+    setState(() => musicSel = id);
+  }
 
   void _select(int i, bool drawer) {
     if (drawer) Navigator.pop(context);
@@ -287,7 +335,10 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     if (section == 1) {
       return libs.any((l) => l.type == 'music')
-          ? MusicView(key: ValueKey('music$reload'), app: app, lib: LibraryRepo.allMusic)
+          ? MusicView(
+              key: ValueKey('music$musicSel$reload'),
+              app: app,
+              lib: musicLibs.where((l) => l.id == musicSel).firstOrNull ?? LibraryRepo.allMusic)
           : const Center(child: Padding(padding: EdgeInsets.all(24), child: Text('No music library yet — an admin can add one (type Music) in the dashboard.')));
     }
     if (section == 2) return ChatView(app: app);
@@ -322,7 +373,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final wide = MediaQuery.of(context).size.width >= 900;
     final vl = videoLibs;
     final title = switch (section) {
-      1 => 'Music',
+      1 => musicLibs.where((l) => l.id == musicSel).firstOrNull?.name ?? 'Music',
       2 => 'Chat',
       3 => 'Downloads',
       4 => 'Offline',
@@ -340,7 +391,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
-        automaticallyImplyLeading: !wide && section == 0,
+        automaticallyImplyLeading: !wide && (section == 0 || (section == 1 && _musicNav)),
         actions: [
           if (app.social != null)
             ListenableBuilder(
@@ -379,7 +430,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
         ],
       ),
-      drawer: wide || section != 0 ? null : Drawer(child: SafeArea(child: _nav(true))),
+      drawer: wide || !(section == 0 || (section == 1 && _musicNav)) ? null : Drawer(child: SafeArea(child: _nav(true))),
       body: Column(children: [
         Expanded(
           child: wide
@@ -394,7 +445,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const VerticalDivider(width: 1),
-                  if (section == 0) ...[
+                  if (section == 0 || (section == 1 && _musicNav)) ...[
                     SizedBox(width: 240, child: Material(color: const Color(0xFF11141A), child: _nav(false))),
                     const VerticalDivider(width: 1),
                   ],

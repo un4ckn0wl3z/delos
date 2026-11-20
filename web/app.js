@@ -283,9 +283,24 @@
       const a = (href, label, on, n) => `<a href="${href}" class="${on ? 'on' : ''}">${label}${n ? `<span class="smkv-n">${n}</span>` : ''}</a>`;
       const musicCount = BR.libs.filter((l) => l.type === 'music').reduce((t, l) => t + (l.count || 0), 0);
       let html = `<div class="smkv-modes"><a href="#/" class="${music ? '' : 'on'}">🎬 Videos</a><a href="#/music" class="${music ? 'on' : ''}">🎵 Music</a></div>`;
+      // libraries: the server's own first, then each person's (mine first) in a fold-out group
+      const libGroups = (list) => {
+        const me = BR.me && BR.me.user;
+        const link = (l) => a(`#/lib/${encodeURIComponent(l.id)}`, `${typeIcon[l.type] || '📁'} ${esc(l.name)}`, cur === '#/lib/' + encodeURIComponent(l.id) || cur.startsWith('#/lib/' + encodeURIComponent(l.id) + '/'), l.count);
+        let h = list.filter((l) => !l.owner).map(link).join('');
+        const owners = [...new Set(list.filter((l) => l.owner).map((l) => l.owner))].sort((x, y) => (x === me ? -1 : y === me ? 1 : x.localeCompare(y)));
+        const open = lsGet('navOpen', {});
+        const narrow = matchMedia('(max-width:820px)').matches;
+        for (const o of owners) {
+          const mine = list.filter((l) => l.owner === o);
+          const here = mine.some((l) => cur.startsWith('#/lib/' + encodeURIComponent(l.id)));
+          h += `<details class="smkv-ngrp" data-o="${esc(o)}" ${narrow || here || open[o] ? 'open' : ''}><summary>${avatarHtml(o, 20)}<b class="smkv-gn">${o === me ? 'My libraries' : esc(o)}</b><span class="smkv-n">${mine.length}</span></summary>${mine.map(link).join('')}</details>`;
+        }
+        return h;
+      };
       if (!music) {
-        html += a('#/', '🏠 Home', cur === '#/') + BR.libs.filter((l) => l.type !== 'music').map((l) =>
-          a(`#/lib/${encodeURIComponent(l.id)}`, `${typeIcon[l.type] || '📁'} ${esc(l.name)}${l.owner ? `<small class="smkv-own">${esc(ownerTag(l).slice(3))}</small>` : ''}`, cur.startsWith('#/lib/' + encodeURIComponent(l.id)), l.count)).join('');
+        const vl = BR.libs.filter((l) => l.type !== 'music');
+        html += a('#/', '🏠 Home', cur === '#/') + (vl.some((l) => l.owner) ? '<div class="smkv-navh">Libraries</div>' : '') + libGroups(vl);
       } else {
         const t = (cur.match(/^#\/music\/?([^/]*)/) || [])[1] || '';
         html += a('#/music', '🎧 Listen now', cur === '#/music' || cur === '#/music/')
@@ -295,9 +310,15 @@
           + a('#/music/songs', '🎵 Songs', t === 'songs', musicCount)
           + a('#/music/playlists', '📃 Playlists', t === 'playlists' || cur.startsWith('#/playlist/'))
           + a('#/music/now', `▶ Now playing${A.cur ? '' : ''}`, t === 'now', A.queue.length || '');
+        const ml = BR.libs.filter((l) => l.type === 'music');
+        if (ml.length > 1 || ml.some((l) => l.owner)) html += '<div class="smkv-navh">Libraries</div>' + libGroups(ml);
       }
       if (canDownload()) html += `<div class="smkv-navsep"></div>` + a('#/downloads', '⬇ Downloads', cur.startsWith('#/downloads'));
       $('#smkv-nav').innerHTML = html;
+      $('#smkv-nav').querySelectorAll('details.smkv-ngrp').forEach((d) => d.ontoggle = () => {
+        if (matchMedia('(max-width:820px)').matches) return;
+        const o = lsGet('navOpen', {}); o[d.dataset.o] = d.open; lsSet('navOpen', o);
+      });
       drawMini();
     }
     // music keeps playing while you browse videos: a small pill in the sidebar
@@ -2633,6 +2654,14 @@ button.smkv-primary,#smkv-detail .smkv-play{background:#2b6fd6!important;border-
 #smkv-nav a:hover{background:#181c24}
 #smkv-nav a.on{background:#1b2533;color:#fff}
 .smkv-modes{display:flex;gap:4px;background:#0c0f14;border:1px solid #1f242d;border-radius:9px;padding:3px;margin:2px 0 10px}
+.smkv-navh{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6f7988;padding:12px 10px 4px}
+#smkv-nav details.smkv-ngrp>summary{list-style:none;display:flex;gap:8px;align-items:center;padding:7px 10px;border-radius:7px;color:#c9cfd8;cursor:pointer;user-select:none}
+#smkv-nav details.smkv-ngrp>summary::-webkit-details-marker{display:none}
+#smkv-nav details.smkv-ngrp>summary::before{content:'▸';color:#6f7988;font-size:11px;width:10px;transition:transform .15s}
+#smkv-nav details.smkv-ngrp[open]>summary::before{transform:rotate(90deg)}
+#smkv-nav details.smkv-ngrp>summary:hover{background:#1a1f27}
+#smkv-nav details.smkv-ngrp>summary .smkv-gn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+#smkv-nav details.smkv-ngrp>a{padding-left:38px}
 #smkv-nav .smkv-modes a{flex:1;justify-content:center;padding:7px 6px;border-radius:6px;font-weight:600}
 #smkv-nav .smkv-modes a.on{background:#2b6fd6;color:#fff}
 body.smkv-music-mode #smkv-nav .smkv-modes a.on{background:#c2417a}
@@ -2975,6 +3004,11 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
   #smkv-app{grid-template-columns:1fr;grid-template-rows:auto 1fr}
   #smkv-side{border-right:none;border-bottom:1px solid #1f242d}
   #smkv-nav{flex-direction:row;overflow-x:auto;padding:0 8px 8px}
+  #smkv-nav details.smkv-ngrp{display:contents}
+  #smkv-nav .smkv-navh{display:none}
+  #smkv-nav details.smkv-ngrp>summary{white-space:nowrap;color:#8b95a5;font-size:12px;padding:6px 4px 6px 10px}
+  #smkv-nav details.smkv-ngrp>summary::before,#smkv-nav details.smkv-ngrp>summary .smkv-n{display:none}
+  #smkv-nav details.smkv-ngrp>a{padding-left:10px}
   #smkv-nav a{white-space:nowrap}
   .smkv-n{display:none}
   #smkv-view,#smkv-toolbar{padding-left:12px;padding-right:12px}
