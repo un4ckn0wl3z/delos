@@ -64,6 +64,7 @@ type Server struct {
 	avatars   *Avatars
 	tls       *TLSManager
 	playlists *Playlists
+	stats     *Stats
 	ann       *Announcements
 	started   time.Time
 }
@@ -196,6 +197,7 @@ func main() {
 	s.avatars = NewAvatars(cfg.DataDir)
 	s.ann = NewAnnouncements(s)
 	s.playlists = NewPlaylists(cfg.DataDir)
+	s.stats = NewStats(cfg.DataDir)
 	if s.tls, err = NewTLSManager(cfg, tlsMode); err != nil {
 		log.Printf("tls: %v — HTTPS disabled", err)
 		s.tls = &TLSManager{mode: "off"}
@@ -234,6 +236,7 @@ func main() {
 	s.announcementRoutes(mux)
 	s.tlsRoutes(mux)
 	s.playlistRoutes(mux)
+	s.statsRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

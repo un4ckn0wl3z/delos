@@ -233,6 +233,13 @@ func (s *Server) handleProgressPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.progress.Update(userOf(r), u)
+	if u.Pos != nil || u.Done {
+		pos := 0.0
+		if u.Pos != nil {
+			pos = *u.Pos
+		}
+		s.stats.Video(userOf(r), u.Path, pos, u.Duration, u.Done)
+	}
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 

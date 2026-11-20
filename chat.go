@@ -46,6 +46,7 @@ type OnlinePerson struct {
 	Activity *Activity `json:"activity,omitempty"`
 	Admin    bool      `json:"admin,omitempty"`
 	Avatar   int64     `json:"avatar,omitempty"` // picture version; 0 = none (show initials)
+	Badges   []Badge   `json:"badges,omitempty"` // see stats.go
 }
 
 // ---------------------------------------------------------------- chat store
@@ -259,10 +260,11 @@ func (c *Chat) online(user string) bool {
 // People as seen by viewer: activity paths only for libraries the viewer can open.
 func (c *Chat) People(viewer string, viewerAdmin bool) []OnlinePerson {
 	users := c.s.users.List()
+	badges := c.s.userBadges()
 	c.pmu.Lock()
 	out := make([]OnlinePerson, 0, len(users))
 	for _, u := range users {
-		p := OnlinePerson{Name: u.Name, Admin: u.Admin, LastSeen: u.LastSeen, Online: c.online(u.Name), Avatar: c.s.avatars.Version(u.Name)}
+		p := OnlinePerson{Name: u.Name, Admin: u.Admin, LastSeen: u.LastSeen, Online: c.online(u.Name), Avatar: c.s.avatars.Version(u.Name), Badges: badges[u.Name]}
 		if pr := c.pres[u.Name]; pr != nil {
 			if pr.seen > p.LastSeen {
 				p.LastSeen = pr.seen
@@ -412,6 +414,7 @@ func (s *Server) handlePresence(w http.ResponseWriter, r *http.Request) {
 	changed := !wasOnline || activityKey(p.activity) != activityKey(b.Activity)
 	p.activity = b.Activity
 	c.pmu.Unlock()
+	s.stats.Music(user, b.Activity)
 	if changed {
 		c.broadcastPresence()
 	}

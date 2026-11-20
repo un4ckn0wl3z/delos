@@ -271,7 +271,7 @@
     BR.mode = lsGet('mode', 'videos');
     const canDownload = () => !!(BR.me && (BR.me.admin || BR.me.downloader));
     function modeOf(h) {
-      if (/^#\/downloads/.test(h)) return BR.mode;
+      if (/^#\/(downloads|ranking)/.test(h)) return BR.mode;
       if (/^#\/(music|album|artist|playlist)(\/|$)/.test(h)) return 'music';
       const m = h.match(/^#\/lib\/([^/]+)/);
       if (m && libType(decodeURIComponent(m[1])) === 'music') return 'music';
@@ -313,7 +313,8 @@
         const ml = BR.libs.filter((l) => l.type === 'music');
         if (ml.length > 1 || ml.some((l) => l.owner)) html += '<div class="smkv-navh">Libraries</div>' + libGroups(ml);
       }
-      if (canDownload()) html += `<div class="smkv-navsep"></div>` + a('#/downloads', '⬇ Downloads', cur.startsWith('#/downloads'));
+      html += `<div class="smkv-navsep"></div>` + a('#/ranking', '🏆 Ranking', cur.startsWith('#/ranking'));
+      if (canDownload()) html += a('#/downloads', '⬇ Downloads', cur.startsWith('#/downloads'));
       $('#smkv-nav').innerHTML = html;
       $('#smkv-nav').querySelectorAll('details.smkv-ngrp').forEach((d) => d.ontoggle = () => {
         if (matchMedia('(max-width:820px)').matches) return;
@@ -370,6 +371,7 @@
           return await musicView('_all', parts[1], parts[2]);
         }
         if (parts[0] === 'downloads') return await downloadsView();
+        if (parts[0] === 'ranking') return await rankingView(parts[1] || 'month');
         if (parts[0] === 'lib') {
           const t = libType(parts[1]);
           if (t === 'movies') return await moviesView(parts[1], parts[2] || '');
@@ -420,7 +422,7 @@
     // ------------------------------------------------------------ home
     async function homeView() {
       setToolbar('', null);
-      toolbar.querySelector('#smkv-q').style.display = 'none';
+      toolbar.querySelector('#smkv-q').style.display = 'none'; $('#smkv-rawbtn').hidden = true;
       const videoLibs = BR.libs.filter((l) => l.type !== 'music');
       const all = await Promise.all(videoLibs.map((l) => libData(l.id).then((d) => ({ l, d })).catch(() => null)));
       let html = '';
@@ -1089,7 +1091,7 @@
     // ------------------------------------------------------------ music: listen now
     async function musicHome() {
       setToolbar('<button id="smkv-shuffle" title="Shuffle every song">🔀 Shuffle all</button>', null);
-      toolbar.querySelector('#smkv-q').style.display = 'none';
+      toolbar.querySelector('#smkv-q').style.display = 'none'; $('#smkv-rawbtn').hidden = true;
       if (!BR.libs.some((l) => l.type === 'music')) {
         view.innerHTML = '<div class="smkv-dim">No music library yet — an admin can add one (type <b>Music</b>) in the dashboard.</div>';
         $('#smkv-shuffle').hidden = true;
@@ -1125,7 +1127,7 @@
     // ------------------------------------------------------------ music: now playing
     function nowView() {
       setToolbar('', null);
-      toolbar.querySelector('#smkv-q').style.display = 'none';
+      toolbar.querySelector('#smkv-q').style.display = 'none'; $('#smkv-rawbtn').hidden = true;
       if (!A.cur) { view.innerHTML = '<div class="smkv-dim">Nothing is playing — pick an album, an artist or a song.</div>'; return; }
       view.innerHTML = `<div class="smkv-now">
           <div class="smkv-poster sq big" id="smkv-np-cover"></div>
@@ -1180,6 +1182,45 @@
       if (on && !drawNow.scrolled) { on.scrollIntoView({ block: 'nearest' }); drawNow.scrolled = true; }
     }
 
+    // ------------------------------------------------------------ ranking
+    const badgeIcons = (list, max) => (list || []).length ? `<span class="smkv-badges">${list.slice(0, max || 99).map((b) => `<i title="${esc(b.name + ' — ' + b.desc)}">${esc(b.icon)}</i>`).join('')}</span>` : '';
+    const fmtHrs = (sec) => sec >= 3600 ? `${(sec / 3600).toFixed(sec >= 36000 ? 0 : 1)} h` : `${Math.max(1, Math.round(sec / 60))} min`;
+    async function rankingView(period) {
+      setToolbar('', null);
+      toolbar.querySelector('#smkv-q').style.display = 'none'; $('#smkv-rawbtn').hidden = true;
+      const r = await api('ranking', { period });
+      const periods = { week: 'This week', month: 'This month', year: 'This year', all: 'All time' };
+      const medal = (i) => ['🥇', '🥈', '🥉'][i] || `<span class="smkv-rk">${i + 1}</span>`;
+      const board = (rows, kind) => {
+        if (!rows.length) return `<div class="smkv-dim2" style="padding:12px 0">Nobody yet ${period === 'all' ? '' : periods[period].toLowerCase()} — press play!</div>`;
+        const top = kind === 'video' ? rows[0].video : rows[0].music;
+        return rows.map((x, i) => {
+          const v = kind === 'video' ? x.video : x.music;
+          return `<div class="smkv-rank${x.user === BR.me.user ? ' me' : ''}">
+            <span class="smkv-rkm">${medal(i)}</span>${avatarHtml(x.user, 30)}
+            <div class="smkv-rkb"><div><b>${esc(x.user)}</b>${badgeIcons(r.badges[x.user])}</div>
+              <div class="smkv-rkbar"><i style="width:${(v / top * 100).toFixed(1)}%"></i></div></div>
+            <div class="smkv-rkv"><b>${fmtHrs(v)}</b><span class="smkv-dim2">${kind === 'video' ? `${x.titles} finished` : `${x.songs} songs`}</span></div></div>`;
+        }).join('');
+      };
+      const mine = r.badges[BR.me.user] || [];
+      const me = r.me || {};
+      view.innerHTML = `<h2 class="smkv-pageh">🏆 Ranking</h2>
+        <div class="smkv-tabs">${Object.entries(periods).map(([k, v]) => `<a href="#/ranking/${k}" class="${k === r.period ? 'on' : ''}">${v}</a>`).join('')}</div>
+        <div class="smkv-ranks">
+          <section><h3 class="smkv-h">🎬 Watched the most</h3>${board(r.video, 'video')}</section>
+          <section><h3 class="smkv-h">🎵 Listened the most</h3>${board(r.music, 'music')}</section>
+        </div>
+        <h3 class="smkv-h">Your badges</h3>
+        ${r.hidden ? '<div class="smkv-dim2">You hide what you watch, so you are not on the ranking and get no badges. Change it in Settings.</div>' : `
+        <div class="smkv-mybadges">${mine.length ? mine.map((b) => `<div class="smkv-mybadge"><span>${esc(b.icon)}</span><div><b>${esc(b.name)}</b><div class="smkv-dim2">${esc(b.desc)}</div></div></div>`).join('') : '<div class="smkv-dim2">No badges yet — watch or listen for an hour to get your first.</div>'}</div>
+        <div class="smkv-dim2" style="margin-top:10px">${periods[r.period]}: 🎬 ${fmtHrs(me.video || 0)} · ${me.titles || 0} finished · 🎵 ${fmtHrs(me.music || 0)} · ${me.songs || 0} songs${r.streak ? ` · 🔥 ${r.streak}-day streak` : ''}</div>`}
+        <details class="smkv-howrank"><summary>How it works</summary><div class="smkv-dim2">Time counts while something is actually playing (paused or skipped-over time doesn't).
+          A movie or episode counts as finished once you've watched 90 % of it. Badges come from your all-time totals:
+          ${(r.tiers || []).map((t) => `${esc(t.video)} / ${esc(t.music)} at ${t.hours} h`).join(' · ')} · 📺 25 / 📼 100 finished · 📻 1000 songs · 🔥 7+ days in a row · 👑 / 🎤 the most this month.
+          People who hide their activity aren't ranked.</div></details>`;
+    }
+
     // ------------------------------------------------------------ downloads
     // "Show.Name.S01E07-S01E08.1080p…", "Show Name Season 2", "Show.Name.2x05" → the series it belongs to
     function seriesOf(name) {
@@ -1208,7 +1249,7 @@
     }
     async function downloadsView() {
       setToolbar('', null);
-      toolbar.querySelector('#smkv-q').style.display = 'none';
+      toolbar.querySelector('#smkv-q').style.display = 'none'; $('#smkv-rawbtn').hidden = true;
       if (!canDownload()) { view.innerHTML = '<div class="smkv-dim">Ask an admin for the downloader role.</div>'; return; }
       let d = await api('downloads');
       const libs = [...d.libraries].sort((a, b) => ((a.type === 'music') === (BR.mode === 'music') ? 0 : 1) - ((b.type === 'music') === (BR.mode === 'music') ? 0 : 1));
@@ -1678,7 +1719,7 @@
       const on = others.filter((p) => p.online);
       el.innerHTML = `<div class="smkv-ph">People <span class="smkv-dim2">${on.length} online</span><button id="smkv-chat-open" title="Chats">💬<i id="smkv-unread" hidden></i></button></div>` +
         others.map((p) => `<div class="smkv-person ${p.online ? 'on' : ''}" data-u="${esc(p.name)}" title="${p.online ? 'Online' : p.lastSeen ? 'Last seen ' + new Date(p.lastSeen * 1000).toLocaleString() : 'Offline'}">
-          ${avatarHtml(p.name, 30, p.online)}<div style="min-width:0"><b>${esc(p.name)}</b>${adminBadge(p.name)}${p.activity ? `<div class="smkv-act ${p.activity.path ? 'link' : ''}" data-p="${esc(p.activity.path || '')}" data-k="${esc(p.activity.kind)}">${actLine(p.activity)}</div>` : ''}</div></div>`).join('');
+          ${avatarHtml(p.name, 30, p.online)}<div style="min-width:0"><b>${esc(p.name)}</b>${adminBadge(p.name)}${badgeIcons(p.badges, 3)}${p.activity ? `<div class="smkv-act ${p.activity.path ? 'link' : ''}" data-p="${esc(p.activity.path || '')}" data-k="${esc(p.activity.kind)}">${actLine(p.activity)}</div>` : ''}</div></div>`).join('');
       el.querySelectorAll('.smkv-person').forEach((r) => r.onclick = (e) => {
         const act = e.target.closest('.smkv-act.link');
         if (act) { e.stopPropagation(); return openRef({ path: act.dataset.p, kind: act.dataset.k }); }
@@ -2898,6 +2939,22 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-ep.smkv-skel .smkv-still span{color:#5d6675;font-size:22px}
 .smkv-ep.smkv-skel.future{opacity:.4}
 .smkv-miss{color:#f5a623}
+.smkv-badges{display:inline-flex;gap:1px;margin-left:5px;font-size:12px;vertical-align:1px}
+.smkv-badges i{font-style:normal;cursor:default}
+.smkv-ranks{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:8px 28px}
+.smkv-rank{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;margin:4px 0;background:#141820;border:1px solid #20262f}
+.smkv-rank.me{border-color:#3b6fd6}
+.smkv-rkm{width:26px;text-align:center;font-size:18px;flex:none}
+.smkv-rk{font-size:13px;color:#8b95a5;font-weight:600}
+.smkv-rkb{flex:1;min-width:0}
+.smkv-rkb>div:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smkv-rkbar{height:5px;border-radius:3px;background:#252b35;margin-top:6px;overflow:hidden}
+.smkv-rkbar i{display:block;height:100%;background:linear-gradient(90deg,#3b6fd6,#7b5cd6);border-radius:3px}
+.smkv-rkv{display:flex;flex-direction:column;align-items:flex-end;flex:none;font-size:13px}
+.smkv-mybadges{display:flex;flex-wrap:wrap;gap:10px}
+.smkv-mybadge{display:flex;gap:10px;align-items:center;background:#141820;border:1px solid #20262f;border-radius:10px;padding:8px 12px}
+.smkv-mybadge>span{font-size:24px}
+.smkv-howrank{margin-top:18px}.smkv-howrank summary{cursor:pointer;color:#8b95a5}
 .smkv-raw{display:none;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#7d8696;word-break:break-all;margin-top:2px}
 .smkv-raw i{font-style:normal;color:#5d6675}
 body.smkv-raw-on .smkv-raw{display:block}

@@ -88,6 +88,9 @@ class Api {
 
   Future<Map> lib(String id) async => await _req('GET', 'lib/${Uri.encodeComponent(id)}') as Map;
 
+  /// Who watched / listened the most: period = week | month | year | all.
+  Future<Map> ranking(String period) async => await _req('GET', 'ranking', q: {'period': period}) as Map;
+
   Map<String, String> get authHeaders => {if (settings.token != null) 'Authorization': 'Bearer ${settings.token}'};
 
   /// Cover art: a server cover key, or a file already on this device (offline music).

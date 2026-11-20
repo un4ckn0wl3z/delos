@@ -9,6 +9,7 @@ import '../util.dart';
 import '../widgets.dart';
 import 'emoji_picker.dart';
 import 'home_screen.dart';
+import 'ranking.dart';
 
 String _actLine(Map a) {
   final kind = a['kind'] == 'music' ? '♪' : '▶';
@@ -161,7 +162,12 @@ class AdminBadge extends StatelessWidget {
 Widget nameWithBadge(Social s, String name, {TextStyle? style}) => Row(mainAxisSize: MainAxisSize.min, children: [
       Flexible(child: Text(name, style: style, overflow: TextOverflow.ellipsis)),
       if (s.isAdmin(name)) const AdminBadge(),
+      BadgeIcons(badgesOf(s, name), max: 3),
     ]);
+
+/// Ranking badges of a person (from the people list).
+List<Map> badgesOf(Social s, String name) =>
+    List<Map>.from((s.people.where((p) => p['name'] == name).firstOrNull?['badges'] as List?) ?? const []);
 
 /// The Chat tab: who's online (and what they're playing) + conversations.
 class ChatView extends StatelessWidget {
@@ -190,6 +196,13 @@ class ChatView extends StatelessWidget {
         return ListView(padding: const EdgeInsets.only(bottom: 32), children: [
           if (!s.connected)
             const ListTile(dense: true, leading: Icon(Icons.cloud_off, size: 18), title: Text('Reconnecting…', style: TextStyle(color: Color(0xFF9AA3B2)))),
+          ListTile(
+            leading: const Icon(Icons.emoji_events_outlined, color: Color(0xFFF5C542)),
+            title: const Text('Ranking'),
+            subtitle: const Text('Who watched and listened the most · badges'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RankingScreen(app: app))),
+          ),
           SectionTitle('Online · ${online.length}'),
           if (online.isEmpty) const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text('Nobody else is online', style: TextStyle(color: Color(0xFF8B95A5)))),
           for (final p in online)
