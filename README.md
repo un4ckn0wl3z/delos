@@ -97,6 +97,19 @@ Users with the **downloader** role can create **their own libraries** under Down
 
 
 
+## Watch party
+
+Watch a movie or listen to music together: one **host** plays, everyone in the party follows (play, pause, seeking and the next episode / song). Guests can't control playback.
+
+- **Start one:** 🎉 *Watch together* in the video player, 🎉 in the music player, or **🎉 Party → New party** (web sidebar; in the app: Chat → Party, or the 🎉 button at the top). Pick what to play, **now or later** (a scheduled party shows under *Coming up* and everyone invited gets a reminder when it starts), public or private, an optional password, and who to invite.
+- **Join:** from an invite, the Party list (public parties), or **ask a friend who's watching**: the 🎉 next to their name in the People list. They choose whether to let you in; if they say yes, what they're playing becomes the party. A private party you weren't invited to can be joined only by asking the host.
+- **In the party:** chat, emoji that float over the video, members (👑 = host). **Mute chat** hides chat and emoji just for you. The host can turn chat off for everyone, invite people, let people in, **remove** someone (they can't come back unless invited again), change the title / visibility / password, hand the party over, or end it. If the host leaves, the next person becomes host.
+- Time is synced to the server clock; a guest drifting more than ~2.5 s is moved back in step. A guest needs access to the library of what's playing. Parties nobody's in for 30 minutes end by themselves.
+
+## Ranking
+
+🏆 *Ranking* (web sidebar; app: Chat → Ranking) shows who watched and listened the most this week / month / year / ever, with badges for hours, finished titles, songs, streaks and this month's top watcher / listener. Only time actually playing counts. People who hide their activity aren't ranked.
+
 ## Announcements
 
 Admins post messages to users from **/admin → 📣 Announcements**: a title and a message (links are clickable), a level, who gets it (everyone or chosen users), an optional expiry, and *Pin* to keep it in the list after it's read.
