@@ -12,6 +12,7 @@ import '../offline/local_player.dart';
 import 'announcements.dart';
 import '../offline/offline_view.dart';
 import '../offline/store.dart';
+import '../party.dart';
 import '../social.dart';
 import '../update.dart';
 import '../util.dart';
@@ -21,6 +22,7 @@ import 'downloads.dart';
 import 'login_screen.dart';
 import 'movies.dart';
 import 'music.dart';
+import 'party_screen.dart';
 import 'player_screen.dart';
 import 'settings_screen.dart';
 import 'shows.dart';
@@ -42,10 +44,12 @@ class AppCtx {
   Set<String> myLibs = {};
   /// Who's online + chats (live).
   Social? social;
+  /// Watch party (live, with [social]).
+  PartyController? party;
 }
 
 /// Plays a video item; for episodes, offers the next one when it ends.
-Future<void> openVideo(BuildContext context, AppCtx app, LibData d, Item it, {bool startOver = false}) async {
+Future<void> openVideo(BuildContext context, AppCtx app, LibData d, Item it, {bool startOver = false, double? startAt, bool startPaused = false}) async {
   app.audio.pause();
   FocusManager.instance.primaryFocus?.unfocus(); // a search field's keyboard would squeeze the player
   Item? next;
@@ -55,7 +59,7 @@ Future<void> openVideo(BuildContext context, AppCtx app, LibData d, Item it, {bo
     if (i >= 0 && i + 1 < eps.length) next = eps[i + 1];
   }
   // a copy on this device plays from there (works without internet too)
-  final local = OfflineStore.instance.downloaded(app.api.settings.server, it.path);
+  final local = startAt != null ? null : OfflineStore.instance.downloaded(app.api.settings.server, it.path);
   if (local != null) {
     if (!startOver && it.pos > local.pos) local.pos = it.pos; // further along on another device
     await Navigator.of(context).push(MaterialPageRoute(
@@ -74,6 +78,29 @@ Future<void> openVideo(BuildContext context, AppCtx app, LibData d, Item it, {bo
       onProgress: (pos) => app.repo.setPos(it.path, pos),
       onPlayNext: next == null ? null : () => openVideo(context, app, d, next!),
       saveInfo: app.offline ? offlineInfo(d, it) : null,
+      party: app.party,
+      startAt: startAt,
+      startPaused: startPaused,
+      partyUi: app.party == null
+          ? null
+          : (ctx) => ListenableBuilder(
+                listenable: app.party!,
+                builder: (ctx, _) => app.party!.party != null
+                    ? PartyPanel(app: app)
+                    : Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(mainAxisSize: MainAxisSize.min, children: [
+                            const Text('🎉', style: TextStyle(fontSize: 48)),
+                            const Text('Watch this together', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 6),
+                            const Text('Start a party: friends follow your playback, with chat and emoji.', textAlign: TextAlign.center),
+                            const SizedBox(height: 14),
+                            FilledButton.icon(icon: const Icon(Icons.celebration), label: const Text('Start a party'), onPressed: () => showNewPartyDialog(ctx, app)),
+                          ]),
+                        ),
+                      ),
+              ),
     ),
   ));
 }
@@ -96,7 +123,20 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 0 = Videos, 1 = Music, 2 = Chat, 3 = Downloads, 4 = Offline — separate sides with their own menus
   static int section = 0;
   int _lastMedia = 0;
-  StreamSubscription? _incoming, _announce;
+  StreamSubscription? _incoming, _announce, _partyNotes;
+
+  /// A party opens a video: find it in the libraries and play it at the party's spot.
+  Future<void> _partyOpenVideo(String path, double pos, bool playing) async {
+    try {
+      final libs = await app.repo.libraries();
+      final info = libs.where((l) => l.id == path.split('/').first).firstOrNull;
+      if (info == null) return;
+      final d = await app.repo.lib(info);
+      final it = d.items.where((i) => i.path == path).firstOrNull;
+      if (it == null || !mounted) return;
+      unawaited(openVideo(context, app, d, it, startAt: pos, startPaused: !playing));
+    } catch (_) {}
+  }
   int sel = 0; // Videos: 0 = home, i + 1 = videoLibs[i]
   String? error;
   bool loading = true;
@@ -147,6 +187,10 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     }
     app.social = Social(widget.api, app.audio)..start();
+    app.party = PartyController(widget.api, app.audio, app.social!, app.repo);
+    app.party!.openVideo = _partyOpenVideo;
+    _partyNotes = listenPartyNotices(() => context, app);
+    NowPlaying.onParty = (ctx) => openPartyUi(ctx, app);
     _incoming = app.social!.incoming.stream.listen((e) {
       if (!mounted) return;
       final (conv, m) = e;
@@ -188,6 +232,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _incoming?.cancel();
     _announce?.cancel();
+    _partyNotes?.cancel();
+    NowPlaying.onParty = null;
+    app.party?.dispose();
     app.social?.dispose();
     NowWatching.onChange = null;
     app.audio.dispose();
@@ -405,6 +452,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
+          if (app.party != null)
+            IconButton(tooltip: 'Party — watch together', icon: const Icon(Icons.celebration_outlined), onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => app.party!.party != null ? PartyRoomScreen(app: app) : PartyListScreen(app: app)))),
           // music keeps playing on the Videos side: a shortcut back to it
           if (section != 1)
             ListenableBuilder(
@@ -431,6 +481,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       drawer: wide || !(section == 0 || (section == 1 && _musicNav)) ? null : Drawer(child: SafeArea(child: _nav(true))),
+      floatingActionButton: section == 3 ? null : PartyPill(app: app),
       body: Column(children: [
         Expanded(
           child: wide

@@ -9,6 +9,7 @@ import '../util.dart';
 import '../widgets.dart';
 import 'emoji_picker.dart';
 import 'home_screen.dart';
+import 'party_screen.dart';
 import 'ranking.dart';
 
 String _actLine(Map a) {
@@ -196,6 +197,15 @@ class ChatView extends StatelessWidget {
         return ListView(padding: const EdgeInsets.only(bottom: 32), children: [
           if (!s.connected)
             const ListTile(dense: true, leading: Icon(Icons.cloud_off, size: 18), title: Text('Reconnecting…', style: TextStyle(color: Color(0xFF9AA3B2)))),
+          if (app.party != null)
+            ListTile(
+              leading: const Icon(Icons.celebration_outlined, color: Color(0xFFB79CFF)),
+              title: const Text('Party'),
+              subtitle: const Text('Watch or listen together · chat · schedule'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                  context, MaterialPageRoute(builder: (_) => app.party!.party != null ? PartyRoomScreen(app: app) : PartyListScreen(app: app))),
+            ),
           ListTile(
             leading: const Icon(Icons.emoji_events_outlined, color: Color(0xFFF5C542)),
             title: const Text('Ranking'),
@@ -213,7 +223,14 @@ class ChatView extends StatelessWidget {
                   ? null
                   : Text(_actLine(p['activity'] as Map), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5)),
               trailing: (p['activity'] as Map?)?['path'] != null && '${(p['activity'] as Map)['path']}'.isNotEmpty
-                  ? IconButton(tooltip: 'Watch / listen too', icon: const Icon(Icons.play_circle_outline), onPressed: () => openRef(context, app, p['activity'] as Map))
+                  ? Row(mainAxisSize: MainAxisSize.min, children: [
+                      if (app.party != null)
+                        IconButton(
+                            tooltip: 'Ask to ${(p['activity'] as Map)['kind'] == 'music' ? 'listen' : 'watch'} together (party)',
+                            icon: const Icon(Icons.celebration_outlined),
+                            onPressed: () => askToJoin(context, app, '${p['name']}')),
+                      IconButton(tooltip: 'Watch / listen too', icon: const Icon(Icons.play_circle_outline), onPressed: () => openRef(context, app, p['activity'] as Map)),
+                    ])
                   : null,
               onTap: () => _openDM(context, '${p['name']}'),
             ),

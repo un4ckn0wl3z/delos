@@ -47,6 +47,21 @@ class AudioController extends ChangeNotifier {
   final _subs = <StreamSubscription>[];
   List<Item> queue = [];
   int index = -1;
+  /// Watch party: true = a viewer may not control the music (the host does). See party.dart.
+  bool Function()? guard;
+  /// Watch party viewer: don't move on by yourself when a song ends (the host says what's next).
+  bool Function()? hold;
+  bool get _blocked => guard?.call() ?? false;
+
+  /// The party plays [t] from [pos] (no guard: this is the party itself).
+  Future<void> partyOpen(Item t, double pos, bool play) async {
+    queue = [t];
+    index = 0;
+    final local = localFile(t);
+    if (local == null) await api.ensureSession();
+    await player.open(Media(local ?? api.rawUrl(t.path), start: Duration(milliseconds: (pos * 1000).round())), play: play);
+    notifyListeners();
+  }
   RepeatMode repeat = RepeatMode.off;
   Duration position = Duration.zero, duration = Duration.zero;
   DateTime _lastTick = DateTime.fromMillisecondsSinceEpoch(0);
@@ -114,6 +129,7 @@ class AudioController extends ChangeNotifier {
   }
 
   void _onCompleted() {
+    if (hold?.call() ?? false) return;
     if (repeat == RepeatMode.one) {
       _load();
     } else if (index + 1 < queue.length) {
@@ -126,6 +142,7 @@ class AudioController extends ChangeNotifier {
   }
 
   void next() {
+    if (_blocked) return;
     if (index + 1 < queue.length) {
       index++;
       _load();
@@ -136,6 +153,7 @@ class AudioController extends ChangeNotifier {
   }
 
   void previous() {
+    if (_blocked) return;
     if (position.inSeconds > 4 || index == 0) {
       player.seek(Duration.zero);
     } else {
@@ -145,13 +163,19 @@ class AudioController extends ChangeNotifier {
   }
 
   void jump(int i) {
+    if (_blocked) return;
     index = i;
     _load();
   }
 
-  void toggle() => player.playOrPause();
+  void toggle() {
+    if (!_blocked) player.playOrPause();
+  }
+
   void pause() => player.pause();
-  void seek(Duration d) => player.seek(d);
+  void seek(Duration d) {
+    if (!_blocked) player.seek(d);
+  }
 
   void cycleRepeat() {
     repeat = RepeatMode.values[(repeat.index + 1) % RepeatMode.values.length];
@@ -233,6 +257,8 @@ class MiniPlayer extends StatelessWidget {
 class NowPlaying extends StatelessWidget {
   const NowPlaying({super.key, required this.audio});
   final AudioController audio;
+  /// "🎉 Listen together" (set by the home screen).
+  static void Function(BuildContext context)? onParty;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -294,6 +320,8 @@ class NowPlaying extends StatelessWidget {
                     path: t.path,
                     onSave: () async => OfflineStore.instance.downloadMusic(audio.api, [t]),
                   ),
+                if (onParty != null && !t.path.startsWith('file:'))
+                  IconButton(tooltip: 'Listen together (party)', icon: const Icon(Icons.celebration_outlined), onPressed: () => onParty!(context)),
               ]),
               const Divider(height: 28),
               const Text('Queue', style: TextStyle(fontWeight: FontWeight.w600)),

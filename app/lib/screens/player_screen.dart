@@ -11,9 +11,11 @@ import '../api.dart';
 import '../social.dart';
 import '../models.dart';
 import '../offline/save_button.dart';
+import '../party.dart';
 import '../offline/store.dart';
 import '../util.dart';
 import '../widgets.dart';
+import 'party_screen.dart';
 
 /// Two playback modes:
 ///  * direct    — mpv plays the original MKV over HTTP Range. All codecs, all embedded
@@ -22,7 +24,25 @@ import '../widgets.dart';
 ///                stream; text subs are fetched as WebVTT, image subs are burned in.
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen(
-      {super.key, required this.api, required this.file, this.nextLabel, this.onPlayNext, this.onProgress, this.startOver = false, this.saveInfo});
+      {super.key,
+      required this.api,
+      required this.file,
+      this.nextLabel,
+      this.onPlayNext,
+      this.onProgress,
+      this.startOver = false,
+      this.saveInfo,
+      this.party,
+      this.startAt,
+      this.startPaused = false,
+      this.partyUi});
+  /// Watch party: follows / drives this player (see party.dart).
+  final PartyController? party;
+  /// Start here instead of the saved position (a party says where).
+  final double? startAt;
+  final bool startPaused;
+  /// The party panel to show beside the video (built by the caller, which has the app context).
+  final Widget Function(BuildContext context)? partyUi;
   /// Title / poster… for saving this video to the device (null: the user can't save).
   final Map<String, dynamic>? saveInfo;
   /// Ignore the saved position and play from the beginning.
@@ -39,7 +59,27 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen> {
+class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
+  final _scaffold = GlobalKey<ScaffoldState>();
+
+  // ---- PartyVideo
+  @override
+  String get name => widget.file.name;
+  @override
+  bool get playing => _player.state.playing;
+  @override
+  double get position => _position;
+  @override
+  bool get ready => _info != null && _pendingSeek == null;
+  @override
+  Future<void> partySeek(double t) async => _seekRaw(t);
+  @override
+  Future<void> partyPlay(bool play) => play ? _player.play() : _player.pause();
+  @override
+  void close() {
+    if (mounted) Navigator.of(context).pop();
+  }
+
   late final Player _player = Player(
     configuration: PlayerConfiguration(title: widget.file.name, bufferSize: 64 * 1024 * 1024),
   );
@@ -47,6 +87,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final _subs = <StreamSubscription>[];
 
   Api get api => widget.api;
+  @override
   String get path => widget.file.path;
 
   ProbeInfo? _info;
@@ -99,6 +140,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }),
       _player.stream.playing.listen((playing) {
         if (!mounted) return;
+        if (widget.party?.isHost ?? false) widget.party!.hostChanged();
         setState(() {});
         if (playing) {
           _scheduleHide();
@@ -117,7 +159,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
           api.saveProgress(path, done: true);
           widget.onProgress?.call(0);
         }
-        if (widget.nextLabel != null && widget.onPlayNext != null && mounted) {
+        final follower = widget.party?.party != null && !(widget.party?.isHost ?? false);
+        if (widget.nextLabel != null && widget.onPlayNext != null && mounted && !follower) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             duration: const Duration(seconds: 20),
             content: Text('Up next: ${widget.nextLabel}'),
@@ -143,11 +186,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(duration: const Duration(seconds: 8), content: Text(msg)));
       }),
     ]);
+    widget.party?.video = this;
     _init();
   }
 
   @override
   void dispose() {
+    if (widget.party?.video == this) widget.party!.video = null;
     _saveProgress();
     if (NowWatching.activity?['path'] == path) NowWatching.set(null);
     for (final s in _subs) {
@@ -183,15 +228,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _maxh = s.maxh;
       var start = (prog['pos'] as num?)?.toDouble() ?? 0;
       if (widget.startOver || start < 30 || start > info.duration - 120) start = 0;
+      final partyStart = widget.startAt != null;
+      if (partyStart) start = widget.startAt!.clamp(0.0, math.max(0.0, info.duration - 1)).toDouble();
 
       await api.ensureSession(); // media URLs carry the token
       if (!mounted) return;
       setState(() {});
       await _tuneAudio();
-      await _open(start);
+      await _open(start, play: !widget.startPaused);
+      if (widget.party?.isHost ?? false) widget.party!.hostChanged();
       NowWatching.set({'kind': 'video', 'path': path, 'title': widget.file.name, 'pos': start.round(), 'dur': _duration.round()});
       _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) => _saveProgress());
-      if (start > 0 && mounted) {
+      if (start > 0 && mounted && !partyStart) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Resumed at ${fmtTime(start)}'),
           action: SnackBarAction(label: 'Start over', onPressed: () => _seekTo(0)),
@@ -313,11 +361,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
   // ------------------------------------------------------------------ actions
 
   void _togglePlay() {
+    if (widget.party?.locked('video', path) ?? false) return;
     _player.playOrPause();
     _showControls();
   }
 
   void _seekTo(double t) {
+    if (widget.party?.locked('video', path) ?? false) return;
+    _seekRaw(t);
+    if (widget.party?.isHost ?? false) Future.delayed(const Duration(milliseconds: 600), () => widget.party?.hostChanged());
+  }
+
+  void _seekRaw(double t) {
     final d = _duration;
     t = t.clamp(0.0, math.max(0.0, d - 1)).toDouble();
     if (!_transcode) {
@@ -681,8 +736,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
         if (!didPop && _locked) _pokeLock();
       },
       child: Scaffold(
+      key: _scaffold,
       backgroundColor: Colors.black,
       resizeToAvoidBottomInset: false,
+      endDrawer: widget.partyUi == null ? null : Drawer(width: 360, child: SafeArea(child: widget.partyUi!(context))),
       body: _error != null
           ? _ErrorView(message: _error!, onBack: () => Navigator.pop(context))
           : _info == null
@@ -738,6 +795,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         onLongPress: _locked ? _pokeLock : null,
       ),
       if (buffering) const Center(child: CircularProgressIndicator(color: Colors.white)),
+      if (widget.party != null) Positioned.fill(child: _PartyLayer(party: widget.party!)),
       if (_flash != null)
         Align(
           alignment: _flashLeft ? const Alignment(-.6, 0) : const Alignment(.6, 0),
@@ -778,6 +836,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         SourceBadge(local: false, text: _transcode ? 'STREAM · Transcode ≤${_maxh}p' : 'STREAM · Direct'),
                       ]),
                     ),
+                    if (widget.partyUi != null)
+                      IconButton(
+                          tooltip: 'Watch together (party)',
+                          icon: const Icon(Icons.celebration_outlined, color: Colors.white),
+                          onPressed: () => _scaffold.currentState?.openEndDrawer()),
                     if (!_desktop)
                       IconButton(
                           tooltip: 'Lock screen',
@@ -904,6 +967,17 @@ class _PlayerScreenState extends State<PlayerScreen> {
         ),
     ]);
   }
+}
+
+/// Floating emoji + the latest party message over the video (only while in a party).
+class _PartyLayer extends StatelessWidget {
+  const _PartyLayer({required this.party});
+  final PartyController party;
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+        listenable: party,
+        builder: (context, _) => party.party == null ? const SizedBox.shrink() : PartyFloats(party: party, showMessages: true),
+      );
 }
 
 class _SheetTitle extends StatelessWidget {

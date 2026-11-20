@@ -88,6 +88,22 @@ class Api {
 
   Future<Map> lib(String id) async => await _req('GET', 'lib/${Uri.encodeComponent(id)}') as Map;
 
+  // ---------------------------------------------------------------- watch parties
+
+  /// {parties: [...], asks: [...], now}
+  Future<Map> parties() async => await _req('GET', 'parties') as Map;
+  /// A party: the full view for members (has "msgs"), a summary for others.
+  Future<Map> party(String id) async => await _req('GET', 'parties/${Uri.encodeComponent(id)}') as Map;
+  Future<Map> partyCreate(Map<String, dynamic> body) async => await _req('POST', 'parties', body: body) as Map;
+  /// join · leave · request · answer · invite · kick · state · settings · msg · react · start
+  Future<dynamic> partyAction(String id, String action, Map<String, dynamic> body) =>
+      _req('POST', 'parties/${Uri.encodeComponent(id)}/$action', body: body);
+  Future<void> partyEnd(String id) => _req('DELETE', 'parties/${Uri.encodeComponent(id)}');
+  /// "Can I watch with you?" to a friend who's playing something.
+  Future<Map> partyAsk(String user) async => await _req('POST', 'parties/ask', body: {'user': user}) as Map;
+  Future<dynamic> partyAskAnswer(String user, bool accept, double pos, bool playing) =>
+      _req('POST', 'parties/ask/answer', body: {'user': user, 'accept': accept, 'pos': pos, 'playing': playing});
+
   /// Who watched / listened the most: period = week | month | year | all.
   Future<Map> ranking(String period) async => await _req('GET', 'ranking', q: {'period': period}) as Map;
 

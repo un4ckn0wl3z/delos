@@ -38,6 +38,9 @@ class Social extends ChangeNotifier {
   /// Largest attachment in MB (0 = attachments are off), from /api/me.
   int chatMaxMB = 0;
 
+  /// Watch-party events (party.dart listens).
+  final partyEvents = StreamController<(String, Map)>.broadcast();
+
   /// A message arrived for a chat that isn't open (for a SnackBar).
   final incoming = StreamController<(String conv, Map msg)>.broadcast();
 
@@ -159,6 +162,8 @@ class Social extends ChangeNotifier {
         } else if (m['from'] != me && m['sys'] != true) {
           incoming.add((conv, m));
         }
+      default:
+        if (event.startsWith('part') && v is Map) partyEvents.add((event, Map.from(v)));
     }
     notifyListeners();
   }
