@@ -65,6 +65,7 @@ type Server struct {
 	tls       *TLSManager
 	playlists *Playlists
 	stats     *Stats
+	parties   *Parties
 	ann       *Announcements
 	started   time.Time
 }
@@ -194,6 +195,7 @@ func main() {
 	s.index = NewIndexer(s)
 	s.dl = NewDownloads(s)
 	s.chat = NewChat(s)
+	s.parties = NewParties(s, cfg.DataDir)
 	s.avatars = NewAvatars(cfg.DataDir)
 	s.ann = NewAnnouncements(s)
 	s.playlists = NewPlaylists(cfg.DataDir)
@@ -237,6 +239,7 @@ func main() {
 	s.tlsRoutes(mux)
 	s.playlistRoutes(mux)
 	s.statsRoutes(mux)
+	s.partyRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

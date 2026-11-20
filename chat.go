@@ -252,6 +252,13 @@ func (c *Chat) touchLocked(user string) {
 	p.seen = time.Now().Unix()
 }
 
+// isOnline: online, for callers that don't hold pmu.
+func (c *Chat) isOnline(user string) bool {
+	c.pmu.Lock()
+	defer c.pmu.Unlock()
+	return c.online(user)
+}
+
 func (c *Chat) online(user string) bool {
 	p := c.pres[user]
 	return len(c.subs[user]) > 0 || (p != nil && time.Now().Unix()-p.seen < 90)

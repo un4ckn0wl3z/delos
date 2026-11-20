@@ -271,7 +271,7 @@
     BR.mode = lsGet('mode', 'videos');
     const canDownload = () => !!(BR.me && (BR.me.admin || BR.me.downloader));
     function modeOf(h) {
-      if (/^#\/(downloads|ranking)/.test(h)) return BR.mode;
+      if (/^#\/(downloads|ranking|party)/.test(h)) return BR.mode;
       if (/^#\/(music|album|artist|playlist)(\/|$)/.test(h)) return 'music';
       const m = h.match(/^#\/lib\/([^/]+)/);
       if (m && libType(decodeURIComponent(m[1])) === 'music') return 'music';
@@ -313,7 +313,7 @@
         const ml = BR.libs.filter((l) => l.type === 'music');
         if (ml.length > 1 || ml.some((l) => l.owner)) html += '<div class="smkv-navh">Libraries</div>' + libGroups(ml);
       }
-      html += `<div class="smkv-navsep"></div>` + a('#/ranking', '🏆 Ranking', cur.startsWith('#/ranking'));
+      html += `<div class="smkv-navsep"></div>` + a('#/party', '🎉 Party', cur.startsWith('#/party')) + a('#/ranking', '🏆 Ranking', cur.startsWith('#/ranking'));
       if (canDownload()) html += a('#/downloads', '⬇ Downloads', cur.startsWith('#/downloads'));
       $('#smkv-nav').innerHTML = html;
       $('#smkv-nav').querySelectorAll('details.smkv-ngrp').forEach((d) => d.ontoggle = () => {
@@ -372,6 +372,7 @@
         }
         if (parts[0] === 'downloads') return await downloadsView();
         if (parts[0] === 'ranking') return await rankingView(parts[1] || 'month');
+        if (parts[0] === 'party') return await partyView();
         if (parts[0] === 'lib') {
           const t = libType(parts[1]);
           if (t === 'movies') return await moviesView(parts[1], parts[2] || '');
@@ -1834,8 +1835,10 @@
       const on = others.filter((p) => p.online);
       el.innerHTML = `<div class="smkv-ph">People <span class="smkv-dim2">${on.length} online</span><button id="smkv-chat-open" title="Chats">💬<i id="smkv-unread" hidden></i></button></div>` +
         others.map((p) => `<div class="smkv-person ${p.online ? 'on' : ''}" data-u="${esc(p.name)}" title="${p.online ? 'Online' : p.lastSeen ? 'Last seen ' + new Date(p.lastSeen * 1000).toLocaleString() : 'Offline'}">
-          ${avatarHtml(p.name, 30, p.online)}<div style="min-width:0"><b>${esc(p.name)}</b>${adminBadge(p.name)}${badgeIcons(p.badges, 3)}${p.activity ? `<div class="smkv-act ${p.activity.path ? 'link' : ''}" data-p="${esc(p.activity.path || '')}" data-k="${esc(p.activity.kind)}">${actLine(p.activity)}</div>` : ''}</div></div>`).join('');
+          ${avatarHtml(p.name, 30, p.online)}<div style="min-width:0;flex:1"><b>${esc(p.name)}</b>${adminBadge(p.name)}${badgeIcons(p.badges, 3)}${p.online && p.activity && p.activity.path ? `<button class="smkv-askj" data-ask="${esc(p.name)}" title="Ask ${esc(p.name)} to ${p.activity.kind === 'music' ? 'listen' : 'watch'} together">🎉</button>` : ''}${p.activity ? `<div class="smkv-act ${p.activity.path ? 'link' : ''}" data-p="${esc(p.activity.path || '')}" data-k="${esc(p.activity.kind)}">${actLine(p.activity)}</div>` : ''}</div></div>`).join('');
       el.querySelectorAll('.smkv-person').forEach((r) => r.onclick = (e) => {
+        const ask = e.target.closest('[data-ask]');
+        if (ask) { e.stopPropagation(); return askToJoin(ask.dataset.ask); }
         const act = e.target.closest('.smkv-act.link');
         if (act) { e.stopPropagation(); return openRef({ path: act.dataset.p, kind: act.dataset.k }); }
         openDM(r.dataset.u);
@@ -1850,6 +1853,7 @@
     function startSocial() {
       if (SO.es || !BR.me || !window.EventSource) return;
       const es = SO.es = new EventSource(new URL('api/events', BASE), { withCredentials: true });
+      partySocial(es);
       es.addEventListener('people', (e) => { SO.people = JSON.parse(e.data); drawPeople(); });
       es.addEventListener('announcement', () => loadAnnouncements());
       es.addEventListener('open', () => loadAnnouncements()); // also catches up after a reconnect
@@ -2290,21 +2294,24 @@
     const aTime = () => A.offset + (A.el.currentTime || 0);
     const aDur = () => A.cur?.duration || (isFinite(A.el.duration) ? A.el.duration : 0);
     function aNext(manual) {
+      if (manual && partyLocked('music')) return;
+      if (!manual && P.party && P.party.kind === 'music' && !partyHost()) return; // the host says what's next
       if (A.repeat === 'one' && !manual) return loadTrack(0);
       if (A.idx + 1 < A.queue.length) { A.idx++; loadTrack(0); }
       else if (A.repeat === 'all' && A.queue.length) { A.idx = 0; loadTrack(0); }
       else { A.want = false; aSave(); }
     }
     function aPrev() {
+      if (partyLocked('music')) return;
       if (aTime() > 4 || A.idx === 0) return aSeek(0);
       A.idx--; loadTrack(0);
     }
     function aSeek(t) {
-      if (!A.cur) return;
+      if (!A.cur || partyLocked('music')) return;
       t = Math.max(0, Math.min(t, aDur() - 0.5));
       if (A.transcoded) loadTrack(t); else A.el.currentTime = t;
     }
-    function aToggle() { if (!A.cur) return; A.el.paused ? A.el.play().catch(() => {}) : A.el.pause(); }
+    function aToggle() { if (!A.cur || partyLocked('music')) return; A.el.paused ? A.el.play().catch(() => {}) : A.el.pause(); }
     A.el.addEventListener('ended', () => aNext(false));
     A.el.addEventListener('play', () => { A.want = true; $('#smkv-app-pp').textContent = '❚❚'; drawMini(); drawNow(); aSave(); });
     A.el.addEventListener('pause', () => { if (!A.el.ended) A.want = false; $('#smkv-app-pp').textContent = '▶'; drawMini(); drawNow(); aSave(); });
@@ -2472,14 +2479,15 @@
       seek.max = String(info.duration || 0);
       updateMeta();
 
-      // resume
+      // resume (a party says where instead)
       let start = 0;
       const pos = opts.fromStart ? 0 : ((server && server.pos) || lsGet('pos:' + f.path, 0));
-      if (pos > 30 && pos < (info.duration || 0) - 120) {
+      if (opts.start != null) start = opts.start;
+      else if (pos > 30 && pos < (info.duration || 0) - 120) {
         start = pos;
         toast(`Resumed at ${fmtTime(pos)}`, 6000, { label: 'Start over', fn: () => playAt(0, true) });
       }
-      playAt(start, true);
+      playAt(start, opts.autoplay !== false);
       if (S.sub && S.sub.text) loadSubCues();
       if (v) $('#smkv-meta').title = JSON.stringify(v);
     }
@@ -2579,6 +2587,7 @@
 
     function seekTo(t) {
       if (!S.info) return;
+      if (partyLocked('video')) return;
       if (media === wp && wp && effectiveMode() === 'browser') { // instant
         S.pendingTarget = Math.max(0, Math.min(t, (S.info.duration || 0) - 1));
         updateTime();
@@ -2595,6 +2604,7 @@
 
     function togglePlay() {
       if (!S.file) return;
+      if (partyLocked('video')) return;
       if (media.paused) Promise.resolve(media.play()).catch(() => {}); else media.pause();
     }
 
@@ -2873,6 +2883,424 @@
       bar.querySelector('[data-a=later]').onclick = () => { lsSet('secbarLater', Date.now() + 30 * 864e5); bar.hidden = true; };
     }
 
+    // ------------------------------------------------------------ watch party
+    // One host plays, everyone in the party follows. Chat + floating emoji beside the player.
+    const P = { party: null, skew: 0, applying: false, last: null, hostTimer: 0, driftTimer: 0, muted: !!lsGet('partyMute', false), min: false };
+    const REACTS = ['😂', '❤️', '👏', '😮', '😢', '🔥', '🎉', '👍'];
+    const partyHost = () => !!(P.party && P.party.host === BR.me.user);
+    // a viewer may not pause / seek / skip what the party is playing
+    function partyLocked(kind) {
+      if (!P.party || P.applying || partyHost()) return false;
+      if (kind && P.party.kind !== kind) return false;
+      if (kind === 'video' && !(S.file && S.file.path === P.party.path)) return false;
+      if (kind === 'music' && !(A.cur && A.cur.path === P.party.path)) return false;
+      toast(`🎉 ${P.party.host} controls playback in this party`, 1800);
+      return true;
+    }
+    const serverNow = () => Date.now() + P.skew;
+    document.body.insertAdjacentHTML('beforeend', '<aside id="smkv-party" hidden></aside><div id="smkv-pnotes"></div><div id="smkv-floats"></div>');
+
+    // --- notices with buttons (invites, requests, reminders…)
+    function partyNote(html, buttons, ms = 20000) {
+      const box = document.createElement('div');
+      box.className = 'smkv-pnote';
+      box.innerHTML = `<div>${html}</div><div class="smkv-pnb">${buttons.map((b, i) => `<button data-i="${i}" class="${b.primary ? 'smkv-primary' : ''}">${esc(b.label)}</button>`).join('')}<button data-x title="Dismiss">✕</button></div>`;
+      const close = () => box.remove();
+      box.querySelectorAll('button[data-i]').forEach((el) => el.onclick = () => { close(); buttons[+el.dataset.i].fn(); });
+      box.querySelector('[data-x]').onclick = close;
+      $('#smkv-pnotes').appendChild(box);
+      if (ms) setTimeout(close, ms);
+    }
+
+    async function enterParty(id, password) {
+      try {
+        let d = await api(`parties/${encodeURIComponent(id)}`);
+        if (!d.msgs) { // not a member yet
+          try { d = await apiPost(`parties/${encodeURIComponent(id)}/join`, password != null ? { password } : {}); }
+          catch (x) {
+            if (/password/.test(x.message)) {
+              const pw = prompt(`🔒 “${d.title}” has a password${/wrong/.test(x.message) ? ' (that one was wrong)' : ''}:`);
+              if (pw != null && pw !== '') return enterParty(id, pw);
+              return;
+            }
+            if (/private/.test(x.message)) {
+              if (confirm(`“${d.title}” is private. Ask ${d.host} to let you in?`)) { await apiPost(`parties/${encodeURIComponent(id)}/request`, {}); toast(`Asked ${d.host} — you'll get in when they say yes`, 5000); }
+              return;
+            }
+            throw x;
+          }
+        }
+        setParty(d);
+        if (partyHost()) hostTakeOver(); else applyState(d, true);
+      } catch (x) { toast(x.message, 5000); }
+    }
+    function setParty(d) {
+      const was = P.party && P.party.id;
+      if (d && d.now) P.skew = d.now - Date.now();
+      P.party = d;
+      if (d) lsSet('partyId', d.id); else lsSet('partyId', null);
+      document.body.classList.toggle('smkv-in-party', !!d);
+      if (d && !was) P.min = false;
+      clearInterval(P.hostTimer); clearInterval(P.driftTimer);
+      if (d && partyHost()) P.hostTimer = setInterval(() => hostPush(false), 5000);
+      if (d && !partyHost()) P.driftTimer = setInterval(() => applyState(P.last || P.party, false), 4000);
+      drawParty();
+    }
+    async function leaveParty(silent) {
+      const d = P.party;
+      if (!d) return;
+      setParty(null);
+      if (!silent) { try { await apiPost(`parties/${encodeURIComponent(d.id)}/leave`, {}); } catch (_) { /* gone */ } }
+      if (location.hash.startsWith('#/party')) route();
+    }
+
+    // --- host: tell the party what's playing
+    function hostState() {
+      if ((P.party && P.party.kind === 'music' && A.cur) || (!S.file && A.cur)) {
+        if (!A.cur) return null;
+        return { kind: 'music', path: A.cur.path, name: [A.cur.title || A.cur.name, A.cur.artist].filter(Boolean).join(' · '), playing: !A.el.paused, pos: aTime() };
+      }
+      if (!S.file) return null;
+      return { kind: 'video', path: S.file.path, name: S.file.name, playing: !media.paused, pos: cur() };
+    }
+    let lastPushKey = '';
+    async function hostPush(force) {
+      if (!partyHost()) return;
+      const st = hostState();
+      if (!st) return;
+      const key = `${st.path}|${st.playing}`;
+      if (!force && key === lastPushKey && !st.playing) return; // paused and nothing changed
+      lastPushKey = key;
+      try { await apiPost(`parties/${encodeURIComponent(P.party.id)}/state`, st); if (st.path !== P.party.path) { P.party.path = st.path; P.party.kind = st.kind; P.party.name = st.name; drawParty(); } }
+      catch (x) { if (/ended|not found/i.test(x.message)) leaveParty(true); }
+    }
+    // the host opens what the party is about (or keeps what's already playing)
+    function hostTakeOver() {
+      const d = P.party;
+      if (S.file || A.cur) { hostPush(true); return; }
+      if (d.path) applyState(d, true, true);
+    }
+    const partyEvents = () => {
+      ['play', 'pause', 'seeked'].forEach((ev) => { video.addEventListener(ev, () => { if (partyHost() && P.party.kind === 'video') hostPush(true); }); A.el.addEventListener(ev, () => { if (partyHost() && P.party.kind === 'music') hostPush(true); }); });
+      video.addEventListener('loadeddata', () => { if (partyHost()) hostPush(true); });
+      A.el.addEventListener('loadeddata', () => { if (partyHost() && P.party.kind === 'music') hostPush(true); });
+    };
+    partyEvents();
+
+    // --- viewer: follow the host
+    async function applyState(st, hard, asHost) {
+      if (!P.party || !st || !st.path) return;
+      if (!asHost && partyHost()) return;
+      P.last = st;
+      const target = Math.max(0, (st.pos || 0) + (st.playing ? Math.max(0, serverNow() - (st.at || serverNow())) / 1000 : 0));
+      P.applying = true;
+      try {
+        if (st.kind === 'music') {
+          if (S.file) closeVideo();
+          if (!A.cur || A.cur.path !== st.path) {
+            const lib = st.path.split('/')[0];
+            let t = null;
+            try { const d = await libData(lib); t = d.items.find((x) => x.path === st.path); } catch (_) { /* no access */ }
+            if (!t) { toast('Can’t open the song the party is playing', 4000); return; }
+            A.queue = [t]; A.idx = 0;
+            loadTrack(target, st.playing);
+            return;
+          }
+          if (Math.abs(aTime() - target) > 2.5) { if (A.transcoded) loadTrack(target, st.playing); else A.el.currentTime = target; }
+          if (st.playing && A.el.paused) A.el.play().catch(() => partyNote('▶ Tap to start playing with the party', [{ label: '▶ Play', primary: true, fn: () => { P.applying = true; A.el.play().catch(() => {}); P.applying = false; } }], 0));
+          if (!st.playing && !A.el.paused) A.el.pause();
+        } else {
+          if (!S.file || S.file.path !== st.path) {
+            if (A.cur && !A.el.paused) A.el.pause();
+            await playVideo(st.path, { start: target, autoplay: st.playing });
+            return;
+          }
+          if (!S.info) return;
+          if (Math.abs(cur() - target) > 2.5) seekTo(target);
+          if (st.playing && media.paused) Promise.resolve(media.play()).catch(() => partyNote('▶ Tap to start playing with the party', [{ label: '▶ Play', primary: true, fn: () => { P.applying = true; Promise.resolve(media.play()).catch(() => {}); P.applying = false; } }], 0));
+          if (!st.playing && !media.paused) media.pause();
+        }
+      } finally { setTimeout(() => { P.applying = false; }, 300); }
+    }
+
+    // --- floating emoji over the player
+    function floatEmoji(e, from) {
+      if (P.muted) return;
+      const el = document.createElement('div');
+      el.className = 'smkv-float';
+      el.innerHTML = `<span>${esc(e)}</span><small>${esc(from)}</small>`;
+      el.style.left = (10 + Math.random() * 70) + '%';
+      $('#smkv-floats').appendChild(el);
+      setTimeout(() => el.remove(), 3200);
+    }
+
+    // --- the panel
+    function msgHtml(m) {
+      if (m.sys) return `<div class="smkv-pm sys">${esc(m.text)}</div>`;
+      return `<div class="smkv-pm${m.from === BR.me.user ? ' me' : ''}">${avatarHtml(m.from, 22)}<div><b>${esc(m.from)}</b> ${linkify(m.text)}</div></div>`;
+    }
+    function drawParty() {
+      const el = $('#smkv-party'), d = P.party;
+      el.hidden = !d;
+      if (!d) { el.innerHTML = ''; return; }
+      const host = partyHost();
+      el.classList.toggle('min', P.min);
+      document.body.classList.toggle('smkv-party-min', P.min);
+      if (P.min) {
+        el.innerHTML = `<button class="smkv-pmin" title="Open the party">🎉 ${esc(d.title)} · ${d.members.length}</button>`;
+        el.querySelector('.smkv-pmin').onclick = () => { P.min = false; drawParty(); };
+        return;
+      }
+      const reqs = host ? (d.requests || []) : [];
+      el.innerHTML = `
+        <header><div><b>🎉 ${esc(d.title)}</b><div class="smkv-dim2">${d.visibility === 'public' ? '🌐 public' : '🔒 private'}${d.locked ? ' · 🔑 password' : ''} · ${d.live ? (d.playing ? '▶ playing' : '⏸ paused') : '🗓 ' + new Date(d.scheduled * 1000).toLocaleString()}</div></div>
+          <button data-a="min" title="Minimise">—</button></header>
+        <div class="smkv-pnow">${d.name ? `${d.kind === 'music' ? '🎵' : '🎬'} ${esc(d.name)}` : '<span class="smkv-dim2">Nothing chosen yet</span>'}
+          ${host ? '' : `<div class="smkv-dim2">👑 ${esc(d.host)} controls playback${S.file || A.cur ? '' : ' · <a href="#" data-a="sync">▶ open it</a>'}</div>`}
+          ${host && !d.live ? '<button class="smkv-primary" data-a="start">🎉 Start the party now</button>' : ''}</div>
+        <div class="smkv-pmembers">${d.members.map((m) => `<span class="smkv-pmem${m.online ? ' on' : ''}" title="${esc(m.name)}${m.name === d.host ? ' — host' : ''}">${avatarHtml(m.name, 26, m.online)}${m.name === d.host ? '<i>👑</i>' : ''}${host && m.name !== d.host ? `<button data-kick="${esc(m.name)}" title="Remove ${esc(m.name)}">✕</button>` : ''}</span>`).join('')}
+          ${host || d.visibility === 'public' ? '<button data-a="invite" class="smkv-pinv" title="Invite people">＋</button>' : ''}</div>
+        ${reqs.length ? `<div class="smkv-preqs">${reqs.map((r) => `<div>${avatarHtml(r.name, 22)} <b>${esc(r.name)}</b> wants to join <button class="smkv-primary" data-ok="${esc(r.name)}">Let in</button><button data-no="${esc(r.name)}">No</button></div>`).join('')}</div>` : ''}
+        ${(d.invitedUsers || []).length ? `<div class="smkv-dim2" style="padding:0 12px 6px">Invited: ${d.invitedUsers.map(esc).join(', ')}</div>` : ''}
+        <div class="smkv-pmsgs">${P.muted ? '<div class="smkv-pm sys">🔕 Chat muted for you — the party goes on</div>' : (d.msgs || []).map(msgHtml).join('')}</div>
+        <div class="smkv-preact">${REACTS.map((e) => `<button data-r="${e}">${e}</button>`).join('')}</div>
+        <form class="smkv-psend"><input placeholder="${d.chatOn || host ? 'Say something…' : '🤫 The host turned chat off'}" maxlength="1000" ${d.chatOn || host ? '' : 'disabled'}><button class="smkv-primary" ${d.chatOn || host ? '' : 'disabled'}>➤</button></form>
+        <footer>
+          <button data-a="mute" title="Hide chat and emoji for yourself">${P.muted ? '🔔 Show chat' : '🔕 Mute chat'}</button>
+          ${host ? `<button data-a="settings">⚙ Party</button>` : ''}
+          <button data-a="leave">${host ? 'Leave' : '🚪 Leave'}</button>
+          ${host ? '<button data-a="end" class="smkv-danger">End</button>' : ''}
+        </footer>`;
+      const msgs = el.querySelector('.smkv-pmsgs'); msgs.scrollTop = msgs.scrollHeight;
+      const id = encodeURIComponent(d.id);
+      const act = async (a, body) => { try { const r = await apiPost(`parties/${id}/${a}`, body || {}); if (r && r.msgs) setParty(r); } catch (x) { toast(x.message, 4000); } };
+      el.querySelectorAll('[data-a]').forEach((b) => b.onclick = async (e) => {
+        e.preventDefault();
+        const a = b.dataset.a;
+        if (a === 'min') { P.min = true; drawParty(); }
+        if (a === 'sync') applyState(P.last || d, true);
+        if (a === 'start') { await act('start'); hostTakeOver(); }
+        if (a === 'mute') { P.muted = !P.muted; lsSet('partyMute', P.muted); drawParty(); }
+        if (a === 'leave') leaveParty();
+        if (a === 'end') { if (confirm('End the party for everyone?')) { try { await apiSend('DELETE', `parties/${id}`); } catch (_) { /* gone */ } setParty(null); } }
+        if (a === 'invite') invitePeople(d, (users) => act('invite', { users }));
+        if (a === 'settings') partySettings(d);
+      });
+      el.querySelectorAll('[data-kick]').forEach((b) => b.onclick = () => { if (confirm(`Remove ${b.dataset.kick} from the party?`)) act('kick', { user: b.dataset.kick }); });
+      el.querySelectorAll('[data-ok]').forEach((b) => b.onclick = () => act('answer', { user: b.dataset.ok, accept: true }));
+      el.querySelectorAll('[data-no]').forEach((b) => b.onclick = () => act('answer', { user: b.dataset.no, accept: false }));
+      el.querySelectorAll('[data-r]').forEach((b) => b.onclick = () => { floatEmoji(b.dataset.r, BR.me.user); apiPost(`parties/${id}/react`, { emoji: b.dataset.r }).catch((x) => toast(x.message, 3000)); });
+      const f = el.querySelector('.smkv-psend');
+      f.onsubmit = async (e) => {
+        e.preventDefault();
+        const inp = f.querySelector('input'), text = inp.value.trim();
+        if (!text) return;
+        inp.value = '';
+        try { await apiPost(`parties/${id}/msg`, { text }); } catch (x) { toast(x.message, 4000); inp.value = text; }
+      };
+    }
+    function invitePeople(d, send) {
+      const others = SO.people.filter((p) => p.name !== BR.me.user && !d.members.some((m) => m.name === p.name));
+      if (!others.length) return toast('Everyone is already here', 2500);
+      detailModal(`<h2>Invite to “${esc(d.title)}”</h2><div class="smkv-share">${others.map((p) => `<label class="smkv-check"><input type="checkbox" value="${esc(p.name)}"> <span class="smkv-dot ${p.online ? 'on' : ''}"></span> ${esc(p.name)}</label>`).join('')}</div>
+        <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="smkv-primary" id="smkv-pinvok">Invite</button></div>`, (root, close) => {
+        root.querySelector('#smkv-pinvok').onclick = () => { const u = [...root.querySelectorAll('input:checked')].map((i) => i.value); close(); if (u.length) { send(u); toast(`Invited ${u.join(', ')}`); } };
+      });
+    }
+    function partySettings(d) {
+      detailModal(`<h2>⚙ Party settings</h2>
+        <form id="smkv-psf" class="smkv-pform">
+          <label>Title <input class="smkv-inp" name="title" value="${esc(d.title)}" maxlength="120"></label>
+          <label>Who can find it <select class="smkv-inp" name="visibility"><option value="private">🔒 Private — invited people only</option><option value="public" ${d.visibility === 'public' ? 'selected' : ''}>🌐 Public — everyone sees it in Party</option></select></label>
+          <label>Password <input class="smkv-inp" name="password" type="password" placeholder="${d.locked ? '•••••• (leave as is) — type to change' : 'none'}" autocomplete="new-password"></label>
+          ${d.locked ? '<label class="smkv-check"><input type="checkbox" name="nopw"> Remove the password</label>' : ''}
+          <label class="smkv-check"><input type="checkbox" name="chatOn" ${d.chatOn ? 'checked' : ''}> Chat and emoji on (off: only you can write)</label>
+          <label>Hand over to <select class="smkv-inp" name="host"><option value="">— keep hosting —</option>${d.members.filter((m) => m.name !== d.host).map((m) => `<option>${esc(m.name)}</option>`).join('')}</select></label>
+          <div style="display:flex;justify-content:flex-end"><button class="smkv-primary">Save</button></div>
+        </form>`, (root, close) => {
+        const f = root.querySelector('#smkv-psf');
+        f.onsubmit = async (e) => {
+          e.preventDefault();
+          const body = { title: f.title.value, visibility: f.visibility.value, chatOn: f.chatOn.checked };
+          if (f.password.value) body.password = f.password.value;
+          if (f.nopw && f.nopw.checked) body.password = '';
+          if (f.host.value) body.host = f.host.value;
+          try { const r = await apiPost(`parties/${encodeURIComponent(d.id)}/settings`, body); close(); if (r.msgs) setParty(r); toast('Saved'); } catch (x) { toast(x.message, 4000); }
+        };
+      });
+    }
+
+    // --- new party (now or scheduled) from anything in the libraries
+    async function allPlayable() {
+      const libs = BR.libs.filter((l) => l.id !== '_legacy');
+      const out = [];
+      await Promise.all(libs.map(async (l) => {
+        try {
+          const d = await libData(l.id);
+          for (const it of d.items) out.push({ path: it.path, kind: l.type === 'music' ? 'music' : 'video', label: l.type === 'music' ? [it.title || it.name, it.artist].filter(Boolean).join(' · ') : itemLabel(it, d), lib: l.name });
+        } catch (_) { /* skip */ }
+      }));
+      return out;
+    }
+    async function newPartyDialog(pre = {}) {
+      const nowItem = pre.path ? pre : S.file ? { path: S.file.path, kind: 'video', label: S.file.name } : A.cur ? { path: A.cur.path, kind: 'music', label: [A.cur.title || A.cur.name, A.cur.artist].filter(Boolean).join(' · ') } : null;
+      let pick = nowItem;
+      const dt = new Date(Date.now() + 3600e3); dt.setMinutes(0, 0, 0);
+      const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60e3).toISOString().slice(0, 16);
+      detailModal(`<h2>🎉 New party</h2>
+        <form id="smkv-npf" class="smkv-pform">
+          <label>Title <input class="smkv-inp" name="title" placeholder="${esc(BR.me.user)}'s party" maxlength="120"></label>
+          <label>What to watch / listen <input class="smkv-inp" name="q" placeholder="Search movies, episodes, songs…" autocomplete="off"></label>
+          <div id="smkv-npick" class="smkv-dim2">${pick ? `Chosen: <b>${esc(pick.label)}</b>` : 'Nothing chosen yet (you can pick later by playing something)'}</div>
+          <div id="smkv-nres" class="smkv-nres"></div>
+          <label>When <select class="smkv-inp" name="when"><option value="now">Now</option><option value="later">Later…</option></select></label>
+          <input class="smkv-inp" type="datetime-local" name="at" value="${local}" hidden>
+          <label>Note <input class="smkv-inp" name="note" placeholder="e.g. bring snacks 🍿" maxlength="500"></label>
+          <label>Who can find it <select class="smkv-inp" name="visibility"><option value="private">🔒 Private — invited people only</option><option value="public">🌐 Public — everyone sees it</option></select></label>
+          <label>Password (optional) <input class="smkv-inp" name="password" type="password" autocomplete="new-password"></label>
+          <div><div class="smkv-dim2" style="margin-bottom:4px">Invite</div><div class="smkv-share">${SO.people.filter((p) => p.name !== BR.me.user).map((p) => `<label class="smkv-check"><input type="checkbox" name="inv" value="${esc(p.name)}"> <span class="smkv-dot ${p.online ? 'on' : ''}"></span> ${esc(p.name)}</label>`).join('')}</div></div>
+          <div style="display:flex;justify-content:flex-end"><button class="smkv-primary">🎉 Create</button></div>
+        </form>`, async (root, close) => {
+        const f = root.querySelector('#smkv-npf');
+        f.when.onchange = () => { f.at.hidden = f.when.value !== 'later'; };
+        let all = null;
+        f.q.oninput = async () => {
+          const q = f.q.value.trim().toLowerCase();
+          const box = root.querySelector('#smkv-nres');
+          if (q.length < 2) { box.innerHTML = ''; return; }
+          all = all || await allPlayable();
+          const words = q.split(/\s+/);
+          const hits = all.filter((x) => words.every((w) => (x.label + ' ' + x.path).toLowerCase().includes(w))).slice(0, 30);
+          box.innerHTML = hits.length ? hits.map((x, i) => `<div data-i="${i}">${x.kind === 'music' ? '🎵' : '🎬'} ${esc(x.label)} <span class="smkv-dim2">${esc(x.lib)}</span></div>`).join('') : '<div class="smkv-dim2">Nothing found</div>';
+          box.querySelectorAll('[data-i]').forEach((el) => el.onclick = () => { pick = hits[+el.dataset.i]; root.querySelector('#smkv-npick').innerHTML = `Chosen: <b>${esc(pick.label)}</b>`; box.innerHTML = ''; f.q.value = ''; });
+        };
+        f.onsubmit = async (e) => {
+          e.preventDefault();
+          const later = f.when.value === 'later';
+          const body = { title: f.title.value.trim(), visibility: f.visibility.value, password: f.password.value, note: f.note.value,
+            invite: [...f.querySelectorAll('input[name=inv]:checked')].map((i) => i.value) };
+          if (pick) Object.assign(body, { path: pick.path, kind: pick.kind, name: pick.label });
+          if (later) {
+            const t = new Date(f.at.value).getTime();
+            if (!(t > Date.now() + 60e3)) return toast('Pick a time in the future', 3000);
+            body.scheduled = Math.floor(t / 1000);
+          } else if (pick && ((S.file && S.file.path === pick.path) || (A.cur && A.cur.path === pick.path))) {
+            const st = hostState(); if (st) { body.pos = st.pos; body.playing = st.playing; }
+          }
+          try {
+            const d = await apiPost('parties', body);
+            close();
+            if (later) { toast(`🗓 Scheduled for ${new Date(body.scheduled * 1000).toLocaleString()}`, 5000); if (location.hash.startsWith('#/party')) route(); return; }
+            setParty(d);
+            if (pick && !((S.file && S.file.path === pick.path) || (A.cur && A.cur.path === pick.path))) applyState({ path: pick.path, kind: pick.kind, pos: 0, playing: false, at: serverNow() }, true, true);
+            else hostPush(true);
+            toast('🎉 Party started — invite people with ＋', 5000);
+          } catch (x) { toast(x.message, 5000); }
+        };
+      });
+    }
+
+    // --- the Party page
+    async function partyView() {
+      setToolbar('<button id="smkv-pnew" class="smkv-primary">🎉 New party</button>', null);
+      toolbar.querySelector('#smkv-q').style.display = 'none'; $('#smkv-rawbtn').hidden = true;
+      $('#smkv-pnew').onclick = () => newPartyDialog();
+      const r = await api('parties');
+      if (r.now) P.skew = r.now - Date.now();
+      const live = r.parties.filter((x) => x.live), soon = r.parties.filter((x) => !x.live);
+      const card = (x) => {
+        const mine = x.member, when = x.live ? '' : `🗓 ${new Date(x.scheduled * 1000).toLocaleString()}`;
+        const btn = mine ? (P.party && P.party.id === x.id ? '<span class="smkv-dim2">You’re here</span>' : `<button class="smkv-primary" data-go="${esc(x.id)}">${x.live ? 'Open' : 'Open'}</button>`)
+          : x.kicked ? '<span class="smkv-dim2">Removed by the host</span>'
+          : x.invited || x.visibility === 'public' ? `<button class="smkv-primary" data-go="${esc(x.id)}">${x.locked && !x.invited ? '🔑 ' : ''}${x.live ? 'Join' : 'I’m in'}</button>`
+          : x.requested ? '<span class="smkv-dim2">Asked to join…</span>' : `<button data-req="${esc(x.id)}">Ask to join</button>`;
+        return `<div class="smkv-pcard">
+          <div class="smkv-pcl">${avatarHtml(x.host, 34)}<div><b>${esc(x.title)}</b>${x.invited ? ' <span class="smkv-tag">invited</span>' : ''}
+            <div class="smkv-dim2">👑 ${esc(x.host)} · ${x.visibility === 'public' ? '🌐 public' : '🔒 private'}${x.locked ? ' · 🔑' : ''} · ${x.members.length} in${when ? ' · ' + when : ''}</div>
+            ${x.name ? `<div>${x.kind === 'music' ? '🎵' : '🎬'} ${esc(x.name)}${x.live ? (x.playing ? ' · ▶' : ' · ⏸') : ''}</div>` : ''}
+            ${x.note ? `<div class="smkv-dim2">“${esc(x.note)}”</div>` : ''}
+            <div class="smkv-pav">${x.members.slice(0, 12).map((m) => avatarHtml(m.name, 20, m.online)).join('')}</div></div></div>
+          <div class="smkv-pcb">${btn}</div></div>`;
+      };
+      view.innerHTML = `<h2 class="smkv-pageh">🎉 Party</h2>
+        <div class="smkv-dim2" style="margin:-6px 0 14px">Watch or listen together: the host plays, everyone follows, with chat and emoji. Friends who are watching something have a 🎉 next to their name — ask to join them.</div>
+        <h3 class="smkv-h">Live now</h3>${live.length ? live.map(card).join('') : '<div class="smkv-dim2">No party right now — start one!</div>'}
+        <h3 class="smkv-h">Coming up</h3>${soon.length ? soon.map(card).join('') : '<div class="smkv-dim2">Nothing scheduled.</div>'}`;
+      view.querySelectorAll('[data-go]').forEach((b) => b.onclick = () => enterParty(b.dataset.go).then(() => route()));
+      view.querySelectorAll('[data-req]').forEach((b) => b.onclick = async () => { try { await apiPost(`parties/${encodeURIComponent(b.dataset.req)}/request`, {}); toast('Asked — the host will let you in', 4000); route(); } catch (x) { toast(x.message, 4000); } });
+    }
+
+    // --- "can I watch with you?" (from the People list)
+    async function askToJoin(user) {
+      try {
+        const r = await apiPost('parties/ask', { user });
+        if (r.party) { setParty(r.party); applyState(r.party, true); return; }
+        toast(r.requested ? `Asked ${user}'s party — waiting for a yes` : `🎉 Asked ${user} — waiting for a yes`, 5000);
+      } catch (x) { toast(x.message, 5000); }
+    }
+
+    // --- live events
+    function partySocial(es) {
+      es.addEventListener('party', (e) => {
+        const d = JSON.parse(e.data).party;
+        if (!P.party || d.id !== P.party.id) return;
+        const wasHost = partyHost();
+        setParty(d);
+        if (!wasHost && partyHost()) { toast('👑 You are the host now', 4000); hostPush(true); }
+      });
+      es.addEventListener('party-state', (e) => {
+        const st = JSON.parse(e.data);
+        if (!P.party || st.id !== P.party.id) return;
+        if (st.now) P.skew = st.now - Date.now();
+        Object.assign(P.party, { path: st.path, kind: st.kind, name: st.name, playing: st.playing, pos: st.pos, at: st.at });
+        applyState(st, true);
+        drawParty();
+      });
+      es.addEventListener('party-msg', (e) => {
+        const v = JSON.parse(e.data);
+        if (!P.party || v.id !== P.party.id) return;
+        if (!(P.party.msgs || []).some((m) => m.seq === v.msg.seq)) (P.party.msgs = P.party.msgs || []).push(v.msg);
+        if (P.muted) return;
+        const box = $('#smkv-party .smkv-pmsgs');
+        if (box) { box.insertAdjacentHTML('beforeend', msgHtml(v.msg)); box.scrollTop = box.scrollHeight; }
+        if (P.min && !v.msg.sys && v.msg.from !== BR.me.user) toast(`🎉 ${v.msg.from}: ${v.msg.text}`, 3000);
+      });
+      es.addEventListener('party-react', (e) => {
+        const v = JSON.parse(e.data);
+        if (P.party && v.id === P.party.id && v.from !== BR.me.user) floatEmoji(v.emoji, v.from);
+      });
+      es.addEventListener('parties', () => { if (location.hash.startsWith('#/party')) route(); });
+      es.addEventListener('party-notice', (e) => {
+        const n = JSON.parse(e.data), x = n.party || {}, t = esc(x.title || '');
+        switch (n.kind) {
+          case 'invite': partyNote(`🎉 <b>${esc(n.from)}</b> invited you to <b>${t}</b>${x.live ? '' : ` · 🗓 ${new Date(x.scheduled * 1000).toLocaleString()}`}`, [{ label: x.live ? 'Join' : 'Open Party', primary: true, fn: () => (x.live ? enterParty(x.id) : (location.hash = '#/party')) }]); break;
+          case 'request': partyNote(`🙋 <b>${esc(n.from)}</b> wants to join <b>${t}</b>`, [{ label: 'Let in', primary: true, fn: () => apiPost(`parties/${encodeURIComponent(x.id)}/answer`, { user: n.from, accept: true }).catch((y) => toast(y.message)) }, { label: 'No', fn: () => apiPost(`parties/${encodeURIComponent(x.id)}/answer`, { user: n.from, accept: false }).catch(() => {}) }], 60000); break;
+          case 'accepted': toast(`🎉 ${n.from} let you in — joining`, 4000); enterParty(x.id); break;
+          case 'declined': toast(`${n.from} said no this time`, 4000); break;
+          case 'ask-declined': toast(`${n.from} wants to watch alone right now`, 4000); break;
+          case 'kicked': if (P.party && P.party.id === x.id) setParty(null); toast(`🚫 ${n.from} removed you from the party`, 5000); break;
+          case 'ended': if (P.party && P.party.id === x.id) { setParty(null); toast('🎉 The party has ended', 4000); } break;
+          case 'reminder': if (!(P.party && P.party.id === x.id)) partyNote(`⏰ <b>${t}</b> is starting${x.name ? ` — ${esc(x.name)}` : ''}`, [{ label: 'Join', primary: true, fn: () => enterParty(x.id) }], 0); break;
+          case 'ask': {
+            const a = n.activity || {};
+            partyNote(`🎉 <b>${esc(n.from)}</b> wants to ${a.kind === 'music' ? 'listen' : 'watch'} with you${a.title ? ` — ${esc(a.title)}` : ''}`, [
+              { label: 'Let them join', primary: true, fn: async () => { const st = hostState() || {}; try { const d = await apiPost('parties/ask/answer', { user: n.from, accept: true, pos: st.pos || 0, playing: !!st.playing }); setParty(d); hostPush(true); } catch (y) { toast(y.message, 4000); } } },
+              { label: 'No', fn: () => apiPost('parties/ask/answer', { user: n.from, accept: false }).catch(() => {}) }], 60000);
+            break;
+          }
+        }
+      });
+    }
+    // back in after a page refresh
+    $('#smkv-vparty').onclick = () => (P.party ? (P.min = false, drawParty()) : newPartyDialog());
+    $('#smkv-aparty').onclick = () => (P.party ? (P.min = false, drawParty()) : newPartyDialog());
+    async function partyResume() {
+      const id = lsGet('partyId', null);
+      if (!id) return;
+      try { const d = await api(`parties/${encodeURIComponent(id)}`); if (d.msgs) { setParty(d); if (partyHost()) toast('🎉 You’re hosting — press play to carry on', 5000); else applyState(d, true); } else lsSet('partyId', null); }
+      catch (_) { lsSet('partyId', null); }
+    }
+
     // ------------------------------------------------------------ start
     document.body.classList.toggle('smkv-raw-on', !!lsGet('rawNames', false));
     (async () => {
@@ -2890,6 +3318,7 @@
       route();
       aRestore();
       startSocial();
+      partyResume();
     })();
   }
 
@@ -2938,7 +3367,7 @@
     </div>
   </div>
   <section id="smkv-bar">
-    <div class="smkv-titlerow"><button id="smkv-close" title="Back to library (Esc)">← Back</button><h2 id="smkv-title"></h2><a id="smkv-vdl" class="smkv-dlbtn" title="Save this file to this computer" download hidden>⬇ Save</a></div>
+    <div class="smkv-titlerow"><button id="smkv-close" title="Back to library (Esc)">← Back</button><h2 id="smkv-title"></h2><a id="smkv-vdl" class="smkv-dlbtn" title="Save this file to this computer" download hidden>⬇ Save</a><button id="smkv-vparty" class="smkv-dlbtn" title="Watch this together: start a party">🎉 Watch together</button></div>
     <div id="smkv-meta"></div>
     <div class="smkv-opts">
       <label>Audio <select id="smkv-audio"><option>—</option></select></label>
@@ -2964,7 +3393,7 @@
     <div class="smkv-abtns"><button id="smkv-aprev" title="Previous">⏮</button><button id="smkv-app-pp" class="big" title="Play/Pause (space)">▶</button><button id="smkv-anext" title="Next">⏭</button><button id="smkv-arep">🔁</button></div>
     <div class="smkv-aseekrow"><input id="smkv-aseek" type="range" min="0" max="0" step="0.1" value="0"><span id="smkv-atime">0:00 / 0:00</span></div>
   </div>
-  <div class="smkv-aright"><a id="smkv-adl" class="smkv-dlbtn" title="Save this song to this computer" download hidden>⬇</a><button id="smkv-aqueue" title="Queue">☰</button><input id="smkv-avol" type="range" min="0" max="1" step="0.05"><button id="smkv-aclose" title="Stop">✕</button></div>
+  <div class="smkv-aright"><button id="smkv-aparty" title="Listen together: start a party">🎉</button><a id="smkv-adl" class="smkv-dlbtn" title="Save this song to this computer" download hidden>⬇</a><button id="smkv-aqueue" title="Queue">☰</button><input id="smkv-avol" type="range" min="0" max="1" step="0.05"><button id="smkv-aclose" title="Stop">✕</button></div>
   <audio id="smkv-aud" preload="auto"></audio>
 </div>
 <div id="smkv-detail"></div>
@@ -3057,6 +3486,65 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-ep.smkv-skel .smkv-still span{color:#5d6675;font-size:22px}
 .smkv-ep.smkv-skel.future{opacity:.4}
 .smkv-miss{color:#f5a623}
+/* ---- party */
+#smkv-party{position:fixed;right:12px;top:12px;bottom:88px;width:330px;z-index:18;display:flex;flex-direction:column;background:rgba(16,20,27,.97);border:1px solid #2a313c;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.5);overflow:hidden;color:#c9cfd8;font-size:13.5px}
+#smkv-party[hidden]{display:none}
+#smkv-party.min{top:auto;bottom:96px;width:auto;background:transparent;border:none;box-shadow:none}
+.smkv-pmin{background:#3b2a6e!important;border:1px solid #7b5cd6!important;color:#fff!important;border-radius:20px!important;padding:8px 14px!important;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+#smkv-party header{display:flex;gap:8px;align-items:flex-start;padding:12px 12px 8px;border-bottom:1px solid #20262f}
+#smkv-party header>div{flex:1;min-width:0}
+#smkv-party header b{font-size:15px}
+#smkv-party button{background:#1c212a;color:#c9cfd8;border:1px solid #2a313c;border-radius:7px;padding:4px 9px;cursor:pointer;font:inherit}
+#smkv-party button.smkv-primary{background:#3b6fd6;border-color:#3b6fd6;color:#fff}
+#smkv-party button.smkv-danger{background:#5a1f24;border-color:#7a2a30;color:#ffb3b8}
+.smkv-pnow{padding:8px 12px;border-bottom:1px solid #20262f;display:flex;flex-direction:column;gap:4px}
+.smkv-pnow a{color:#8ab4ff}
+.smkv-pmembers{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;align-items:center}
+.smkv-pmem{position:relative;display:inline-flex}
+.smkv-pmem i{position:absolute;top:-9px;left:6px;font-style:normal;font-size:11px}
+.smkv-pmem button{position:absolute;top:-6px;right:-8px;padding:0 4px!important;font-size:10px!important;line-height:14px;border-radius:50%!important;display:none}
+.smkv-pmem:hover button{display:block}
+.smkv-pinv{border-radius:50%!important;width:26px;height:26px;padding:0!important}
+.smkv-preqs{padding:4px 12px 8px;display:flex;flex-direction:column;gap:6px}
+.smkv-preqs>div{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:#1a2233;border-radius:8px;padding:6px 8px}
+.smkv-pmsgs{flex:1;overflow:auto;padding:8px 12px;display:flex;flex-direction:column;gap:7px;border-top:1px solid #20262f}
+.smkv-pm{display:flex;gap:7px;align-items:flex-start;line-height:1.4;word-break:break-word}
+.smkv-pm b{color:#e6e9ee}
+.smkv-pm.me b{color:#8ab4ff}
+.smkv-pm.sys{color:#7d8696;font-size:12px;justify-content:center;text-align:center}
+.smkv-preact{display:flex;justify-content:space-between;padding:6px 10px;border-top:1px solid #20262f}
+.smkv-preact button{background:transparent!important;border:none!important;font-size:19px!important;padding:2px 4px!important;transition:transform .1s}
+.smkv-preact button:hover{transform:scale(1.25)}
+.smkv-psend{display:flex;gap:6px;padding:8px 10px}
+.smkv-psend input{flex:1;background:#0d1015;border:1px solid #2a313c;border-radius:8px;color:#e6e9ee;padding:7px 10px;font:inherit;min-width:0}
+#smkv-party footer{display:flex;gap:6px;padding:8px 10px;border-top:1px solid #20262f;flex-wrap:wrap}
+#smkv-floats{position:fixed;inset:0;pointer-events:none;z-index:19;overflow:hidden}
+.smkv-float{position:absolute;bottom:90px;display:flex;flex-direction:column;align-items:center;animation:smkvfloat 3.2s ease-out forwards}
+.smkv-float span{font-size:38px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.5))}
+.smkv-float small{font-size:11px;color:#fff;background:rgba(0,0,0,.55);border-radius:8px;padding:0 6px}
+@keyframes smkvfloat{0%{transform:translateY(0) scale(.6);opacity:0}12%{opacity:1;transform:translateY(-40px) scale(1.1)}100%{transform:translateY(-55vh) scale(1);opacity:0}}
+#smkv-pnotes{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:60;display:flex;flex-direction:column;gap:8px;width:min(440px,92vw)}
+.smkv-pnote{background:#1a2030;border:1px solid #7b5cd6;border-radius:12px;padding:10px 12px;box-shadow:0 8px 28px rgba(0,0,0,.5);color:#e6e9ee;display:flex;flex-direction:column;gap:8px;font-size:14px}
+.smkv-pnb{display:flex;gap:6px;justify-content:flex-end}
+.smkv-pnote button{background:#262d3a;color:#e6e9ee;border:1px solid #333c4b;border-radius:7px;padding:5px 11px;cursor:pointer;font:inherit}
+.smkv-pnote button.smkv-primary{background:#7b5cd6;border-color:#7b5cd6}
+.smkv-pcard{display:flex;gap:12px;align-items:center;background:#141820;border:1px solid #20262f;border-radius:12px;padding:12px;margin:8px 0}
+.smkv-pcl{display:flex;gap:10px;flex:1;min-width:0}
+.smkv-pcl>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.smkv-pav{display:flex;gap:3px;margin-top:3px}
+.smkv-tag{font-size:11px;background:#3b2a6e;color:#d6c8ff;border-radius:8px;padding:1px 7px}
+.smkv-pform{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.smkv-pform label{display:flex;flex-direction:column;gap:4px}
+.smkv-pform label.smkv-check{flex-direction:row;align-items:center}
+.smkv-nres{max-height:200px;overflow:auto;display:flex;flex-direction:column}
+.smkv-nres>div{padding:6px 8px;border-radius:6px;cursor:pointer}
+.smkv-nres>div:hover{background:#1c2638}
+.smkv-askj{background:none!important;border:none!important;padding:0 2px!important;font-size:14px;cursor:pointer;margin-left:4px;vertical-align:1px}
+.smkv-askj:hover{transform:scale(1.2)}
+body.smkv-in-party:not(.smkv-party-min).smkv-watching #smkv-watch{padding-right:350px}
+body.smkv-in-party:not(.smkv-party-min) #smkv-browse{padding-right:350px}
+.smkv-pcl .smkv-pav{display:flex!important;flex-direction:row!important;flex-wrap:wrap;gap:3px}
+@media (max-width:820px){#smkv-party{left:8px;right:8px;width:auto;top:auto;height:52vh}body.smkv-in-party.smkv-watching #smkv-watch,body.smkv-in-party #smkv-browse{padding-right:0}}
 #smkv-selbar{position:sticky;bottom:12px;z-index:5;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#1a2030;border:1px solid #3b6fd6;border-radius:12px;padding:10px 14px;margin-top:16px;box-shadow:0 6px 24px rgba(0,0,0,.45)}
 #smkv-selbar span{flex:1;min-width:140px}
 #smkv-selbtn.on{background:#2a4a7a!important;border-color:#3b6fd6!important;color:#fff!important}
