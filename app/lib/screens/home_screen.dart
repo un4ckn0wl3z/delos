@@ -702,6 +702,7 @@ class SearchField extends StatelessWidget {
             ),
           ),
           ...trailing,
+          const RawNamesButton(),
         ]),
       );
 }

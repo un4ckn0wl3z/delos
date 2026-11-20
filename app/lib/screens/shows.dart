@@ -64,6 +64,7 @@ class _ShowsViewState extends State<ShowsView> {
                       subtitle: '${shows[k]!.length} episodes${(d!.shows[k]?.year ?? 0) > 0 ? ' · ${d!.shows[k]!.year}' : ''}',
                       image: d!.shows[k]?.poster ?? '',
                       badge: _missingBadge(d!, k, shows[k]!),
+                      raw: rawOf(shows[k]!.map((e) => e.name), RawNames.tmdb(d!.shows[k]?.tmdbId ?? 0)),
                       onTap: () async {
                         await Navigator.push(context, MaterialPageRoute(builder: (_) => ShowScreen(app: widget.app, data: d!, show: k)));
                         if (mounted) setState(() {});
@@ -102,6 +103,7 @@ List<Widget> seriesCards(BuildContext context, AppCtx app, LibData d, String q, 
         subtitle: '📺 ${shows[k]!.length} file${shows[k]!.length > 1 ? 's' : ''}${(d.shows[k]?.year ?? 0) > 0 ? ' · ${d.shows[k]!.year}' : ''}',
         image: d.shows[k]?.poster ?? '',
         badge: _missingBadge(d, k, shows[k]!),
+        raw: rawOf(shows[k]!.map((e) => e.name), RawNames.tmdb(d.shows[k]?.tmdbId ?? 0)),
         onTap: () async {
           await Navigator.push(context, MaterialPageRoute(builder: (_) => ShowScreen(app: app, data: d, show: k)));
           await reload();
@@ -206,6 +208,7 @@ class _ShowScreenState extends State<ShowScreen> {
                   padding: const EdgeInsets.only(top: 2),
                   child: Text('$missingTotal episode${missingTotal == 1 ? '' : 's'} missing', style: const TextStyle(color: Color(0xFFF5A623))),
                 ),
+              RawText('${RawNames.tmdb(m?.tmdbId ?? 0)} · series key “${widget.show}” · parsed “${eps.isNotEmpty ? eps.first.title : ''}”'),
               const SizedBox(height: 8),
               Chips(m?.genres ?? const []),
               if ((m?.overview ?? '').isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Text(m!.overview, style: const TextStyle(height: 1.5))),
@@ -259,6 +262,7 @@ class _ShowScreenState extends State<ShowScreen> {
                       if (e.duration > 0) Text(fmtDur(e.duration), style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))),
                       if (e.episodeOverview.isNotEmpty)
                         Text(e.episodeOverview, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, color: Color(0xFF9AA3B2))),
+                      RawText('${e.dir.isNotEmpty ? '${e.dir}/' : ''}${e.name}\nS${e.season}E${e.episode}${e.episodeEnd > 0 ? '–E${e.episodeEnd}' : ''}'),
                     ]),
                   ),
                 ]),

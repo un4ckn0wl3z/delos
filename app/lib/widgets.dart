@@ -1,6 +1,62 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// "📄 File names": the original file name under every title, to check what TMDB / the tags matched.
+class RawNames {
+  static final on = ValueNotifier<bool>(false);
+  static Future<void> init() async {
+    try {
+      on.value = (await SharedPreferences.getInstance()).getBool('rawNames') ?? false;
+    } catch (_) {}
+  }
+
+  static Future<void> toggle() async {
+    on.value = !on.value;
+    try {
+      await (await SharedPreferences.getInstance()).setBool('rawNames', on.value);
+    } catch (_) {}
+  }
+
+  static String tmdb(int id) => id > 0 ? 'TMDB #$id' : 'not matched on TMDB';
+}
+
+class RawNamesButton extends StatelessWidget {
+  const RawNamesButton({super.key});
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+        valueListenable: RawNames.on,
+        builder: (context, on, _) => IconButton(
+          tooltip: on ? 'Hide file names' : 'Show the original file names (and the TMDB match)',
+          isSelected: on,
+          icon: const Icon(Icons.description_outlined),
+          selectedIcon: Icon(Icons.description, color: Theme.of(context).colorScheme.primary),
+          onPressed: RawNames.toggle,
+        ),
+      );
+}
+
+/// Small monospace file name(s), only while "File names" is on.
+class RawText extends StatelessWidget {
+  const RawText(this.text, {super.key, this.maxLines = 3});
+  final String text;
+  final int maxLines;
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+        valueListenable: RawNames.on,
+        builder: (context, on, _) => on && text.isNotEmpty
+            ? Text(text, maxLines: maxLines, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace', color: Color(0xFF7D8696), height: 1.3))
+            : const SizedBox.shrink(),
+      );
+}
+
+/// "first.name.mkv +2 more"
+String rawOf(Iterable<String> names, [String extra = '']) {
+  final l = names.toSet().toList();
+  final s = l.isEmpty ? '' : '${l.first}${l.length > 1 ? ' +${l.length - 1} more' : ''}';
+  return extra.isEmpty ? s : '$s\n$extra';
+}
 
 /// Network image with optional auth headers and a text placeholder.
 class NetImage extends StatelessWidget {
@@ -74,10 +130,13 @@ class PosterCard extends StatelessWidget {
     this.progress = 0,
     this.badge = '',
     this.round = false,
+    this.raw = '',
     required this.onTap,
     this.onLongPress,
   });
   final String title, subtitle, image, badge;
+  /// original file name(s), shown while "File names" is on
+  final String raw;
   final Map<String, String>? headers;
   final double aspect, progress;
   final bool round;
@@ -116,6 +175,7 @@ class PosterCard extends StatelessWidget {
         Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13.5, height: 1.25)),
         if (subtitle.isNotEmpty)
           Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Color(0xFF7D8696))),
+        if (raw.isNotEmpty) RawText(raw, maxLines: 2),
       ]),
     );
   }
@@ -129,7 +189,9 @@ class CardGrid extends StatelessWidget {
   /// Inside another scroll view (sized to its content, not scrollable itself).
   final bool shrink;
   @override
-  Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+      valueListenable: RawNames.on,
+      builder: (context, raw, _) => LayoutBuilder(builder: (context, box) {
         final cols = (box.maxWidth / (minWidth + 14)).floor().clamp(2, 10);
         final w = (box.maxWidth - 32 - (cols - 1) * 14) / cols;
         return GridView.builder(
@@ -140,12 +202,12 @@ class CardGrid extends StatelessWidget {
             crossAxisCount: cols,
             crossAxisSpacing: 14,
             mainAxisSpacing: 16,
-            mainAxisExtent: w / aspect + 54,
+            mainAxisExtent: w / aspect + 54 + (raw ? 28 : 0), // room for two lines of file name
           ),
           itemCount: children.length,
           itemBuilder: (_, i) => children[i],
         );
-      });
+      }));
 }
 
 class SectionTitle extends StatelessWidget {

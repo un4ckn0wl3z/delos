@@ -109,6 +109,7 @@ class _MoviesViewState extends State<MoviesView> {
                       subtitle: [if (g.year > 0) '${g.year}', if ((g.meta?.rating ?? 0) > 0) '★ ${g.meta!.rating.toStringAsFixed(1)}'].join(' · '),
                       image: g.meta?.poster ?? '',
                       progress: g.main.progress,
+                      raw: rawOf(g.items.map((i) => i.name), RawNames.tmdb(g.meta?.tmdbId ?? 0)),
                       badge: [
                         if (g.items.any((i) => OfflineStore.instance.downloaded(widget.app.api.settings.server, i.path) != null)) '📥',
                         if (g.items.length > 1) '${g.items.length} versions',

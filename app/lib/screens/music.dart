@@ -194,6 +194,7 @@ class AlbumGrid extends StatelessWidget {
               headers: app.api.authHeaders,
               aspect: 1,
               badge: LibOwners.badge(a.owners),
+              raw: rawOf(a.tracks.map((t) => t.name), a.tracks.isNotEmpty ? '${a.tracks.first.dir}/' : ''),
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AlbumScreen(app: app, data: data, album: a))),
             ),
         ]);
@@ -215,7 +216,7 @@ class TrackList extends StatelessWidget {
           itemBuilder: (_, i) {
             final t = tracks[i];
             final on = app.audio.current?.path == t.path;
-            return ListTile(
+            return ValueListenableBuilder<bool>(valueListenable: RawNames.on, builder: (context, raw, _) => ListTile(
               dense: true,
               selected: on,
               leading: SizedBox(
@@ -225,9 +226,13 @@ class TrackList extends StatelessWidget {
                     : Text(t.track > 0 ? '${t.track}' : '', textAlign: TextAlign.right, style: const TextStyle(color: Color(0xFF7D8696))),
               ),
               title: Text(t.title.isNotEmpty ? t.title : t.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: showAlbum
-                  ? Text([t.artist, t.album, if (LibOwners.of(t.path).isNotEmpty) '👤 ${LibOwners.of(t.path)}'].where((e) => e.isNotEmpty).join(' · '),
-                      maxLines: 1, overflow: TextOverflow.ellipsis)
+              subtitle: showAlbum || raw
+                  ? Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                      if (showAlbum)
+                        Text([t.artist, t.album, if (LibOwners.of(t.path).isNotEmpty) '👤 ${LibOwners.of(t.path)}'].where((e) => e.isNotEmpty).join(' · '),
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                      if (raw) RawText('${t.dir.isNotEmpty ? '${t.dir}/' : ''}${t.name}', maxLines: 2),
+                    ])
                   : null,
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 if (isSaved(app, t)) const Padding(padding: EdgeInsets.only(right: 6), child: Icon(Icons.offline_pin, size: 15, color: Color(0xFF1F9D63))),
@@ -241,7 +246,7 @@ class TrackList extends StatelessWidget {
               ]),
               onTap: () => app.audio.playQueue(tracks, i),
               onLongPress: () => songMenu(context, app, t),
-            );
+            ));
           },
         ),
       );

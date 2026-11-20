@@ -8,11 +8,13 @@ import 'offline/store.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'settings.dart';
+import 'widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
   final settings = await Settings.load();
+  await RawNames.init();
   await AutoTest.load(settings);
   try {
     await OfflineStore.init(settings).timeout(const Duration(seconds: 5));
