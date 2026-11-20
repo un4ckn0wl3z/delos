@@ -29,9 +29,12 @@ Future<void> showItemMenu(
     items = d.items.where((i) => i.movieId == items.first.movieId).toList();
   }
   final inProgress = items.where((i) => i.pos > 0).toList();
-  final canIdentify = app.editor && (type == 'movies' || (type == 'tv' && showKey != null && showKey.isNotEmpty));
   // only files in your own personal library (admins: anywhere). Merged views ('_all') check per file.
   bool ownsLib(String id) => app.admin || app.myLibs.contains(id);
+  // metadata: editors everywhere, anyone in their own library
+  final canEditMeta = app.editor || ownsLib(d.info.id);
+  final canIdentify = canEditMeta && (type == 'movies' || (showKey != null && showKey.isNotEmpty && type != 'music'));
+  final canGroup = canEditMeta && type != 'music' && d.info.id != '_all' && items.isNotEmpty;
   final deletable = items.where((i) => ownsLib(i.path.split('/').first)).toList();
   // save to this device (needs the "offline" permission)
   final store = OfflineStore.instance;
@@ -54,6 +57,13 @@ Future<void> showItemMenu(
             leading: const Icon(Icons.play_arrow),
             title: Text(play.pos > 0 ? 'Resume from ${fmtDur(play.pos)}' : 'Play'),
             onTap: () => Navigator.pop(ctx, 'play'),
+          ),
+        if (canGroup)
+          ListTile(
+            leading: const Icon(Icons.live_tv_outlined),
+            title: Text(items.every((i) => i.show.isNotEmpty) ? 'Move to another series…' : 'Put in a series…'),
+            subtitle: Text(items.length > 1 ? '${items.length} files → episodes of one series' : 'Make it an episode of a series'),
+            onTap: () => Navigator.pop(ctx, 'group'),
           ),
         if (play != null && play.pos > 0)
           ListTile(
@@ -109,6 +119,13 @@ Future<void> showItemMenu(
   if (action == null || !context.mounted) return;
   final messenger = ScaffoldMessenger.of(context);
   switch (action) {
+    case 'group':
+      if (await groupAsSeries(context, app, d, items)) {
+        messenger.showSnackBar(const SnackBar(content: Text('Grouped — updating…')));
+        app.repo.invalidate();
+        await Future<void>.delayed(const Duration(milliseconds: 1600)); // the server re-applies edits
+        onChanged?.call();
+      }
     case 'play':
       await openVideo(context, app, d, play!);
     case 'restart':
@@ -167,7 +184,8 @@ Future<void> showItemMenu(
       await Future.delayed(const Duration(milliseconds: 1500));
       app.repo.invalidate();
     case 'identify':
-      final m = type == 'tv' ? d.shows[showKey] : d.movieOf(items.first);
+      final series = showKey != null && showKey.isNotEmpty; // a series, in any video library
+      final m = series ? d.shows[showKey] : d.movieOf(items.first);
       final ok = await Navigator.of(context).push<bool>(MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => IdentifyScreen(
@@ -175,8 +193,8 @@ Future<void> showItemMenu(
           lib: d.info,
           query: m?.title ?? (items.first.title.isNotEmpty ? items.first.title : items.first.name),
           year: m?.year ?? items.first.year,
-          paths: type == 'movies' ? items.map((i) => i.path).toList() : const [],
-          show: type == 'tv' ? showKey : null,
+          paths: !series && type == 'movies' ? items.map((i) => i.path).toList() : const [],
+          show: series ? showKey : null,
         ),
       ));
       if (ok != true) return;
@@ -227,7 +245,7 @@ class _IdentifyScreenState extends State<IdentifyScreen> {
       error = null;
     });
     try {
-      final r = await widget.app.api.metaSearch(widget.lib.id, _q.text.trim(), int.tryParse(_y.text.trim()) ?? 0);
+      final r = await widget.app.api.metaSearch(widget.lib.id, _q.text.trim(), int.tryParse(_y.text.trim()) ?? 0, tv: widget.show != null);
       if (mounted) setState(() => results = r);
     } on ApiException catch (e) {
       if (mounted) setState(() => error = e.message);
@@ -331,7 +349,7 @@ class _IdentifyScreenState extends State<IdentifyScreen> {
 
 /// What the offline library needs to show a server file without the server.
 Map<String, dynamic> offlineInfo(LibData d, Item it) {
-  final tv = d.info.type == 'tv' && it.episode > 0;
+  final tv = it.show.isNotEmpty && it.episode > 0;
   final m = tv ? d.showOf(it) : d.movieOf(it);
   return {
     'kind': tv ? 'episode' : (d.info.type == 'movies' ? 'movie' : 'video'),
@@ -352,4 +370,69 @@ Map<String, dynamic> offlineInfo(LibData d, Item it) {
     'pos': it.pos,
     'duration': it.duration,
   };
+}
+
+/// "Put in a series…": the files become episodes of one series (new or existing), numbered in name order.
+/// Editors anywhere, owners in their own library. Undo per file with "Reset" on the web (✎).
+Future<bool> groupAsSeries(BuildContext context, AppCtx app, LibData d, List<Item> items) async {
+  final files = [...items]..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  final existing = {for (final e in d.series.entries) d.shows[e.key]?.title ?? e.value.first.title}..removeWhere((t) => t.isEmpty);
+  final title = TextEditingController(text: files.firstWhere((i) => i.show.isNotEmpty, orElse: () => files.first).show.isNotEmpty
+      ? (d.showOf(files.firstWhere((i) => i.show.isNotEmpty))?.title ?? '')
+      : '');
+  final season = TextEditingController(text: '${files.first.season > 0 ? files.first.season : 1}');
+  final start = TextEditingController(text: '${files.first.episode > 0 ? files.first.episode : 1}');
+  final messenger = ScaffoldMessenger.of(context);
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, set) {
+        final s0 = int.tryParse(season.text) ?? 1, e0 = int.tryParse(start.text) ?? 1;
+        return AlertDialog(
+          title: Text(files.length > 1 ? 'Group ${files.length} files as a series' : 'Put in a series'),
+          content: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              TextField(controller: title, autofocus: true, decoration: const InputDecoration(labelText: 'Series')),
+              if (existing.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Wrap(spacing: 6, runSpacing: 4, children: [
+                    for (final t in existing.take(12))
+                      ActionChip(label: Text(t, style: const TextStyle(fontSize: 12)), onPressed: () => set(() => title.text = t)),
+                  ]),
+                ),
+              Row(children: [
+                Expanded(child: TextField(controller: season, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Season'), onChanged: (_) => set(() {}))),
+                const SizedBox(width: 12),
+                Expanded(child: TextField(controller: start, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'First episode'), onChanged: (_) => set(() {}))),
+              ]),
+              const SizedBox(height: 12),
+              for (var i = 0; i < files.length && i < 30; i++)
+                Text('S${s0}E${e0 + i} ← ${files[i].name}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Color(0xFF9AA3B2))),
+              if (files.length > 30) Text('… ${files.length - 30} more', style: const TextStyle(fontSize: 12, color: Color(0xFF9AA3B2))),
+            ]),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Group')),
+          ],
+        );
+      },
+    ),
+  );
+  final name = title.text.trim(), s = int.tryParse(season.text.trim()) ?? 1, e = int.tryParse(start.text.trim()) ?? 1;
+  title.dispose();
+  season.dispose();
+  start.dispose();
+  if (ok != true || name.isEmpty) return false;
+  try {
+    for (var i = 0; i < files.length; i++) {
+      final it = files[i];
+      await app.api.metaEdit(it.path.split('/').first, it.path, {'showTitle': name, 'season': '$s', 'episode': '${e + i}'});
+    }
+    return true;
+  } on ApiException catch (x) {
+    messenger.showSnackBar(SnackBar(content: Text(x.message)));
+    return false;
+  }
 }

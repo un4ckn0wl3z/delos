@@ -258,6 +258,11 @@ func (s *Server) canEdit(r *http.Request) bool {
 	return isAdmin(r) || s.users.IsEditor(userOf(r))
 }
 
+// canEditLib: editors and admins everywhere; anyone in their own personal library.
+func (s *Server) canEditLib(r *http.Request, lib Library) bool {
+	return s.canEdit(r) || (lib.Owner != "" && lib.Owner == userOf(r))
+}
+
 func (s *Server) editor(h http.HandlerFunc) http.HandlerFunc {
 	return s.auth(func(w http.ResponseWriter, r *http.Request) {
 		if !s.canEdit(r) {
@@ -269,9 +274,10 @@ func (s *Server) editor(h http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) editRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /api/meta/search", s.editor(s.handleMetaSearch))
-	mux.HandleFunc("POST /api/meta/match", s.editor(s.handleAdminMatch))
-	mux.HandleFunc("POST /api/meta/edit", s.editor(s.handleMetaEdit))
+	// each handler checks canEditLib for the library it touches
+	mux.HandleFunc("GET /api/meta/search", s.auth(s.handleMetaSearch))
+	mux.HandleFunc("POST /api/meta/match", s.auth(s.handleAdminMatch))
+	mux.HandleFunc("POST /api/meta/edit", s.auth(s.handleMetaEdit))
 	mux.HandleFunc("POST /api/admin/users/{name}/editor", s.adminOnly(s.handleAdminEditor))
 }
 
@@ -280,6 +286,10 @@ func (s *Server) handleMetaSearch(w http.ResponseWriter, r *http.Request) {
 	lib, ok := s.libs.Get(r.URL.Query().Get("lib"))
 	if !ok || !s.canAccess(r, lib.ID) || lib.Type == LibMusic {
 		httpErr(w, 400, "search is only for video libraries")
+		return
+	}
+	if !s.canEditLib(r, lib) {
+		httpErr(w, 403, "you are not allowed to edit metadata here")
 		return
 	}
 	tm := s.index.tmdb()
@@ -313,6 +323,10 @@ func (s *Server) handleMetaEdit(w http.ResponseWriter, r *http.Request) {
 	lib, ok := s.libs.Get(b.Lib)
 	if !ok || !s.canAccess(r, lib.ID) {
 		httpErr(w, 404, "no such library")
+		return
+	}
+	if !s.canEditLib(r, lib) {
+		httpErr(w, 403, "you are not allowed to edit metadata here")
 		return
 	}
 	allowed := editable[lib.Type]

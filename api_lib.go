@@ -98,7 +98,7 @@ func (s *Server) handleLib(w http.ResponseWriter, r *http.Request) {
 		resp["shows"] = snap.Shows
 		resp["seasons"] = snap.Seasons
 	}
-	if s.canEdit(r) {
+	if s.canEditLib(r, lib) {
 		resp["edits"] = snap.Edits // so editors can change one field without dropping others
 	}
 	writeJSON(w, 200, resp)
@@ -283,8 +283,12 @@ func (s *Server) handleAdminMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lib, ok := s.libs.Get(b.Lib)
-	if !ok {
+	if !ok || !s.canAccess(r, lib.ID) {
 		httpErr(w, 404, "no such library")
+		return
+	}
+	if !s.canEditLib(r, lib) {
+		httpErr(w, 403, "you are not allowed to edit metadata here")
 		return
 	}
 	key := b.Path

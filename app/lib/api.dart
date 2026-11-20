@@ -306,14 +306,18 @@ class Api {
   Future<void> clearProgress(String path) => _req('POST', 'progress', body: {'path': path, 'pos': 0});
 
   /// TMDB candidates for a movie/TV library (editor role).
-  Future<List<Map>> metaSearch(String lib, String q, int year) async {
-    final r = await _req('GET', 'meta/search', q: {'lib': lib, 'q': q, if (year > 0) 'year': '$year'}) as Map;
+  Future<List<Map>> metaSearch(String lib, String q, int year, {bool tv = false}) async {
+    final r = await _req('GET', 'meta/search', q: {'lib': lib, 'q': q, if (year > 0) 'year': '$year', if (tv) 'kind': 'tv'}) as Map;
     return List<Map>.from(r['results'] as List? ?? const []);
   }
 
   /// Pin a TMDB id (0 = detect automatically again) for a movie file or a show.
   Future<void> metaMatch(String lib, {String? path, String? show, required int tmdbId}) =>
       _req('POST', 'meta/match', body: {'lib': lib, if (path != null) 'path': path, if (show != null) 'show': show, 'tmdbId': tmdbId});
+
+  /// Manual metadata for a file (or "show:<key>"): replaces that key's edits; null = back to automatic.
+  Future<void> metaEdit(String lib, String key, Map<String, String>? fields) =>
+      _req('POST', 'meta/edit', body: {'lib': lib, 'key': key, 'fields': fields});
 
   /// URL that saves a file to the device (needs the "offline" permission).
   String downloadUrl(String path) => _u('download', {'path': path}).toString();

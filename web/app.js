@@ -519,6 +519,61 @@
     }
     const bindSeries = (lib) => view.querySelectorAll('.smkv-series .smkv-card').forEach((c) => c.onclick = (e) => { e.stopPropagation(); location.hash = `#/show/${encodeURIComponent(lib)}/${encodeURIComponent(c.dataset.k)}`; });
 
+    // ---- pick several files → one series
+    const selBar = (n) => `<div id="smkv-selbar"><span>${n ? `<b>${n}</b> file${n > 1 ? 's' : ''} picked` : 'Tap files to pick them'}</span>
+      <button class="smkv-primary" data-s="group" ${n ? '' : 'disabled'}>📺 Group as series…</button><button data-s="clear" ${n ? '' : 'disabled'}>Clear</button><button data-s="done">Done</button></div>`;
+    function bindSelBar(lib, d, picked, clear, done) {
+      const bar = $('#smkv-selbar');
+      bar.querySelector('[data-s=clear]').onclick = clear;
+      bar.querySelector('[data-s=done]').onclick = done;
+      bar.querySelector('[data-s=group]').onclick = () => groupSeriesDialog(lib, d, picked());
+    }
+    const natural = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    function groupSeriesDialog(lib, d, items) {
+      if (!items.length) return;
+      const picked = [...items], byName = [...items].sort((a, b) => natural(a.name, b.name));
+      const order = () => root0.querySelector('#smkv-gsf').num.value === 'name' ? byName : picked;
+      let root0 = null;
+      const existing = [...seriesOfLib(d).values()].map((s) => s.meta.title).filter(Boolean);
+      const guess = items.find((i) => i.show)?.title || (seriesOf(items[0].name) || {}).title || '';
+      const preview = (root) => {
+        const f = root.querySelector('#smkv-gsf'), start = Math.max(1, parseInt(f.start.value, 10) || 1), keep = f.num.value === 'keep';
+        f.start.style.visibility = keep ? 'hidden' : '';
+        root.querySelector('#smkv-gsp').innerHTML = order().map((it, i) => `<div><b>S${f.season.value || 1}E${keep && it.episode ? it.episode : start + i}</b> ← ${esc(it.name)}</div>`).join('');
+      };
+      detailModal(`<h2>Group as series</h2><div class="smkv-dim2">${items.length} file${items.length > 1 ? 's' : ''} → one series. You can undo it per episode with ✎ → “Reset to automatic”.</div>
+        <form id="smkv-gsf" style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;margin-top:12px">
+          <label>Series</label><input class="smkv-inp" name="title" list="smkv-gsl" value="${esc(guess)}" placeholder="Series title (pick one to add to it)" required autocomplete="off">
+          <datalist id="smkv-gsl">${existing.map((t) => `<option value="${esc(t)}">`).join('')}</datalist>
+          <label>Season</label><input class="smkv-inp" name="season" type="number" min="0" value="${items[0].season || 1}" style="width:90px">
+          <label>Episodes</label><div><select class="smkv-inp" name="num" style="width:auto">
+            <option value="picked">Number them in the order I picked them, from</option><option value="name">Number them in name order, from</option>${items.every((i) => i.episode) ? '<option value="keep" selected>Keep the numbers found in the names</option>' : ''}</select>
+            <input class="smkv-inp" name="start" type="number" min="1" value="1" style="width:70px;margin-left:6px"></div>
+        </form>
+        <div id="smkv-gsp" class="smkv-dim2" style="margin-top:12px;max-height:220px;overflow:auto;font-size:12.5px;line-height:1.6"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px"><button class="smkv-btn2" id="smkv-gsno">Cancel</button><button class="smkv-primary" id="smkv-gsok">📺 Group</button></div>`,
+        (root, close) => {
+          root0 = root;
+          const f = root.querySelector('#smkv-gsf');
+          f.oninput = () => preview(root); preview(root);
+          root.querySelector('#smkv-gsno').onclick = close;
+          root.querySelector('#smkv-gsok').onclick = async () => {
+            const title = f.title.value.trim();
+            if (!title) return toast('Name the series');
+            const start = Math.max(1, parseInt(f.start.value, 10) || 1), keep = f.num.value === 'keep', season = String(parseInt(f.season.value, 10) || 0);
+            const ok = root.querySelector('#smkv-gsok'); ok.disabled = true;
+            try {
+              for (const [i, it] of order().entries()) {
+                ok.textContent = `${i + 1} / ${items.length}…`;
+                const fields = Object.assign({}, (d.edits || {})[it.path] || {}, { showTitle: title, season, episode: String(keep && it.episode ? it.episode : start + i) });
+                await apiPost('meta/edit', { lib: it.path.split('/')[0], key: it.path, fields });
+              }
+              close(); reloadAfterEdit(lib, `Grouped ${items.length} file${items.length > 1 ? 's' : ''} into “${title}”`);
+            } catch (x) { toast(x.message, 5000); ok.disabled = false; ok.textContent = '📺 Group'; }
+          };
+        });
+    }
+
     async function moviesView(lib, genre) {
       const d = await libData(lib);
       const groups = new Map(); // movieId|path → {meta, items}
@@ -532,7 +587,11 @@
       groups.forEach((g) => (g.meta?.genres || []).forEach((x) => genres.add(x)));
       const sortSel = lsGet('sort:' + lib, 'added');
       setToolbar(`${genreOptions(genres, genre)}<select id="smkv-sort">
-          <option value="added">Recently added</option><option value="title">Title</option><option value="year">Year</option><option value="rating">Rating</option></select>`, draw);
+          <option value="added">Recently added</option><option value="title">Title</option><option value="year">Year</option><option value="rating">Rating</option></select>
+          ${canEditLib(lib) ? '<button id="smkv-selbtn" title="Pick several movies / files, then group them into a series">☑ Select</button>' : ''}`, draw);
+      let sel = null; // Set of picked group keys while selecting
+      const sb = $('#smkv-selbtn');
+      if (sb) sb.onclick = () => { sel = sel ? null : new Set(); sb.classList.toggle('on', !!sel); sb.textContent = sel ? '✕ Done' : '☑ Select'; draw(); };
       $('#smkv-sort').value = sortSel;
       $('#smkv-genre').onchange = (e) => (location.hash = `#/lib/${encodeURIComponent(lib)}/${encodeURIComponent(e.target.value)}`);
       $('#smkv-sort').onchange = (e) => { lsSet('sort:' + lib, e.target.value); draw(); };
@@ -551,10 +610,15 @@
         const series = seriesRow(lib, d, genre);
         view.innerHTML = series + (series && list.length ? '<h3 class="smkv-h">🎬 Movies</h3>' : '') + (list.length ? `<div class="smkv-grid smkv-movies">${list.map((g) => {
           const it = g.items.find((i) => i.pos) || g.items[0];
-          return posterCard({ key: String(g.key), title: g.meta?.title || it.title || it.name, sub: [g.meta?.year || it.year, g.meta?.rating ? '★ ' + g.meta.rating.toFixed(1) : ''].filter(Boolean).join(' · '),
-            img: g.meta?.poster, bar: progressBar(it), badge: g.items.length > 1 ? g.items.length + ' versions' : '', raw: rawNames(g.items, tmdbTag(g.meta?.id || 0)) });
-        }).join('')}</div>` : series ? '' : '<div class="smkv-dim">No movies</div>');
-        view.querySelectorAll('.smkv-movies .smkv-card').forEach((c) => c.onclick = () => movieDetail(lib, c.dataset.k));
+          return (sel ? `<div class="smkv-pickwrap${sel.has(String(g.key)) ? ' picked' : ''}">` : '') + posterCard({ key: String(g.key), title: g.meta?.title || it.title || it.name, sub: [g.meta?.year || it.year, g.meta?.rating ? '★ ' + g.meta.rating.toFixed(1) : ''].filter(Boolean).join(' · '),
+            img: g.meta?.poster, bar: progressBar(it), badge: g.items.length > 1 ? g.items.length + ' versions' : '', raw: rawNames(g.items, tmdbTag(g.meta?.id || 0)) }) + (sel ? '</div>' : '');
+        }).join('')}</div>` : series ? '' : '<div class="smkv-dim">No movies</div>') + (sel ? selBar([...groups.values()].filter((g) => sel.has(String(g.key))).reduce((n, g) => n + g.items.length, 0)) : '');
+        view.querySelectorAll('.smkv-movies .smkv-card').forEach((c) => c.onclick = () => {
+          if (!sel) return movieDetail(lib, c.dataset.k);
+          if (sel.has(c.dataset.k)) sel.delete(c.dataset.k); else sel.add(c.dataset.k);
+          draw();
+        });
+        if (sel) bindSelBar(lib, d, () => [...sel].flatMap((k) => ([...groups.values()].find((g) => String(g.key) === k) || { items: [] }).items), () => { sel.clear(); draw(); }, () => sb.click());
         bindSeries(lib);
       }
       draw();
@@ -603,7 +667,7 @@
           ${canDelete(lib) ? '<button class="smkv-del" title="Delete this file from the server">🗑</button>' : ''}</div>`).join('')}</div>
         ${libOf(lib).owner ? `<div class="smkv-dim2" style="margin-top:8px">📦 From ${libOf(lib).owner === BR.me.user ? 'your' : esc(libOf(lib).owner) + "'s"} library “${esc(libOf(lib).name)}”</div>` : ''}
         ${lib !== '_legacy' ? '<button class="smkv-sharebtn">📤 Send to a friend</button>' : ''}
-        ${canEdit() && lib !== '_legacy' ? `<div class="smkv-admin-row">${m && m.id > 0 ? `TMDB #${m.id}` : m ? 'Edited manually' : 'Not matched'} · <a href="#" class="smkv-fix">✎ Edit / fix match…</a></div>` : ''}`,
+        ${canEditLib(lib) && lib !== '_legacy' ? `<div class="smkv-admin-row">${m && m.id > 0 ? `TMDB #${m.id}` : m ? 'Edited manually' : 'Not matched'} · <a href="#" class="smkv-fix">✎ Edit / fix match…</a></div>` : ''}`,
         (root, close) => {
           root.querySelectorAll('.smkv-file').forEach((row) => {
             row.querySelector('.smkv-play').onclick = () => { close(); playVideo(row.dataset.p); };
@@ -629,6 +693,9 @@
     // ------------------------------------------------------------ metadata editing (admins & editors)
     const canEdit = () => !!(BR.me && (BR.me.admin || BR.me.editor));
     const libOf = (id) => BR.libs.find((l) => l.id === id) || {};
+    // metadata edits / grouping: editors & admins everywhere, anyone in their own personal library
+    const canEditLib = (lib) => canEdit() || !!(BR.me && lib && libOf(lib).owner && libOf(lib).owner === BR.me.user);
+    const canEditPath = (p) => canEditLib(String(p || '').split('/')[0]);
     // only your own personal libraries (admins: everything)
     const canDelete = (lib) => !!(BR.me && lib !== '_legacy' && (BR.me.admin || (libOf(lib).owner && libOf(lib).owner === BR.me.user)));
     const ownerTag = (l) => !l.owner ? '' : l.owner === (BR.me && BR.me.user) ? ' · mine' : ' · ' + l.owner;
@@ -797,7 +864,7 @@
               ${sh.overview ? `<p class="smkv-ov">${esc(sh.overview)}</p>` : ''}
               <div class="smkv-raw">${esc(tmdbTag(sh.tmdbId || 0))} · series key “${esc(key)}” · parsed title “${esc(eps[0]?.title || '')}”</div>
               ${next ? `<button class="smkv-primary" id="smkv-next">▶ ${next.pos ? 'Resume' : 'Play'} S${next.season}E${next.episode}${next.episodeTitle ? ' · ' + esc(next.episodeTitle) : ''}</button>` : ''}
-              ${canEdit() ? `<div class="smkv-admin-row">${sh.tmdbId ? 'TMDB #' + sh.tmdbId : 'Not matched'} · <a href="#" class="smkv-fix">✎ Edit show / fix match…</a></div>` : ''}
+              ${canEditLib(lib) ? `<div class="smkv-admin-row">${sh.tmdbId ? 'TMDB #' + sh.tmdbId : 'Not matched'} · <a href="#" class="smkv-fix">✎ Edit show / fix match…</a></div>` : ''}
             </div>
           </div>
           ${castRow(sh.cast)}
@@ -810,7 +877,7 @@
             </div>` : `
             <div class="smkv-ep" data-p="${esc(e.path)}">
               <div class="smkv-still">${e.still ? `<img loading="lazy" src="${esc(e.still)}">` : '<span>▶</span>'}${progressBar(e)}</div>
-              <div style="flex:1"><b>${e.episode ? epLabel(e) + ' · ' : ''}${esc(e.episodeTitle || e.name)}</b>${canEdit() ? `<button class="smkv-epedit" data-p="${esc(e.path)}" title="Edit episode">✎</button>` : ''}${canDelete(lib) ? `<button class="smkv-epedit smkv-epdel" data-p="${esc(e.path)}" title="Delete this episode file">🗑</button>` : ''}
+              <div style="flex:1"><b>${e.episode ? epLabel(e) + ' · ' : ''}${esc(e.episodeTitle || e.name)}</b>${canEditLib(lib) ? `<button class="smkv-epedit" data-p="${esc(e.path)}" title="Edit episode">✎</button>` : ''}${canDelete(lib) ? `<button class="smkv-epedit smkv-epdel" data-p="${esc(e.path)}" title="Delete this episode file">🗑</button>` : ''}
                 <div class="smkv-dim2">${[e.duration ? fmtTime(e.duration) : '', e.pos ? 'watched to ' + fmtTime(e.pos) : ''].filter(Boolean).join(' · ')}</div>
                 ${rawNames([e], (e.dir ? e.dir + '/ · ' : '') + `S${e.season}E${e.episode}${e.episodeEnd ? '–E' + e.episodeEnd : ''}`)}
                 ${e.episodeOverview ? `<p>${esc(e.episodeOverview)}</p>` : ''}</div>
@@ -896,7 +963,7 @@
     function trackTable(list, showAlbum, editLib) {
       return `<table class="smkv-tracks">${list.map((t, i) => `<tr data-i="${i}" class="${A.cur && A.cur.path === t.path ? 'on' : ''}">
         <td class="n">${t.track || ''}</td><td><b>${esc(t.title || t.name)}</b>${rawNames([t], t.dir)}${showAlbum ? `<div class="smkv-dim2">${esc(t.artist || '')}${t.album ? ' · ' + esc(t.album) : ''}${ownerOfPath(t.path) ? ` · <span class="smkv-from">👤 ${esc(ownerOfPath(t.path))}</span>` : ''}</div>` : (t.artist && t.artist !== t.albumArtist ? `<div class="smkv-dim2">${esc(t.artist)}</div>` : '')}</td>
-        <td class="d">${t.duration ? fmtTime(t.duration) : ''}</td><td class="e"><button class="smkv-tadd" data-i="${i}" title="Play next · add to queue · add to a playlist">＋</button>${canSave() ? `<a class="smkv-tdl" href="${esc(dlUrl(t.path))}" download title="Save to this computer" onclick="event.stopPropagation()">⬇</a>` : ''}</td>${editLib && canEdit() ? `<td class="e"><button class="smkv-tedit" data-i="${i}" title="Edit tags">✎</button></td>` : ''}</tr>`).join('')}</table>`;
+        <td class="d">${t.duration ? fmtTime(t.duration) : ''}</td><td class="e"><button class="smkv-tadd" data-i="${i}" title="Play next · add to queue · add to a playlist">＋</button>${canSave() ? `<a class="smkv-tdl" href="${esc(dlUrl(t.path))}" download title="Save to this computer" onclick="event.stopPropagation()">⬇</a>` : ''}</td>${editLib && canEditPath(t.path) ? `<td class="e"><button class="smkv-tedit" data-i="${i}" title="Edit tags">✎</button></td>` : ''}</tr>`).join('')}</table>`;
     }
     const canSave = () => !!(BR.me && (BR.me.offline || BR.me.admin));
     const dlUrl = (path) => { const u = new URL('api/download', BASE); u.searchParams.set('path', path); return u.href; };
@@ -939,7 +1006,7 @@
               ${fromTxt(a.owners) ? `<div class="smkv-dim2" style="margin:2px 0 6px">📦 ${esc(fromTxt(a.owners))}</div>` : ''}
               <div class="smkv-chips">${[...a.genres].map((g) => `<a href="${mbase(lib)}/genres/${encodeURIComponent(g)}">${esc(g)}</a>`).join('')}</div>
               <button class="smkv-primary" id="smkv-playall">▶ Play</button> <button id="smkv-shufall">🔀 Shuffle</button> <button id="smkv-pladd" title="Play next, add to queue, or add to a playlist">＋ Queue / playlist</button>${canSave() ? ' <button id="smkv-zip" title="Save the album to this computer (.zip)">⬇ Download</button>' : ''}
-              ${canEdit() ? '<button id="smkv-aedit">✎ Edit album</button>' : ''}</div></div>
+              ${a.tracks.every((t) => canEditPath(t.path)) ? '<button id="smkv-aedit">✎ Edit album</button>' : ''}</div></div>
           ${trackTable(a.tracks.filter((t) => matchQ(t.title, t.artist)), false, lib)}`;
         const ae = $('#smkv-aedit');
         if (ae) ae.onclick = () => editDialog({ lib: lib !== '_all' ? lib : a.tracks[0].path.split('/')[0], title: a.album, keys: a.tracks.map((t) => t.path),
@@ -1562,19 +1629,28 @@
     // ------------------------------------------------------------ plain folders
     async function filesView(lib) {
       const d = await libData(lib);
-      setToolbar('', draw);
+      setToolbar(canEditLib(lib) ? '<button id="smkv-selbtn" title="Pick several files, then group them into a series">☑ Select</button>' : '', draw);
+      let sel = null; // Set of picked paths while selecting
+      const sb = $('#smkv-selbtn');
+      if (sb) sb.onclick = () => { sel = sel ? null : new Set(); sb.classList.toggle('on', !!sel); sb.textContent = sel ? '✕ Done' : '☑ Select'; draw(); };
       function draw() {
         const files = d.items.filter((f) => !f.show && matchQ(f.path, f.name)).sort((a, b) => (a.dir || '').localeCompare(b.dir || '') || a.name.localeCompare(b.name));
         const series = seriesRow(lib, d, '');
         let html = series ? series + (files.length ? '<h3 class="smkv-h">📁 Files</h3>' : '') : '', lastDir = null;
         for (const f of files) {
           if (f.dir !== lastDir) { lastDir = f.dir; html += `<div class="smkv-dir">${esc(f.dir || '/')}</div>`; }
-          html += `<div class="smkv-item" data-path="${esc(f.path)}"><div class="smkv-name">${esc(f.name)}${canEdit() ? '<button class="smkv-epedit smkv-fser" title="Put this file in a series">📺</button>' : ''}${canDelete(lib) ? '<button class="smkv-epedit smkv-fdel" title="Delete this file">🗑</button>' : ''}</div>
+          html += `<div class="smkv-item${sel && sel.has(f.path) ? ' picked' : ''}" data-path="${esc(f.path)}"><div class="smkv-name">${sel ? `<input type="checkbox" class="smkv-pick" ${sel.has(f.path) ? 'checked' : ''}>` : ''}${esc(f.name)}${canEditLib(lib) && !sel ? '<button class="smkv-epedit smkv-fser" title="Put this file in a series">📺</button>' : ''}${canDelete(lib) ? '<button class="smkv-epedit smkv-fdel" title="Delete this file">🗑</button>' : ''}</div>
             <div class="smkv-sub">${fmtSize(f.size)}${f.pos ? ` · <span class="smkv-resume">⏵ ${fmtTime(f.pos)}</span>` : ''}</div></div>`;
         }
-        view.innerHTML = html || '<div class="smkv-dim">No files</div>';
+        view.innerHTML = (html || '<div class="smkv-dim">No files</div>') + (sel ? selBar(sel.size) : '');
         bindSeries(lib);
-        view.querySelectorAll('.smkv-item').forEach((el) => el.onclick = () => playVideo(el.dataset.path));
+        view.querySelectorAll('.smkv-item').forEach((el) => el.onclick = () => {
+          if (!sel) return playVideo(el.dataset.path);
+          const p = el.dataset.path;
+          if (sel.has(p)) sel.delete(p); else sel.add(p);
+          draw();
+        });
+        if (sel) bindSelBar(lib, d, () => [...sel].map((p) => d.items.find((f) => f.path === p)).filter(Boolean), () => { sel.clear(); draw(); }, () => sb.click());
         view.querySelectorAll('.smkv-fser').forEach((b) => b.onclick = (ev) => {
           ev.stopPropagation();
           const f = d.items.find((x) => x.path === b.closest('.smkv-item').dataset.path);
@@ -2981,6 +3057,15 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-ep.smkv-skel .smkv-still span{color:#5d6675;font-size:22px}
 .smkv-ep.smkv-skel.future{opacity:.4}
 .smkv-miss{color:#f5a623}
+#smkv-selbar{position:sticky;bottom:12px;z-index:5;display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#1a2030;border:1px solid #3b6fd6;border-radius:12px;padding:10px 14px;margin-top:16px;box-shadow:0 6px 24px rgba(0,0,0,.45)}
+#smkv-selbar span{flex:1;min-width:140px}
+#smkv-selbtn.on{background:#2a4a7a!important;border-color:#3b6fd6!important;color:#fff!important}
+.smkv-pickwrap{position:relative;border-radius:10px;outline:2px solid transparent;outline-offset:3px}
+.smkv-pickwrap::after{content:'';position:absolute;top:8px;left:8px;width:20px;height:20px;border-radius:6px;border:2px solid #fff;background:rgba(0,0,0,.45);pointer-events:none}
+.smkv-pickwrap.picked{outline-color:#3b6fd6}
+.smkv-pickwrap.picked::after{content:'✓';background:#3b6fd6;border-color:#3b6fd6;color:#fff;font-size:13px;line-height:20px;text-align:center}
+.smkv-item.picked{background:#1c2638;outline:1px solid #3b6fd6}
+.smkv-pick{margin-right:8px;vertical-align:-2px;pointer-events:none}
 #smkv-ver{font-size:11px;color:#6f7988;margin-left:6px;align-self:center;font-weight:500;letter-spacing:.2px}
 .smkv-badges{display:inline-flex;gap:1px;margin-left:5px;font-size:12px;vertical-align:1px}
 .smkv-badges i{font-style:normal;cursor:default}
