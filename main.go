@@ -288,6 +288,24 @@ func httpErr(w http.ResponseWriter, code int, msg string) {
 
 const cookieName = "streammkv"
 
+// Plain-http logins use their own cookie. A browser won't let an http:// page replace a
+// "Secure" cookie an https:// visit left behind (same name), so logging in over http after
+// using https would silently fail and loop back to the login page.
+const cookieNameHTTP = "streammkv_h"
+
+func (s *Server) setSession(w http.ResponseWriter, r *http.Request, tok string, exp time.Time) {
+	name, secure := cookieNameHTTP, false
+	if secureReq(r) {
+		name, secure = cookieName, true
+	}
+	http.SetCookie(w, &http.Cookie{Name: name, Value: tok, Path: "/", Expires: exp, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secure})
+}
+
+func clearSession(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{Name: cookieNameHTTP, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secureReq(r)})
+}
+
 func (s *Server) sign(payload string) string {
 	m := hmac.New(sha256.New, s.cfg.Secret)
 	m.Write([]byte(payload))
@@ -335,18 +353,27 @@ func (s *Server) validToken(tok string) (string, bool, bool) {
 
 func (s *Server) auth(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tok := ""
-		if c, err := r.Cookie(cookieName); err == nil {
-			tok = c.Value
+		// candidates: ?token=, Bearer, then every session cookie (an old one may sit beside a fresh one)
+		var toks []string
+		if q := r.URL.Query().Get("token"); q != "" {
+			toks = append(toks, q)
 		}
 		if a := r.Header.Get("Authorization"); strings.HasPrefix(a, "Bearer ") {
-			tok = strings.TrimPrefix(a, "Bearer ")
+			toks = append(toks, strings.TrimPrefix(a, "Bearer "))
 		}
-		if q := r.URL.Query().Get("token"); q != "" {
-			tok = q
+		for _, c := range r.Cookies() {
+			if (c.Name == cookieName || c.Name == cookieNameHTTP) && c.Value != "" {
+				toks = append(toks, c.Value)
+			}
 		}
-		user, admin, ok := s.validToken(tok)
-		if tok == "" || !ok {
+		var user string
+		var admin, ok bool
+		for _, tok := range toks {
+			if user, admin, ok = s.validToken(tok); ok {
+				break
+			}
+		}
+		if !ok {
 			httpErr(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -387,16 +414,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	admin, _ := s.users.Valid(body.Username, gen) // also marks last seen
 	tok, exp := s.makeToken(body.Username, gen)
-	http.SetCookie(w, &http.Cookie{
-		Name: cookieName, Value: tok, Path: "/", Expires: exp,
-		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secureReq(r),
-	})
+	s.setSession(w, r, tok, exp)
 	log.Printf("login %q from %s", body.Username, r.RemoteAddr)
 	writeJSON(w, 200, map[string]any{"token": tok, "expires": exp.Unix(), "user": body.Username, "admin": admin})
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+	clearSession(w, r)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }
 

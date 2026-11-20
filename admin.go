@@ -69,8 +69,7 @@ func (s *Server) handleOwnPassword(w http.ResponseWriter, r *http.Request) {
 	// other sessions are logged out; keep this one by issuing a fresh token
 	gen, _ := s.users.Authenticate(userOf(r), b.New)
 	tok, exp := s.makeToken(userOf(r), gen)
-	http.SetCookie(w, &http.Cookie{Name: cookieName, Value: tok, Path: "/", Expires: exp,
-		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: secureReq(r)})
+	s.setSession(w, r, tok, exp)
 	writeJSON(w, 200, map[string]any{"ok": true, "token": tok})
 }
 
