@@ -32,8 +32,10 @@ Future<void> main(List<String> args) async {
   );
   await s.start();
   print('READY ${s.boundPort}');
-  ProcessSignal.sigterm.watch().listen((_) async {
-    await s.stop();
-    exit(0);
-  });
+  if (!Platform.isWindows) {
+    ProcessSignal.sigterm.watch().listen((_) async {
+      await s.stop();
+      exit(0);
+    });
+  }
 }
