@@ -288,7 +288,7 @@ class DlnaServer {
         if (ev != RawSocketEvent.read) return;
         final d = s.receive();
         if (d != null) _onSsdp(s, d);
-      });
+      }, onError: (Object e) => _log('ssdp: $e')); // e.g. no multicast route: keep going
       _ssdp = s;
     } catch (e) {
       _log('ssdp bind 1900: $e');
@@ -302,7 +302,7 @@ class DlnaServer {
           if (ev != RawSocketEvent.read) return;
           final d = s.receive();
           if (d != null) _onSsdp(s, d);
-        });
+        }, onError: (Object e) => _log('ssdp: $e')); // e.g. no multicast route: keep going
         _senders.add(s);
       } catch (e) {
         _log('ssdp sender ${a.address}: $e');
