@@ -3383,6 +3383,47 @@
         if (img) wrap.style.setProperty('--rb-top', (img.offsetTop - row.offsetTop + img.offsetHeight / 2) + 'px');
       };
       row.addEventListener('scroll', upd, { passive: true });
+      // the bar: drag the thumb, or click / drag anywhere on it; the wheel over it scrolls sideways
+      const barTo = (clientX, grabOff) => {
+        const r0 = bar.getBoundingClientRect(), tw = bar.firstChild.offsetWidth;
+        const f = (clientX - r0.left - grabOff) / Math.max(1, r0.width - tw);
+        row.style.scrollBehavior = 'auto';
+        row.scrollLeft = Math.max(0, Math.min(1, f)) * (row.scrollWidth - row.clientWidth);
+        row.style.scrollBehavior = '';
+      };
+      bar.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault(); e.stopPropagation();
+        const th = bar.firstChild.getBoundingClientRect();
+        const off = e.clientX >= th.left && e.clientX <= th.right ? e.clientX - th.left : th.width / 2;
+        bar.classList.add('drag'); bar.setPointerCapture(e.pointerId);
+        barTo(e.clientX, off);
+        const mv = (ev) => barTo(ev.clientX, off);
+        const up = () => { bar.classList.remove('drag'); bar.removeEventListener('pointermove', mv); bar.removeEventListener('pointerup', up); bar.removeEventListener('pointercancel', up); };
+        bar.addEventListener('pointermove', mv); bar.addEventListener('pointerup', up); bar.addEventListener('pointercancel', up);
+      });
+      bar.addEventListener('wheel', (e) => { const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY; if (!d) return; e.preventDefault(); row.scrollBy({ left: d * 2 }); }, { passive: false });
+      // mouse: click-and-drag the row itself (a drag doesn't open the card)
+      let drag = null;
+      row.addEventListener('pointerdown', (e) => {
+        if (e.pointerType !== 'mouse' || e.button !== 0) return;
+        drag = { x: e.clientX, left: row.scrollLeft, id: e.pointerId, moved: false };
+      });
+      row.addEventListener('pointermove', (e) => {
+        if (!drag || e.pointerId !== drag.id) return;
+        const dx = e.clientX - drag.x;
+        if (!drag.moved && Math.abs(dx) < 6) return;
+        if (!drag.moved) { drag.moved = true; row.classList.add('grab'); try { row.setPointerCapture(e.pointerId); } catch (_) { /* fine */ } }
+        row.scrollLeft = drag.left - dx;
+      });
+      const endDrag = () => {
+        if (!drag) return;
+        const moved = drag.moved; drag = null;
+        row.classList.remove('grab');
+        if (moved) { const stop = (ev) => { ev.stopPropagation(); ev.preventDefault(); }; row.addEventListener('click', stop, { capture: true, once: true }); setTimeout(() => row.removeEventListener('click', stop, { capture: true }), 50); }
+      };
+      row.addEventListener('pointerup', endDrag); row.addEventListener('pointercancel', endDrag);
+      row.addEventListener('dragstart', (e) => e.preventDefault());
       if (window.ResizeObserver) new ResizeObserver(upd).observe(row);
       requestAnimationFrame(upd); setTimeout(upd, 600);
     }
@@ -3585,7 +3626,7 @@
 </form></div>`;
 
   const CSS = `
-*{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent}
+@supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent}}
 *::-webkit-scrollbar{width:10px;height:10px;background:transparent}
 *::-webkit-scrollbar-track,*::-webkit-scrollbar-corner{background:transparent}
 *::-webkit-scrollbar-button{display:none;width:0;height:0}
@@ -3909,9 +3950,15 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 .smkv-rowbtn:hover{background:rgba(40,46,58,.95);transform:translateY(-50%) scale(1.08)}
 .smkv-rowwrap:hover>.smkv-rowbtn.on,.smkv-rowbtn.on:focus-visible{opacity:1;pointer-events:auto}
 @media (hover:none){.smkv-rowbtn{display:none}}
-.smkv-rowbar{position:absolute;left:0;right:0;bottom:0;height:3px;border-radius:3px;background:rgba(255,255,255,.06);opacity:0;transition:opacity .2s;pointer-events:none}
-.smkv-rowbar>i{position:absolute;top:0;bottom:0;border-radius:3px;background:rgba(255,255,255,.35)}
-.smkv-rowwrap:hover>.smkv-rowbar.on{opacity:1}
+.smkv-rowbar{position:absolute;left:0;right:0;bottom:-7px;height:16px;opacity:0;transition:opacity .2s;pointer-events:none;cursor:pointer;touch-action:none}
+.smkv-rowbar::before{content:"";position:absolute;left:0;right:0;top:6px;height:4px;border-radius:4px;background:rgba(255,255,255,.07);transition:height .15s,top .15s}
+.smkv-rowbar>i{position:absolute;top:6px;height:4px;border-radius:4px;background:rgba(255,255,255,.35);transition:height .15s,top .15s,background .15s}
+.smkv-rowbar.on{opacity:.55;pointer-events:auto}
+.smkv-rowwrap:hover>.smkv-rowbar.on,.smkv-rowbar.drag{opacity:1}
+.smkv-rowbar:hover::before,.smkv-rowbar.drag::before{top:4px;height:8px}
+.smkv-rowbar:hover>i,.smkv-rowbar.drag>i{top:4px;height:8px;background:rgba(255,255,255,.55)}
+.smkv-row.grab,.smkv-cast.grab{cursor:grabbing;scroll-behavior:auto;scroll-snap-type:none;user-select:none}
+.smkv-row.grab *,.smkv-cast.grab *{pointer-events:none}
 .smkv-row:has(.wide){grid-auto-columns:260px}
 .smkv-card{cursor:pointer;min-width:0}
 .smkv-card:hover .smkv-poster{outline:2px solid #4a9eff}
