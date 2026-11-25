@@ -1,6 +1,87 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'dlna_host.dart';
+
+String _size(int b) => b >= 1 << 30 ? '${(b / (1 << 30)).toStringAsFixed(1)} GB' : '${(b / (1 << 20)).toStringAsFixed(0)} MB';
+
+/// Every file whose audio gets converted, with its TV copy (make / delete one).
+class TvCopiesScreen extends StatefulWidget {
+  const TvCopiesScreen({super.key});
+  @override
+  State<TvCopiesScreen> createState() => _TvCopiesScreenState();
+}
+
+class _TvCopiesScreenState extends State<TvCopiesScreen> {
+  final h = DlnaHost.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    h.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    h.removeListener(_changed);
+    super.dispose();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cands = h.candidates;
+    final muted = TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    final canMake = h.ffmpegPath != null && h.running;
+    return Scaffold(
+      appBar: AppBar(title: const Text('TV copies')),
+      body: cands.isEmpty
+          ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('No file needs converting.', style: muted)))
+          : ListView.builder(
+              itemCount: cands.length + 1,
+              itemBuilder: (context, i) {
+                if (i == 0) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Text(
+                        canMake
+                            ? 'Online files are fetched from the server and converted into a copy on this PC (uses its disk).'
+                            : h.ffmpegPath == null
+                                ? 'Install the converter (previous page) to make copies.'
+                                : 'Turn the DLNA server on to make copies.',
+                        style: muted),
+                  );
+                }
+                final (e, has, size) = cands[i - 1];
+                final busy = h.copyKey == e.key;
+                final queued = h.copyQueue.contains(e.key);
+                return ListTile(
+                  leading: Icon(e.section.isEmpty ? Icons.computer : Icons.cloud_outlined),
+                  title: Text(DlnaHost.labelOf(e), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(busy
+                      ? 'Converting… ${(h.copyProgress * 100).round()}%'
+                      : queued
+                          ? 'Queued'
+                          : has
+                              ? 'TV copy ready · ${_size(size)}'
+                              : '${e.section.isEmpty ? 'This PC' : 'Online · ${e.section}'} · converted while you watch'),
+                  trailing: busy
+                      ? SizedBox(width: 24, height: 24, child: CircularProgressIndicator(value: h.copyProgress > 0 ? h.copyProgress : null, strokeWidth: 3))
+                      : has
+                          ? IconButton(tooltip: 'Delete the copy', icon: const Icon(Icons.delete_outline), onPressed: () => h.deleteCopy(e.key))
+                          : queued
+                              ? null
+                              : TextButton(onPressed: canMake ? () => h.makeCopies([e.key]) : null, child: const Text('Convert')),
+                );
+              },
+            ),
+    );
+  }
+}
 
 /// Settings → "Share to TV (DLNA)".
 class DlnaScreen extends StatefulWidget {
@@ -104,6 +185,91 @@ class _DlnaScreenState extends State<DlnaScreen> {
           trailing: h.ffmpegPath == null && dl == null ? FilledButton.tonal(onPressed: h.ffmpegDownload, child: const Text('Download')) : null,
         ),
       ],
+    ];
+  }
+
+  List<Widget> _copySection(BuildContext context) {
+    final s = h.settings;
+    if (s == null || !s.dlnaFixAudio) return const [];
+    final muted = TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    final cands = h.candidates;
+    final have = cands.where((c) => c.$2).length;
+    final localTodo = cands.where((c) => !c.$2 && c.$1.section.isEmpty).length;
+    return [
+      _head(context, 'Convert ahead (TV copies)'),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+        child: Text('A converted copy plays like a normal file: seeking works on every TV, and nothing is converted while you watch. '
+            'Copies are kept in the app\'s folder (your files stay as they are).', style: muted),
+      ),
+      SwitchListTile(
+        secondary: const Icon(Icons.auto_mode),
+        title: const Text('Convert new files ahead automatically'),
+        subtitle: const Text("This PC's files (downloads and your folders)"),
+        value: s.dlnaAutoCopy,
+        onChanged: (v) {
+          s.dlnaAutoCopy = v;
+          if (v) h.makeCopies([for (final c in cands) if (!c.$2 && c.$1.section.isEmpty) c.$1.key]);
+          setState(() {});
+        },
+      ),
+      if (h.copyKey != null)
+        ListTile(
+          leading: const Icon(Icons.sync),
+          title: Text('Converting: ${h.copyTitle}', maxLines: 1, overflow: TextOverflow.ellipsis),
+          subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const SizedBox(height: 6),
+            LinearProgressIndicator(value: h.copyProgress > 0 ? h.copyProgress : null),
+            const SizedBox(height: 4),
+            Text('${(h.copyProgress * 100).round()}%${h.copyQueue.isNotEmpty ? ' · ${h.copyQueue.length} more queued' : ''}'),
+          ]),
+          trailing: TextButton(onPressed: h.cancelCopies, child: const Text('Cancel')),
+        ),
+      if (h.copyError != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(72, 0, 16, 8),
+          child: Text(h.copyError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        ),
+      ListTile(
+        leading: const Icon(Icons.video_settings_outlined),
+        title: const Text('Files that need converting'),
+        subtitle: Text(cands.isEmpty
+            ? (h.ffmpegPath == null && h.onlineCount == 0 ? 'Install the converter to check this PC\'s files' : 'None')
+            : '${cands.length} · $have with a TV copy${h.copiesSize > 0 ? ' (${_size(h.copiesSize)})' : ''}'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TvCopiesScreen())),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(72, 0, 16, 8),
+        child: Wrap(spacing: 8, runSpacing: 8, children: [
+          FilledButton.tonalIcon(
+            icon: const Icon(Icons.playlist_add_check),
+            label: Text('Convert all on this PC${localTodo > 0 ? ' ($localTodo)' : ''}'),
+            onPressed: localTodo == 0 || h.ffmpegPath == null || !h.running
+                ? null
+                : () => h.makeCopies([for (final c in cands) if (!c.$2 && c.$1.section.isEmpty) c.$1.key]),
+          ),
+          if (h.copiesSize > 0)
+            OutlinedButton.icon(
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Delete all copies'),
+              onPressed: () async {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Delete all TV copies?'),
+                    content: Text('Frees ${_size(h.copiesSize)}. Your original files stay; those files get converted while you watch again.'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+                      FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+                    ],
+                  ),
+                );
+                if (ok == true) await h.deleteAllCopies();
+              },
+            ),
+        ]),
+      ),
     ];
   }
 
@@ -228,6 +394,7 @@ class _DlnaScreenState extends State<DlnaScreen> {
           ),
         ],
         ..._audioSection(context),
+        ..._copySection(context),
         ..._onlineSection(context),
         const Divider(),
         Padding(
@@ -237,7 +404,8 @@ class _DlnaScreenState extends State<DlnaScreen> {
             'Android TV → VLC or Kodi → UPnP. Open "${h.name}": Recently added, Movies, TV shows, Videos, Music.\n\n'
             'Files play as they are (no converting), so the TV must support the format. Subtitles next to the video (.srt) are '
             'offered to the TV too.\n\n'
-            'Windows asks once whether Delos may use the network: allow "Private networks". The server runs while Delos is open.',
+            '${Platform.isWindows ? 'Windows asks once whether Delos may use the network: allow "Private networks". ' : Platform.isLinux ? 'If a firewall is on, allow UDP 1900 and TCP ${h.server?.boundPort ?? 58200}. ' : ''}'
+            'The server runs while Delos is open.',
             style: muted,
           ),
         ),

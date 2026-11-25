@@ -8,7 +8,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     defaults:
@@ -24,6 +24,14 @@ jobs:
             curl -sSfL -o ff.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
             /c/Windows/System32/tar.exe -xf ff.zip  # the same Windows tar the app uses
             echo "FFMPEG=$(cygpath -w "$(ls -d $PWD/ffmpeg-*/bin)")\\ffmpeg.exe" >> $GITHUB_ENV
+          elif [ "$RUNNER_OS" = macOS ]; then
+            A=$([ "$(uname -m)" = arm64 ] && echo arm64 || echo amd64)
+            for t in ffmpeg ffprobe; do
+              curl -sSfL -o $t.zip "https://ffmpeg.martin-riedl.de/redirect/latest/macos/$A/release/$t.zip"
+              /usr/bin/ditto -x -k $t.zip .
+            done
+            chmod 755 ffmpeg ffprobe; codesign -dv ffmpeg 2>&1 | head -3 || true
+            echo "FFMPEG=$PWD/ffmpeg" >> $GITHUB_ENV
           else
             curl -sSfL -o ff.tar.xz https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
             tar -xf ff.tar.xz
@@ -41,5 +49,7 @@ jobs:
           (cd ../d && dart run bin/dlna_check.dart > ../srv.log 2>&1 &)
           for i in $(seq 1 120); do grep -q READY ../srv.log && break; sleep 1; done
           cat ../srv.log
-          python "$W/app/tool/dlna_check.py" || (cat ../srv.log; exit 1)
+          L="$(cd .. && pwd)/srv.log"; PY=python3
+          if [ "$RUNNER_OS" = Windows ]; then L=$(cygpath -w "$L"); PY=python; fi
+          SRVLOG="$L" $PY "$W/app/tool/dlna_check.py" || (cat ../srv.log; exit 1)
           pkill -f dlna_check.dart || true

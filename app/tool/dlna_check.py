@@ -133,6 +133,8 @@ if ff:
     dur = float(re.search(r'duration=([0-9.]+)', out).group(1))
     print('seek out', r.headers.get('TimeSeekRange.dlna.org'), dur)
     check(r.headers.get('TimeSeekRange.dlna.org', '').startswith('npt=10.000-20.000/20.000') and 8 <= dur <= 12, 'time seek to 10 s')
+    log = open(os.environ['SRVLOG'], encoding='utf-8', errors='replace').read() if os.environ.get('SRVLOG') else ''
+    check('COPY OK' in log, 'TV copy made through the loopback route (' + (re.search(r'COPY \S+ ?[^\n]*', log) or [''])[0] + ')')
 else:
     print('no FFMPEG: conversion not checked')
 sys.exit(0 if ok else 1)

@@ -40,6 +40,7 @@ class DlnaEntry {
     this.audioIndex = 0,
     this.audioChannels = 2,
     this.headers = const {},
+    this.origin = '',
   });
 
   /// Stable unique key (e.g. the offline store id).
@@ -68,6 +69,9 @@ class DlnaEntry {
 
   /// Sent with requests to [url] / an http [poster].
   final Map<String, String> headers;
+
+  /// The original file when [file] is a converted TV copy (what /r/ serves to ffmpeg).
+  final String origin;
 
   bool get remote => url.isNotEmpty;
   String get source => remote ? url : file;
@@ -509,6 +513,22 @@ class DlnaServer {
   /// Whether [e] goes out converted (needs ffmpeg here, unless the server converts).
   bool _converts(DlnaEntry e) => e.convert && e.kind != 'music' && (e.serverConvert != null || (ffmpeg?.call() ?? '').isNotEmpty);
 
+  /// What ffmpeg on this machine reads for [e]: the server's URL, or this file via the loopback.
+  String inputOf(DlnaEntry e) => e.remote ? e.url : 'http://127.0.0.1:$boundPort/r/${_fnv(e.key)}.${_ext(e.origin.isNotEmpty ? e.origin : e.file)}';
+
+  /// ffmpeg arguments that keep the video (and mkv subtitles) and turn the audio into AC3.
+  static List<String> convertArgs(DlnaEntry e, {required bool subs}) => [
+        '-map', '0:v:0', '-map', '0:a:${e.audioIndex}?',
+        if (subs) ...['-map', '0:s?', '-c:s', 'copy'] else '-sn',
+        '-c:v', 'copy',
+        '-c:a', 'ac3', '-ac', '${e.audioChannels.clamp(1, 6)}', '-b:a', e.audioChannels > 2 ? '640k' : '224k',
+        '-dn', '-avoid_negative_ts', 'make_zero', '-max_muxing_queue_size', '4096',
+      ];
+
+  /// Whether the source of [e] is Matroska (its subtitles can be copied as they are).
+  static bool isMkv(DlnaEntry e) =>
+      _ext(e.remote ? (Uri.parse(e.url).queryParameters['path'] ?? '') : (e.origin.isNotEmpty ? e.origin : e.file)) == 'mkv';
+
   /// The id in /m/<id> URLs for an entry key.
   static String idOf(String key) => _fnv(key);
 
@@ -601,6 +621,18 @@ class DlnaServer {
       res.headers.set('SID', 'uuid:${_fnv('$uuid$path${DateTime.now().microsecondsSinceEpoch}')}');
       res.headers.set('TIMEOUT', 'Second-1800');
       return res.close();
+    }
+    // the original file, for ffmpeg on this machine (it reads through here, so a sandboxed app's
+    // ffmpeg never needs access to the user's folders)
+    final rm = RegExp(r'^/r/([0-9a-z]+)').firstMatch(path);
+    if (rm != null) {
+      final e = _byId()[rm.group(1)];
+      final f = e?.origin.isNotEmpty == true ? e!.origin : e?.file ?? '';
+      if (peer == null || !peer.isLoopback || f.isEmpty || !File(f).existsSync()) {
+        res.statusCode = 404;
+        return res.close();
+      }
+      return _file(r, File(f), mimeOf(f));
     }
     final m = RegExp(r'^/(m|a|s)/([0-9a-z]+)').firstMatch(path);
     if (m != null) {
@@ -720,15 +752,12 @@ class DlnaServer {
       } else {
         final args = [
           '-hide_banner', '-loglevel', 'error', '-nostdin',
-          if (e.remote) ...['-reconnect', '1', '-reconnect_on_network_error', '1'],
+          '-reconnect', '1', '-reconnect_on_network_error', '1',
           if (e.remote && e.headers.isNotEmpty) ...['-headers', e.headers.entries.map((h) => '${h.key}: ${h.value}\r\n').join()],
           if (start > 0) ...['-ss', start.toStringAsFixed(3)],
-          '-i', e.source,
-          '-map', '0:v:0', '-map', '0:a:${e.audioIndex}?',
-          if (_ext(e.file.isNotEmpty ? e.file : (Uri.parse(e.url).queryParameters['path'] ?? '')) == 'mkv') ...['-map', '0:s?', '-c:s', 'copy'] else '-sn',
-          '-c:v', 'copy',
-          '-c:a', 'ac3', '-ac', '${e.audioChannels.clamp(1, 6)}', '-b:a', e.audioChannels > 2 ? '640k' : '224k',
-          '-dn', '-map_chapters', '-1', '-avoid_negative_ts', 'make_zero', '-max_muxing_queue_size', '4096',
+          '-i', inputOf(e),
+          ...convertArgs(e, subs: isMkv(e)),
+          '-map_chapters', '-1',
           '-f', 'matroska', '-live', '1', 'pipe:1',
         ];
         final p = await Process.start(ffmpeg!()!, args);

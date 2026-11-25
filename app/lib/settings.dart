@@ -59,6 +59,9 @@ class Settings {
   /// Also share the server's libraries (passthrough via this PC).
   bool get dlnaOnline => _p.getBool('dlnaOnline') ?? false;
   set dlnaOnline(bool v) => _p.setBool('dlnaOnline', v);
+  /// Make TV copies (convert ahead) of new files on this PC automatically.
+  bool get dlnaAutoCopy => _p.getBool('dlnaAutoCopy') ?? false;
+  set dlnaAutoCopy(bool v) => _p.setBool('dlnaAutoCopy', v);
   /// Where online files are converted: pc | server.
   String get dlnaConvertAt => _p.getString('dlnaConvertAt') ?? 'pc';
   set dlnaConvertAt(String v) => _p.setString('dlnaConvertAt', v);

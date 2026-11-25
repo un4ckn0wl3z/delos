@@ -55,6 +55,19 @@ Future<void> main(List<String> args) async {
     ],
   );
   await s.start();
+  // a TV copy, made the way the app makes one: through the loopback route, with the shared args
+  if (dts.isNotEmpty) {
+    final e = s.entries().firstWhere((x) => x.key == 'dts');
+    final out = '${dir.path}/copy.mkv';
+    final r = await Process.run(ff, [
+      '-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-reconnect', '1', '-reconnect_on_network_error', '1',
+      '-i', s.inputOf(e), ...DlnaServer.convertArgs(e, subs: DlnaServer.isMkv(e)), '-progress', 'pipe:1', '-nostats', '-f', 'matroska', out,
+    ]);
+    final pr = await Process.run(ff.replaceAll(RegExp(r'ffmpeg(\.exe)?$'), Platform.isWindows ? 'ffprobe.exe' : 'ffprobe'),
+        ['-v', 'error', '-show_entries', 'stream=codec_name', '-of', 'csv=p=0', out]);
+    final codecs = '${pr.stdout}'.split(RegExp(r'\s+')).where((x) => x.isNotEmpty).join(',');
+    print(r.exitCode == 0 && '${r.stdout}'.contains('progress=end') && codecs == 'h264,ac3,subrip' ? 'COPY OK $codecs' : 'COPY FAIL ${r.stderr} $codecs');
+  }
   print('READY ${s.boundPort}');
   if (!Platform.isWindows) {
     ProcessSignal.sigterm.watch().listen((_) async {

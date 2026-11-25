@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi' show Abi;
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -19,7 +20,7 @@ class DlnaHost extends ChangeNotifier {
   DlnaHost._();
   static final instance = DlnaHost._();
 
-  static bool get supported => !kIsWeb && Platform.isWindows;
+  static bool get supported => !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
   Settings? _settings;
   Settings? get settings => _settings;
@@ -48,6 +49,7 @@ class DlnaHost extends ChangeNotifier {
     _settings = s;
     if (!supported) return;
     await _loadProbes();
+    await _loadCopies();
     await ffmpegFind();
     if (s.dlnaOn) await start();
   }
@@ -57,28 +59,42 @@ class DlnaHost extends ChangeNotifier {
   String? ffmpegPath, ffprobePath;
   double? ffmpegProgress; // 0..1 while downloading
   String? ffmpegError;
-  static const ffmpegUrl = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip';
+
+  static String get _exe => Platform.isWindows ? '.exe' : '';
+  static String get _sep => Platform.pathSeparator;
+  static bool get _arm => const {Abi.windowsArm64, Abi.linuxArm64, Abi.macosArm64}.contains(Abi.current());
+
+  /// What to download for this computer: (url, kind) — kind zip | tar | two zips (macOS: ffmpeg + ffprobe).
+  static List<String> get ffmpegUrls {
+    const btbn = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest';
+    if (Platform.isWindows) return ['$btbn/ffmpeg-master-latest-win${_arm ? 'arm64' : '64'}-gpl.zip'];
+    if (Platform.isLinux) return ['$btbn/ffmpeg-master-latest-linux${_arm ? 'arm64' : '64'}-gpl.tar.xz'];
+    const mr = 'https://ffmpeg.martin-riedl.de/redirect/latest/macos';
+    final a = _arm ? 'arm64' : 'amd64';
+    return ['$mr/$a/release/ffmpeg.zip', '$mr/$a/release/ffprobe.zip'];
+  }
 
   Future<Directory> _dir(String sub) async {
-    final d = Directory('${(await getApplicationSupportDirectory()).path}${Platform.pathSeparator}$sub');
+    final d = Directory('${(await getApplicationSupportDirectory()).path}$_sep$sub');
     await d.create(recursive: true);
     return d;
   }
 
-  /// ffmpeg downloaded by the app, or one already on PATH.
+  /// ffmpeg downloaded by the app, or one already installed (Windows / Linux; the Mac app is sandboxed).
   Future<void> ffmpegFind() async {
     try {
       final d = await _dir('ffmpeg');
-      final f = File('${d.path}\\ffmpeg.exe'), p = File('${d.path}\\ffprobe.exe');
+      final f = File('${d.path}${_sep}ffmpeg$_exe'), p = File('${d.path}${_sep}ffprobe$_exe');
       if (f.existsSync() && p.existsSync()) {
         ffmpegPath = f.path;
         ffprobePath = p.path;
         return;
       }
-      final w = await Process.run('where', ['ffmpeg'], runInShell: true);
+      if (Platform.isMacOS) return;
+      final w = await Process.run(Platform.isWindows ? 'where' : 'which', ['ffmpeg'], runInShell: Platform.isWindows);
       final first = '${w.stdout}'.split(RegExp(r'[\r\n]+')).firstWhere((l) => l.trim().isNotEmpty, orElse: () => '').trim();
       if (w.exitCode == 0 && first.isNotEmpty) {
-        final probe = first.replaceAll(RegExp(r'ffmpeg(\.exe)?$', caseSensitive: false), 'ffprobe.exe');
+        final probe = first.replaceAll(RegExp(r'ffmpeg(\.exe)?$', caseSensitive: false), 'ffprobe$_exe');
         if (File(probe).existsSync()) {
           ffmpegPath = first;
           ffprobePath = probe;
@@ -87,53 +103,75 @@ class DlnaHost extends ChangeNotifier {
     } catch (_) {}
   }
 
-  /// Downloads ffmpeg (≈ 150 MB zip, keeps ffmpeg.exe + ffprobe.exe ≈ 250 MB).
+  /// Downloads ffmpeg + ffprobe into the app's folder (≈ 80–160 MB download).
   Future<void> ffmpegDownload() async {
     if (ffmpegProgress != null) return;
     ffmpegProgress = 0;
     ffmpegError = null;
     notifyListeners();
     final d = await _dir('ffmpeg');
-    final tmp = Directory('${d.path}\\tmp');
-    final zip = File('${d.path}\\ffmpeg.zip');
+    final tmp = Directory('${d.path}${_sep}tmp');
     final client = HttpClient();
+    final files = <File>[];
     try {
-      final rs = await (await client.getUrl(Uri.parse(ffmpegUrl))).close();
-      if (rs.statusCode != 200) throw 'download failed (HTTP ${rs.statusCode})';
-      final total = rs.contentLength;
-      var got = 0;
-      final sink = zip.openWrite();
-      var last = DateTime.now();
-      await for (final chunk in rs) {
-        sink.add(chunk);
-        got += chunk.length;
-        if (total > 0 && DateTime.now().difference(last).inMilliseconds > 300) {
-          ffmpegProgress = got / total;
-          last = DateTime.now();
-          notifyListeners();
-        }
-      }
-      await sink.close();
-      ffmpegProgress = 1;
-      notifyListeners();
       if (tmp.existsSync()) await tmp.delete(recursive: true);
       await tmp.create();
-      // Windows' own tar (bsdtar) unpacks zip files
-      final x = await Process.run('${Platform.environment['SystemRoot'] ?? 'C:\\Windows'}\\System32\\tar.exe', ['-xf', zip.path, '-C', tmp.path]);
-      if (x.exitCode != 0) throw 'unzip failed: ${x.stderr}';
+      final urls = ffmpegUrls;
+      for (var i = 0; i < urls.length; i++) {
+        final url = urls[i];
+        final f = File('${tmp.path}${_sep}dl$i${url.endsWith('.tar.xz') ? '.tar.xz' : '.zip'}');
+        files.add(f);
+        final rs = await (await client.getUrl(Uri.parse(url))).close();
+        if (rs.statusCode != 200) throw 'download failed (HTTP ${rs.statusCode})';
+        final total = rs.contentLength;
+        var got = 0;
+        final sink = f.openWrite();
+        var last = DateTime.now();
+        await for (final chunk in rs) {
+          sink.add(chunk);
+          got += chunk.length;
+          if (total > 0 && DateTime.now().difference(last).inMilliseconds > 300) {
+            ffmpegProgress = (i + got / total) / urls.length;
+            last = DateTime.now();
+            notifyListeners();
+          }
+        }
+        await sink.close();
+      }
+      ffmpegProgress = 1;
+      notifyListeners();
+      for (final f in files) {
+        final ProcessResult x;
+        if (Platform.isWindows) {
+          // Windows' own tar (bsdtar) unpacks zip files
+          x = await Process.run('${Platform.environment['SystemRoot'] ?? 'C:\\Windows'}\\System32\\tar.exe', ['-xf', f.path, '-C', tmp.path]);
+        } else if (Platform.isMacOS) {
+          x = await Process.run('/usr/bin/ditto', ['-x', '-k', f.path, tmp.path]);
+        } else {
+          x = await Process.run('tar', ['-xf', f.path, '-C', tmp.path]);
+        }
+        if (x.exitCode != 0) throw 'unpacking failed: ${x.stderr}';
+      }
       File? find(String n) {
         for (final e in tmp.listSync(recursive: true)) {
-          if (e is File && e.path.toLowerCase().endsWith('\\$n')) return e;
+          if (e is File && e.path.split(_sep).last.toLowerCase() == n) return e;
         }
         return null;
       }
 
-      final f = find('ffmpeg.exe'), p = find('ffprobe.exe');
-      if (f == null || p == null) throw 'ffmpeg.exe not found in the download';
-      await f.copy('${d.path}\\ffmpeg.exe');
-      await p.copy('${d.path}\\ffprobe.exe');
-      ffmpegPath = '${d.path}\\ffmpeg.exe';
-      ffprobePath = '${d.path}\\ffprobe.exe';
+      final f = find('ffmpeg$_exe'), p = find('ffprobe$_exe');
+      if (f == null || p == null) throw 'ffmpeg not found in the download';
+      final fp = '${d.path}${_sep}ffmpeg$_exe', pp = '${d.path}${_sep}ffprobe$_exe';
+      await f.copy(fp);
+      await p.copy(pp);
+      if (!Platform.isWindows) {
+        await Process.run('chmod', ['755', fp, pp]);
+        if (Platform.isMacOS) await Process.run('/usr/bin/xattr', ['-d', 'com.apple.quarantine', fp, pp]);
+      }
+      final v = await Process.run(fp, ['-version']);
+      if (v.exitCode != 0) throw "the downloaded ffmpeg doesn't run here: ${v.stderr}";
+      ffmpegPath = fp;
+      ffprobePath = pp;
       server?.touch();
       _probeAll();
     } catch (e) {
@@ -141,7 +179,6 @@ class DlnaHost extends ChangeNotifier {
     } finally {
       client.close(force: true);
       try {
-        if (zip.existsSync()) await zip.delete();
         if (tmp.existsSync()) await tmp.delete(recursive: true);
       } catch (_) {}
       ffmpegProgress = null;
@@ -194,6 +231,15 @@ class DlnaHost extends ChangeNotifier {
     return _pick(st);
   }
 
+  /// This PC's file as ffprobe / ffmpeg read it: through the server's loopback route (a sandboxed
+  /// Mac app's helper can't open the user's folders itself).
+  String _loopback(String key, String file) {
+    final srv = server;
+    if (srv == null) return file;
+    final i = file.lastIndexOf('.');
+    return 'http://127.0.0.1:${srv.boundPort}/r/${DlnaServer.idOf(key)}${i < 0 ? '' : file.substring(i)}';
+  }
+
   Future<Map<String, dynamic>?> _probeServer(String path) async {
     final api = _api;
     if (api == null) return null;
@@ -222,7 +268,7 @@ class DlnaHost extends ChangeNotifier {
           for (final t in todo.skip(i).take(2))
             () async {
               try {
-                final r = t.$3 ? await _probeServer(t.$2) : await _probeLocal(t.$2);
+                final r = t.$3 ? await _probeServer(t.$2) : await _probeLocal(_loopback(t.$1.substring(2), t.$2));
                 if (r == null) return;
                 final size = t.$3 ? _online.firstWhere((o) => o.$2.path == t.$2).$2.size : (items.firstWhere((x) => x.file == t.$2).size);
                 _probes[t.$1] = {...r, 'sig': '$size'};
@@ -242,6 +288,7 @@ class DlnaHost extends ChangeNotifier {
         _saveProbes();
         notifyListeners();
       }
+      _autoCopies();
     }
   }
 
@@ -350,13 +397,42 @@ class DlnaHost extends ChangeNotifier {
     return out;
   }
 
-  List<DlnaEntry> _entries() {
+  List<DlnaEntry> _entries() => _build();
+
+  /// Everything the TV can browse. With [useCopies], files that have a TV copy play from it.
+  List<DlnaEntry> _build({bool useCopies = true}) {
     final s = _settings;
     final out = <DlnaEntry>[];
+    DlnaEntry withCopy(DlnaEntry e) {
+      if (!useCopies || !e.convert) return e;
+      final c = _copies[e.key];
+      if (c == null || c['sig'] != '${e.size}' || !File('${c['file']}').existsSync()) return e;
+      return DlnaEntry(
+        key: e.key,
+        file: '${c['file']}',
+        origin: e.remote ? '' : e.file,
+        section: e.section,
+        kind: e.kind,
+        title: e.title,
+        poster: e.poster,
+        show: e.show,
+        season: e.season,
+        episode: e.episode,
+        episodeTitle: e.episodeTitle,
+        year: e.year,
+        duration: e.duration,
+        size: (c['size'] as num?)?.toInt() ?? 0,
+        genres: e.genres,
+        overview: e.overview,
+        added: e.added,
+        headers: e.headers,
+      );
+    }
+
     for (final it in items) {
       final p = _probes['l:${it.id}'];
       final conv = it.kind != 'music' && _bad(p);
-      out.add(DlnaEntry(
+      out.add(withCopy(DlnaEntry(
         key: it.id,
         file: it.file,
         kind: it.kind,
@@ -378,7 +454,7 @@ class DlnaHost extends ChangeNotifier {
         convert: conv,
         audioIndex: (p?['idx'] as num?)?.toInt() ?? 0,
         audioChannels: (p?['ch'] as num?)?.toInt() ?? 2,
-      ));
+      )));
     }
     final api = _api;
     if (s != null && s.dlnaOnline && api != null) {
@@ -388,7 +464,7 @@ class DlnaHost extends ChangeNotifier {
         final p = _probes['s:${o.path}'];
         final conv = o.kind != 'music' && _bad(p);
         final idx = (p?['idx'] as num?)?.toInt() ?? 0;
-        out.add(DlnaEntry(
+        out.add(withCopy(DlnaEntry(
           key: 's:${o.path}',
           file: '',
           url: api.rawUrl(o.path),
@@ -414,10 +490,169 @@ class DlnaHost extends ChangeNotifier {
           audioIndex: idx,
           audioChannels: (p?['ch'] as num?)?.toInt() ?? 2,
           serverConvert: conv && atServer ? (start) => api.tvStreamUrl(o.path, audio: idx, start: start) : null,
-        ));
+        )));
       }
     }
     return out;
+  }
+
+  // ------------------------------------------------------------------ TV copies (convert ahead)
+
+  /// key → {file, sig, size}: converted copies kept in the app's folder.
+  final _copies = <String, Map<String, dynamic>>{};
+  File? _copiesFile;
+  final copyQueue = <String>[];
+  String? copyKey, copyError;
+  String copyTitle = '';
+  double copyProgress = 0;
+  Process? _copyProc;
+  bool _copyCancel = false;
+
+  Future<void> _loadCopies() async {
+    try {
+      _copiesFile = File('${(await _dir('dlna')).path}${_sep}copies.json');
+      if (_copiesFile!.existsSync()) {
+        (jsonDecode(await _copiesFile!.readAsString()) as Map).forEach((k, v) => _copies['$k'] = Map<String, dynamic>.from(v as Map));
+      }
+    } catch (_) {}
+  }
+
+  void _saveCopies() {
+    try {
+      _copiesFile?.writeAsStringSync(jsonEncode(_copies));
+    } catch (_) {}
+  }
+
+  static String labelOf(DlnaEntry e) {
+    if (e.kind != 'episode') return e.year > 0 ? '${e.title} (${e.year})' : e.title;
+    final c = 'S${e.season.toString().padLeft(2, '0')}E${e.episode.toString().padLeft(2, '0')}';
+    return '${e.show.isNotEmpty ? '${e.show} · ' : ''}$c${e.episodeTitle.isNotEmpty ? ' · ${e.episodeTitle}' : ''}';
+  }
+
+  /// Files whose audio gets converted: (entry, has a TV copy, copy size).
+  List<(DlnaEntry, bool, int)> get candidates {
+    final out = <(DlnaEntry, bool, int)>[];
+    for (final e in _build(useCopies: false)) {
+      if (!e.convert) continue;
+      final c = _copies[e.key];
+      final ok = c != null && c['sig'] == '${e.size}' && File('${c['file']}').existsSync();
+      out.add((e, ok, ok ? (c['size'] as num?)?.toInt() ?? 0 : 0));
+    }
+    out.sort((a, b) => labelOf(a.$1).toLowerCase().compareTo(labelOf(b.$1).toLowerCase()));
+    return out;
+  }
+
+  int get copiesSize {
+    var n = 0;
+    for (final c in _copies.values) {
+      n += (c['size'] as num?)?.toInt() ?? 0;
+    }
+    return n;
+  }
+
+  /// Queue [keys] for converting ahead (skips ones that have a copy or are queued).
+  void makeCopies(Iterable<String> keys) {
+    final have = {for (final c in candidates) if (c.$2) c.$1.key};
+    for (final k in keys) {
+      if (!have.contains(k) && !copyQueue.contains(k) && copyKey != k) copyQueue.add(k);
+    }
+    notifyListeners();
+    _runCopies();
+  }
+
+  void cancelCopies() {
+    copyQueue.clear();
+    _copyCancel = true;
+    _copyProc?.kill();
+    notifyListeners();
+  }
+
+  Future<void> deleteCopy(String key) async {
+    final c = _copies.remove(key);
+    if (c != null) {
+      try {
+        await File('${c['file']}').delete();
+      } catch (_) {}
+    }
+    _saveCopies();
+    server?.touch();
+    notifyListeners();
+  }
+
+  Future<void> deleteAllCopies() async {
+    cancelCopies();
+    for (final k in _copies.keys.toList()) {
+      await deleteCopy(k);
+    }
+  }
+
+  Future<void> _runCopies() async {
+    if (copyKey != null) return;
+    copyError = null;
+    while (copyQueue.isNotEmpty) {
+      final srv = server, ff = ffmpegPath;
+      if (srv == null || !srv.running || ff == null) {
+        copyError = ff == null ? 'Install the converter first' : 'Turn the DLNA server on first';
+        copyQueue.clear();
+        break;
+      }
+      final key = copyQueue.removeAt(0);
+      final e = _build(useCopies: false).where((x) => x.key == key).firstOrNull;
+      if (e == null) continue;
+      _copyCancel = false;
+      copyKey = key;
+      copyTitle = labelOf(e);
+      copyProgress = 0;
+      notifyListeners();
+      final d = await _dir('dlna${_sep}tv');
+      final out = '${d.path}$_sep${DlnaServer.idOf(key)}.mkv';
+      final part = File('$out.part');
+      final err = StringBuffer();
+      try {
+        final p = await Process.start(ff, [
+          '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
+          '-reconnect', '1', '-reconnect_on_network_error', '1',
+          '-i', srv.inputOf(e),
+          ...DlnaServer.convertArgs(e, subs: DlnaServer.isMkv(e)),
+          '-progress', 'pipe:1', '-nostats',
+          '-f', 'matroska', part.path,
+        ]);
+        _copyProc = p;
+        p.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((l) {
+          if (l.startsWith('out_time_us=') && e.duration > 0) {
+            final us = int.tryParse(l.substring(12)) ?? 0;
+            copyProgress = (us / 1e6 / e.duration).clamp(0, 1).toDouble();
+            notifyListeners();
+          }
+        });
+        p.stderr.transform(utf8.decoder).listen((x) {
+          if (err.length < 4000) err.write(x);
+        });
+        final code = await p.exitCode;
+        if (code == 0 && !_copyCancel) {
+          await part.rename(out);
+          _copies[key] = {'file': out, 'sig': '${e.size}', 'size': File(out).lengthSync()};
+          _saveCopies();
+          srv.touch();
+        } else {
+          if (!_copyCancel) copyError = '$copyTitle: ${err.toString().trim().split('\n').last}';
+          try {
+            if (part.existsSync()) await part.delete();
+          } catch (_) {}
+        }
+      } catch (x) {
+        copyError = '$x';
+      }
+      _copyProc = null;
+    }
+    copyKey = null;
+    notifyListeners();
+  }
+
+  /// Settings → "Convert new files ahead automatically": this PC's files only.
+  void _autoCopies() {
+    if (!(_settings?.dlnaAutoCopy ?? false) || ffmpegPath == null) return;
+    makeCopies([for (final c in candidates) if (!c.$2 && c.$1.section.isEmpty) c.$1.key]);
   }
 
   void _storeChanged() {
