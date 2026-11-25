@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../library.dart';
 import '../remote.dart';
@@ -58,6 +59,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
   }
 
   Future<void> _send(String cmd, [Map<String, dynamic> args = const {}]) async {
+    if (cmd == 'nextEp' || cmd == 'home') HapticFeedback.selectionClick();
     try {
       await rc.send(cmd, args: args);
     } catch (e) {
@@ -126,6 +128,95 @@ class _RemoteScreenState extends State<RemoteScreen> {
         ]),
       ),
     );
+  }
+
+  List<Widget> _videoExtras(Map s) {
+    final audios = (s['audios'] as List?) ?? const [];
+    final subs = (s['subs'] as List?) ?? const [];
+    final aSel = ((s['audioSel'] as num?) ?? 0).toInt();
+    final sSel = ((s['subSel'] as num?) ?? -1).toInt();
+    final delay = ((s['subDelay'] as num?) ?? 0).toDouble();
+    final next = s['next'] as String?;
+    final fs = s['fs'] == true;
+    final cs = Theme.of(context).colorScheme;
+    void local(String k, Object v) {
+      s[k] = v; // shows right away; the device confirms
+      setState(() {});
+    }
+
+    return [
+      const Divider(height: 24),
+      Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
+        ActionChip(
+          avatar: Icon(sSel < 0 ? Icons.closed_caption_disabled_outlined : Icons.closed_caption, size: 18),
+          label: Text(sSel < 0 || sSel >= subs.length ? 'Subtitles: off' : 'Subs: ${_short('${subs[sSel]}')}'),
+          onPressed: subs.isEmpty
+              ? null
+              : () async {
+                  final i = await _pickTrack(context, 'Subtitles', subs, sSel, off: true);
+                  if (i == null) return;
+                  local('subSel', i);
+                  _send('subs', {'index': i});
+                },
+        ),
+        ActionChip(
+          avatar: const Icon(Icons.audiotrack, size: 18),
+          label: Text(aSel < audios.length ? 'Audio: ${_short('${audios[aSel]}')}' : 'Audio'),
+          onPressed: audios.length < 2
+              ? null
+              : () async {
+                  final i = await _pickTrack(context, 'Audio', audios, aSel);
+                  if (i == null) return;
+                  local('audioSel', i);
+                  _send('audio', {'index': i});
+                },
+        ),
+      ]),
+      if (sSel >= 0)
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Text('Subtitle delay', style: TextStyle(color: cs.onSurfaceVariant)),
+          IconButton(
+            tooltip: 'Earlier (−0.1 s)',
+            icon: const Icon(Icons.remove_circle_outline),
+            onPressed: () {
+              local('subDelay', ((delay - .1) * 10).round() / 10);
+              _send('subDelay', {'by': -0.1});
+            },
+          ),
+          GestureDetector(
+            onDoubleTap: () {
+              local('subDelay', 0.0);
+              _send('subDelay');
+            },
+            child: SizedBox(
+              width: 56,
+              child: Text('${delay > 0 ? '+' : ''}${delay.toStringAsFixed(1)}s',
+                  textAlign: TextAlign.center, style: const TextStyle(fontFeatures: [FontFeature.tabularFigures()])),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Later (+0.1 s)',
+            icon: const Icon(Icons.add_circle_outline),
+            onPressed: () {
+              local('subDelay', ((delay + .1) * 10).round() / 10);
+              _send('subDelay', {'by': 0.1});
+            },
+          ),
+        ]),
+      const SizedBox(height: 4),
+      Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
+        if (next != null)
+          FilledButton.tonalIcon(icon: const Icon(Icons.skip_next), label: Text('Next: ${_short(next, 26)}'), onPressed: () => _send('nextEp')),
+        OutlinedButton.icon(
+          icon: Icon(fs ? Icons.fullscreen_exit : Icons.fullscreen),
+          label: Text(fs ? 'Exit full screen' : 'Full screen'),
+          onPressed: () {
+            local('fs', !fs);
+            _send('fullscreen');
+          },
+        ),
+      ]),
+    ];
   }
 
   Widget _controls(Map d) {
@@ -225,16 +316,52 @@ class _RemoteScreenState extends State<RemoteScreen> {
                 ),
               ),
             ]),
-            Wrap(alignment: WrapAlignment.center, spacing: 8, children: [
-              if (d['kind'] == 'web' && !music)
-                OutlinedButton.icon(icon: const Icon(Icons.fullscreen), label: const Text('Full screen'), onPressed: () => _send('fullscreen')),
+            if (!music) ..._videoExtras(s),
+            const SizedBox(height: 8),
+            Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
               OutlinedButton.icon(icon: const Icon(Icons.stop), label: const Text('Stop'), onPressed: () => _send('stop')),
+              OutlinedButton.icon(icon: const Icon(Icons.home_outlined), label: const Text('Home'), onPressed: () => _send('home')),
             ]),
+          ],
+          if (idle) ...[
+            const SizedBox(height: 12),
+            Center(child: OutlinedButton.icon(icon: const Icon(Icons.home_outlined), label: const Text('Home'), onPressed: () => _send('home'))),
           ],
         ]),
       ),
     );
   }
+}
+
+String _short(String s, [int n = 22]) => s.length > n ? '${s.substring(0, n - 1)}…' : s;
+
+/// Lets the user pick one of [labels]; -1 = "Off" when [off] is set. Returns null when dismissed.
+Future<int?> _pickTrack(BuildContext context, String title, List labels, int sel, {bool off = false}) {
+  return showModalBottomSheet<int>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (ctx) => SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * .7),
+        child: ListView(shrinkWrap: true, children: [
+          Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 8), child: Text(title, style: Theme.of(ctx).textTheme.titleMedium)),
+          if (off)
+            ListTile(
+              leading: Icon(sel < 0 ? Icons.radio_button_checked : Icons.radio_button_off),
+              title: const Text('Off'),
+              onTap: () => Navigator.pop(ctx, -1),
+            ),
+          for (var i = 0; i < labels.length; i++)
+            ListTile(
+              leading: Icon(i == sel ? Icons.radio_button_checked : Icons.radio_button_off),
+              title: Text('${labels[i]}'),
+              onTap: () => Navigator.pop(ctx, i),
+            ),
+        ]),
+      ),
+    ),
+  );
 }
 
 /// "Play on…": pick one of your devices and start [it] there (then open the remote).

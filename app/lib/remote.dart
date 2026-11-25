@@ -93,6 +93,7 @@ class RemoteController extends ChangeNotifier {
         'dur': v.duration.round(),
         'playing': v.playing,
         'volume': v.volume.round(),
+        ...v.remoteInfo(),
       };
     }
     final t = audio.current;
@@ -119,7 +120,7 @@ class RemoteController extends ChangeNotifier {
   // sends state when something changes: another file, play / pause, volume, or a jump
   void _checkState() {
     final s = state();
-    final key = '${s['path']}|${s['playing']}|${s['volume']}|${s['idle']}';
+    final key = '${s['path']}|${s['playing']}|${s['volume']}|${s['idle']}|${s['audioSel']}|${s['subSel']}|${s['subDelay']}|${s['fs']}|${s['subs']}|${s['next']}';
     final pos = ((s['pos'] as num?) ?? 0).toDouble();
     final expect = _lastPos + (s['playing'] == true ? DateTime.now().difference(_lastAt).inMilliseconds / 1000 : 0);
     if (key != _lastKey || (pos - expect).abs() > 4) {
@@ -141,6 +142,9 @@ class RemoteController extends ChangeNotifier {
     if (withState) body['state'] = state();
     api.remoteHello(body).catchError((_) {});
   }
+
+  /// Goes back to the home screen (set by the home screen).
+  void Function()? onHome;
 
   /// "📱 Pixel: playing here" etc. for the UI.
   final notices = StreamController<String>.broadcast();
@@ -209,6 +213,16 @@ class RemoteController extends ChangeNotifier {
         if (v == null) audio.next();
       case 'previous':
         if (v == null) audio.previous();
+      case 'audio':
+      case 'subs':
+      case 'subDelay':
+      case 'nextEp':
+      case 'fullscreen':
+        await v?.remoteDo(cmd, c);
+      case 'home':
+        v?.close();
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        onHome?.call();
       case 'volume':
         final vol = ((c['volume'] as num?)?.toDouble() ?? 100).clamp(0, 100).toDouble();
         if (v != null) {

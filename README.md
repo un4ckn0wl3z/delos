@@ -111,7 +111,8 @@ Watch a movie or listen to music together: one **host** plays, everyone in the p
 Use your phone as the remote for Delos on a PC or TV (the app, or the web page in any browser, TV browsers included), signed in as the same user.
 
 - Phone: long-press a movie, episode or song → **Play on…** → pick the device. It starts there, and the phone shows the remote.
-- Remote (📡 in the top bar): your online devices and what each one is playing. Controls: play/pause, seek, ±10/30 s, previous/next song, volume, stop, and full screen for web pages.
+- Remote (📡 in the top bar): your online devices and what each one is playing. Controls: play/pause, seek, ±10/30 s, previous/next song, volume, stop.
+- For videos the remote also has shortcuts: subtitles (pick a track or turn them off), subtitle delay ±0.1 s (double-tap to reset), audio track, next episode, full screen, and Home (closes the player and goes back to the start page).
 - Commands go through your server, so the phone and the TV don't need to be on the same Wi-Fi. A device appears while Delos is open on it.
 - Rename a device: Remote → 🪪 (e.g. "Living room PC").
 

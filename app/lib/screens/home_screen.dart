@@ -195,6 +195,9 @@ class _HomeScreenState extends State<HomeScreen> {
     app.party!.openVideo = _partyOpenVideo;
     _partyNotes = listenPartyNotices(() => context, app);
     app.remote = RemoteController(widget.api, app.audio, app.social!, app.party!, app.repo);
+    app.remote!.onHome = () {
+      if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+    };
     _remoteNotes = app.remote!.notices.stream.listen((m) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m), duration: const Duration(seconds: 2)));
     });

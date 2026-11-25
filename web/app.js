@@ -3371,6 +3371,15 @@
       if (!a && A.cur) a = { kind: 'music', path: A.cur.path, title: A.cur.title || A.cur.name, sub: [A.cur.artist, A.cur.album].filter(Boolean).join(' — '),
         image: A.cur.cover ? 'cover:' + A.cur.cover : '', pos: Math.round(aTime()), dur: Math.round(A.cur.duration || 0) };
       if (!a) return { idle: true };
+      if (S.file && S.info) {
+        const n = BR.ctx && BR.ctx.next;
+        Object.assign(a, {
+          audios: [...selAudio.options].map((o) => o.textContent), audioSel: S.audio || 0,
+          subs: [...selSub.options].filter((o) => o.value !== '').map((o) => o.textContent), subSel: S.sub ? S.sub.idx : -1,
+          subDelay: Math.round(S.subDelay * 10) / 10, fs: !!document.fullscreenElement,
+          next: n ? `S${n.season}E${n.episode}${n.episodeTitle ? ' · ' + n.episodeTitle : ''}` : null,
+        });
+      } else if (A.cur) a.queue = A.queue.length > 1;
       return Object.assign({}, a, { playing: S.file ? !media.paused : !A.el.paused, volume: Math.round(((S.file ? video.volume : A.el.volume) || 0) * 100) });
     }
     function remoteHello(withState) {
@@ -3384,6 +3393,7 @@
       clearTimeout(RM.timer);
       if (now - RM.last > 1000) { RM.last = now; remoteHello(true); } else RM.timer = setTimeout(() => remoteChanged(), 1000 - (now - RM.last));
     }
+    document.addEventListener('fullscreenchange', () => remoteChanged());
     ['play', 'pause', 'seeked', 'loadeddata', 'volumechange'].forEach((ev) => { video.addEventListener(ev, remoteChanged); A.el.addEventListener(ev, remoteChanged); });
     setInterval(() => remoteHello(true), 30000);
     window.addEventListener('pagehide', () => { try { navigator.sendBeacon && navigator.sendBeacon(new URL('api/remote/bye', BASE), new Blob([JSON.stringify({ id: RM.id })], { type: 'application/json' })); } catch (_) { /* gone */ } });
@@ -3413,7 +3423,12 @@
         case 'next': if (!vid) aNext(true); break;
         case 'previous': if (!vid) aPrev(); break;
         case 'volume': { const v = Math.max(0, Math.min(100, +c.volume || 0)) / 100; if (vid) setVolume(v); else { A.el.volume = v; $('#smkv-avol').value = String(v); } break; }
-        case 'fullscreen': try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch (_) { toast('Fullscreen needs a click on this screen', 3000); } break;
+        case 'fullscreen': try { if (document.fullscreenElement) await document.exitFullscreen(); else await (vid ? player : document.documentElement).requestFullscreen(); } catch (_) { toast('Full screen needs one click on this screen first (browser rule)', 4000); } break;
+        case 'audio': if (vid && S.info && +c.index >= 0 && +c.index < selAudio.options.length) { selAudio.value = String(+c.index); selAudio.onchange(); toast('Audio: ' + selAudio.selectedOptions[0].textContent, 2000); } break;
+        case 'subs': if (vid && S.info) { const v = +c.index >= 0 && S.info.subs[+c.index] ? String(+c.index) : ''; selSub.value = v; await setSub(v); toast(v === '' ? 'Subtitles off' : 'Subtitles: ' + selSub.selectedOptions[0].textContent, 2000); } break;
+        case 'subDelay': if (vid) { S.subDelay = c.by == null ? 0 : S.subDelay + (+c.by || 0); updateSubDelay(); toast(`Subtitle delay ${(S.subDelay > 0 ? '+' : '') + S.subDelay.toFixed(1)}s`, 1500); } break;
+        case 'nextEp': if (vid && BR.ctx && BR.ctx.next) await playVideo(BR.ctx.next.path); break;
+        case 'home': if (vid) closeVideo(); location.hash = '#/'; break;
       }
       remoteChanged();
     }

@@ -123,7 +123,8 @@ func (s *Server) handleRemoteDevices(w http.ResponseWriter, r *http.Request) {
 }
 
 var remoteCmds = map[string]bool{"open": true, "toggle": true, "play": true, "pause": true, "seek": true, "seekBy": true,
-	"stop": true, "next": true, "previous": true, "volume": true, "fullscreen": true, "subs": true, "audio": true}
+	"stop": true, "next": true, "previous": true, "volume": true, "fullscreen": true, "subs": true, "audio": true,
+	"subDelay": true, "nextEp": true, "home": true}
 
 // POST /api/remote/devices/{id}/cmd {cmd, path?, pos?, by?, volume?, from?}
 func (s *Server) handleRemoteCmd(w http.ResponseWriter, r *http.Request) {

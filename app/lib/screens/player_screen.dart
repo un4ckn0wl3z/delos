@@ -85,6 +85,55 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
   double get volume => _player.state.volume;
   @override
   void setVolume(double v) => _player.setVolume(v.clamp(0, 100).toDouble());
+  @override
+  Map<String, dynamic> remoteInfo() {
+    final info = _info;
+    return {
+      'audios': info == null ? <String>[] : [for (final a in info.audio) a.label],
+      'audioSel': _audio,
+      'subs': info == null ? <String>[] : [for (final s in info.subs) s.label],
+      'subSel': _sub ?? -1,
+      'subDelay': double.parse(_subDelay.toStringAsFixed(1)),
+      'next': widget.onPlayNext != null ? widget.nextLabel : null,
+      'fs': _fullscreen,
+    };
+  }
+
+  @override
+  Future<void> remoteDo(String cmd, Map args) async {
+    if (!mounted) return;
+    final info = _info;
+    switch (cmd) {
+      case 'audio':
+        final i = (args['index'] as num?)?.toInt() ?? -1;
+        if (info != null && i >= 0 && i < info.audio.length) {
+          await _setAudio(i);
+          _toast('Audio: ${info.audio[i].label}');
+        }
+      case 'subs':
+        final i = (args['index'] as num?)?.toInt() ?? -1;
+        if (info == null) return;
+        if (i < 0) {
+          await _setSub(null);
+          _toast('Subtitles off');
+        } else if (i < info.subs.length) {
+          await _setSub(i);
+          _toast('Subtitles: ${info.subs[i].label}');
+        }
+      case 'subDelay':
+        final by = (args['by'] as num?)?.toDouble();
+        await _setSubDelay(by == null ? 0 : _subDelay + by);
+        _toast('Subtitle delay ${_subDelay.toStringAsFixed(1)}s');
+      case 'nextEp':
+        final go = widget.onPlayNext;
+        if (go == null) return;
+        Navigator.of(context).pop();
+        go();
+      case 'fullscreen':
+        await _toggleFullscreen();
+    }
+    if (mounted) setState(() {});
+  }
 
   late final Player _player = Player(
     configuration: PlayerConfiguration(title: widget.file.name, bufferSize: 64 * 1024 * 1024),

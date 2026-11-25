@@ -22,6 +22,10 @@ abstract class PartyVideo {
   double get duration;
   double get volume; // 0–100
   void setVolume(double v);
+  /// Tracks, next episode, full screen… for a remote.
+  Map<String, dynamic> remoteInfo();
+  /// audio {index} · subs {index, -1 = off} · subDelay {by} · nextEp · fullscreen
+  Future<void> remoteDo(String cmd, Map args);
 }
 
 /// Something for the UI to show: an invite, a join request, "you were removed", …
