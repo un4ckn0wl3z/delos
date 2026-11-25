@@ -3356,6 +3356,45 @@
     // back in after a page refresh
     $('#smkv-vparty').onclick = () => (P.party ? (P.min = false, drawParty()) : newPartyDialog());
     $('#smkv-aparty').onclick = () => (P.party ? (P.min = false, drawParty()) : newPartyDialog());
+    // ------------------------------------------------------------ horizontal rows: arrows + fades instead of a scrollbar
+    function enhanceRow(row) {
+      if (row.dataset.rw || !row.parentNode || !(row.classList.contains('smkv-cast') || row.querySelector('.smkv-card'))) return;
+      row.dataset.rw = '1';
+      const wrap = document.createElement('div'); wrap.className = 'smkv-rowwrap';
+      row.parentNode.insertBefore(wrap, row); wrap.appendChild(row);
+      const mk = (cls, txt, dir) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'smkv-rowbtn ' + cls;
+        b.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="${dir < 0 ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'}"/></svg>`;
+        b.setAttribute('aria-label', dir < 0 ? 'Scroll left' : 'Scroll right');
+        b.onclick = (e) => { e.stopPropagation(); row.scrollBy({ left: dir * Math.max(200, row.clientWidth * 0.85), behavior: 'smooth' }); };
+        wrap.appendChild(b); return b;
+      };
+      const l = mk('l', '‹', -1), r = mk('r', '›', 1);
+      const bar = document.createElement('div'); bar.className = 'smkv-rowbar'; bar.appendChild(document.createElement('i')); wrap.appendChild(bar);
+      const upd = () => {
+        const max = row.scrollWidth - row.clientWidth, x = row.scrollLeft;
+        const start = x > 4, more = x < max - 4;
+        l.classList.toggle('on', start); r.classList.toggle('on', more);
+        wrap.classList.toggle('fade-l', start); wrap.classList.toggle('fade-r', more);
+        bar.classList.toggle('on', max > 4);
+        if (max > 4) { const w = row.clientWidth / row.scrollWidth; bar.firstChild.style.width = (w * 100) + '%'; bar.firstChild.style.left = (x / row.scrollWidth * 100) + '%'; }
+        // arrows sit in the middle of the pictures, not of the captions
+        const img = row.querySelector('.smkv-poster,.smkv-face');
+        if (img) wrap.style.setProperty('--rb-top', (img.offsetTop - row.offsetTop + img.offsetHeight / 2) + 'px');
+      };
+      row.addEventListener('scroll', upd, { passive: true });
+      if (window.ResizeObserver) new ResizeObserver(upd).observe(row);
+      requestAnimationFrame(upd); setTimeout(upd, 600);
+    }
+    function enhanceRows(root) { (root.querySelectorAll ? root : document).querySelectorAll('.smkv-row,.smkv-cast').forEach(enhanceRow); }
+    new MutationObserver((ms) => {
+      for (const m of ms) for (const n of m.addedNodes) {
+        if (n.nodeType !== 1) continue;
+        if (n.matches('.smkv-row,.smkv-cast')) enhanceRow(n); else if (n.querySelector('.smkv-row,.smkv-cast')) enhanceRows(n);
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+    enhanceRows(document);
+
     // ------------------------------------------------------------ remote control
     // This page is a device your phone (the Delos app) can drive: open, play/pause, seek, volume…
     const RM = { id: lsGet('deviceId', null), timer: 0, last: 0 };
@@ -3546,6 +3585,13 @@
 </form></div>`;
 
   const CSS = `
+*{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent}
+*::-webkit-scrollbar{width:10px;height:10px;background:transparent}
+*::-webkit-scrollbar-track,*::-webkit-scrollbar-corner{background:transparent}
+*::-webkit-scrollbar-button{display:none;width:0;height:0}
+*::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:10px;border:3px solid transparent;background-clip:padding-box;min-height:40px}
+*::-webkit-scrollbar-thumb:hover{background-color:rgba(255,255,255,.32)}
+*::-webkit-scrollbar-thumb:active{background-color:rgba(255,255,255,.45)}
 html,body{margin:0;height:100%;background:#0d0f13;color:#c9cfd8;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
 a{color:#7cc4ff;text-decoration:none}
 #smkv-app{display:grid;grid-template-columns:230px 1fr;height:100vh}
@@ -3849,6 +3895,23 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 .smkv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:18px 16px;margin-top:14px}
 .smkv-grid.sq{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
 .smkv-row{display:grid;grid-auto-flow:column;grid-auto-columns:150px;gap:14px;overflow-x:auto;padding-bottom:8px}
+.smkv-row,.smkv-cast{scrollbar-width:none;scroll-behavior:smooth;scroll-snap-type:x proximity;overscroll-behavior-x:contain}
+.smkv-row::-webkit-scrollbar,.smkv-cast::-webkit-scrollbar{display:none}
+.smkv-row>*,.smkv-cast>*{scroll-snap-align:start}
+.smkv-rowwrap{position:relative;min-width:0}
+.smkv-rowwrap.fade-l>.smkv-row,.smkv-rowwrap.fade-l>.smkv-cast{-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 48px);mask-image:linear-gradient(90deg,transparent 0,#000 48px)}
+.smkv-rowwrap.fade-r>.smkv-row,.smkv-rowwrap.fade-r>.smkv-cast{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 48px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 48px),transparent)}
+.smkv-rowwrap.fade-l.fade-r>.smkv-row,.smkv-rowwrap.fade-l.fade-r>.smkv-cast{-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 48px,#000 calc(100% - 48px),transparent);mask-image:linear-gradient(90deg,transparent 0,#000 48px,#000 calc(100% - 48px),transparent)}
+.smkv-rowwrap>button.smkv-rowbtn{padding:0!important;min-width:0!important;width:44px!important;height:44px!important;border-radius:50%!important;margin:0}
+.smkv-rowbtn svg{width:22px;height:22px;display:block}
+.smkv-rowbtn{position:absolute;top:var(--rb-top,40%);transform:translateY(-50%);z-index:3;width:42px;height:42px;border-radius:50%;border:1px solid rgba(255,255,255,.14);background:rgba(18,21,27,.82);color:#fff;font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:0;pointer-events:none;transition:opacity .18s,transform .18s,background .18s;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 4px 18px rgba(0,0,0,.45)}
+.smkv-rowbtn.l{left:-6px}.smkv-rowbtn.r{right:-6px}
+.smkv-rowbtn:hover{background:rgba(40,46,58,.95);transform:translateY(-50%) scale(1.08)}
+.smkv-rowwrap:hover>.smkv-rowbtn.on,.smkv-rowbtn.on:focus-visible{opacity:1;pointer-events:auto}
+@media (hover:none){.smkv-rowbtn{display:none}}
+.smkv-rowbar{position:absolute;left:0;right:0;bottom:0;height:3px;border-radius:3px;background:rgba(255,255,255,.06);opacity:0;transition:opacity .2s;pointer-events:none}
+.smkv-rowbar>i{position:absolute;top:0;bottom:0;border-radius:3px;background:rgba(255,255,255,.35)}
+.smkv-rowwrap:hover>.smkv-rowbar.on{opacity:1}
 .smkv-row:has(.wide){grid-auto-columns:260px}
 .smkv-card{cursor:pointer;min-width:0}
 .smkv-card:hover .smkv-poster{outline:2px solid #4a9eff}
