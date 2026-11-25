@@ -51,6 +51,17 @@ class Settings {
   set dlnaOn(bool v) => _p.setBool('dlnaOn', v);
   String get dlnaName => _p.getString('dlnaName') ?? '';
   set dlnaName(String v) => _p.setString('dlnaName', v.trim());
+  /// Convert audio the TV can't play (codecs in [dlnaBadAudio]) to AC3.
+  bool get dlnaFixAudio => _p.getBool('dlnaFixAudio') ?? true;
+  set dlnaFixAudio(bool v) => _p.setBool('dlnaFixAudio', v);
+  List<String> get dlnaBadAudio => _p.getStringList('dlnaBadAudio') ?? const ['dts', 'truehd'];
+  set dlnaBadAudio(List<String> v) => _p.setStringList('dlnaBadAudio', v);
+  /// Also share the server's libraries (passthrough via this PC).
+  bool get dlnaOnline => _p.getBool('dlnaOnline') ?? false;
+  set dlnaOnline(bool v) => _p.setBool('dlnaOnline', v);
+  /// Where online files are converted: pc | server.
+  String get dlnaConvertAt => _p.getString('dlnaConvertAt') ?? 'pc';
+  set dlnaConvertAt(String v) => _p.setString('dlnaConvertAt', v);
   String get dlnaUuid => _p.getString('dlnaUuid') ?? '';
   set dlnaUuid(String v) => _p.setString('dlnaUuid', v);
 

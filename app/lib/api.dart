@@ -364,6 +364,17 @@ class Api {
 
   String rawUrl(String path) => _u('raw', {'path': path, 'token': settings.token ?? ''}).toString();
 
+  /// For TVs (DLNA via this PC): video as it is, audio → AC3, Matroska with the subtitles, from [start].
+  String tvStreamUrl(String path, {required int audio, required double start}) => _u('stream', {
+        'path': path,
+        'audio': '$audio',
+        'start': start.toStringAsFixed(3),
+        'v': 'copy',
+        'fmt': 'mkv',
+        'acodec': 'ac3',
+        'token': settings.token ?? '',
+      }).toString();
+
   String streamUrl(String path, {required int audio, required double start, required int maxh, int? burn}) =>
       _u('stream', {
         'path': path,

@@ -44,6 +44,124 @@ class _DlnaScreenState extends State<DlnaScreen> {
     if (n != null) await h.rename(n);
   }
 
+  Widget _head(BuildContext context, String t) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+        child: Text(t, style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600)),
+      );
+
+  List<Widget> _audioSection(BuildContext context) {
+    final s = h.settings;
+    if (s == null) return const [];
+    final bad = s.dlnaBadAudio;
+    final dl = h.ffmpegProgress;
+    final muted = TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    return [
+      _head(context, 'Audio the TV can\'t play'),
+      SwitchListTile(
+        secondary: const Icon(Icons.surround_sound_outlined),
+        title: const Text('Convert it for the TV'),
+        subtitle: const Text('Picture stays as it is; only the sound becomes Dolby Digital (AC3) 5.1. Seeking works by time.'),
+        value: s.dlnaFixAudio,
+        onChanged: (v) {
+          s.dlnaFixAudio = v;
+          h.changed();
+        },
+      ),
+      if (s.dlnaFixAudio) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(72, 0, 16, 4),
+          child: Wrap(spacing: 8, children: [
+            for (final (c, label) in const [('dts', 'DTS'), ('truehd', 'TrueHD / Atmos'), ('eac3', 'E-AC3'), ('flac', 'FLAC'), ('opus', 'Opus')])
+              FilterChip(
+                label: Text(label),
+                selected: bad.contains(c),
+                onSelected: (on) {
+                  s.dlnaBadAudio = on ? [...bad, c] : bad.where((x) => x != c).toList();
+                  h.changed();
+                },
+              ),
+          ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(72, 0, 16, 8),
+          child: Text('Pick what your TV can\'t play. Newer LG TVs (2023+) play DTS again — untick it if yours does.', style: muted),
+        ),
+        ListTile(
+          leading: const Icon(Icons.build_circle_outlined),
+          title: const Text('Converter (ffmpeg) on this PC'),
+          subtitle: dl != null
+              ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(dl >= 1 ? 'Unpacking…' : 'Downloading… ${(dl * 100).round()}%'),
+                  const SizedBox(height: 6),
+                  LinearProgressIndicator(value: dl >= 1 ? null : dl),
+                ])
+              : Text(h.ffmpegPath != null
+                  ? 'Ready${h.convertCount > 0 ? ' — ${h.convertCount} files get converted' : ''}'
+                      '${(h.server?.converting ?? 0) > 0 ? ' · converting ${h.server!.converting} now' : ''}'
+                  : h.ffmpegError != null
+                      ? "Download failed: ${h.ffmpegError}"
+                      : 'Not installed — needed to check and convert files on this PC (≈ 150 MB download)'),
+          trailing: h.ffmpegPath == null && dl == null ? FilledButton.tonal(onPressed: h.ffmpegDownload, child: const Text('Download')) : null,
+        ),
+      ],
+    ];
+  }
+
+  List<Widget> _onlineSection(BuildContext context) {
+    final s = h.settings;
+    if (s == null) return const [];
+    final muted = TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    return [
+      _head(context, 'Online library (passthrough)'),
+      SwitchListTile(
+        secondary: const Icon(Icons.cloud_outlined),
+        title: const Text('Share the server\'s libraries too'),
+        subtitle: Text(!s.loggedIn
+            ? 'Sign in to your server first'
+            : !s.dlnaOnline
+                ? 'The TV gets an "Online" folder; files stream from the server through this PC'
+                : h.onlineError != null
+                    ? "Couldn't load: ${h.onlineError}"
+                    : h.onlineAt == null
+                        ? 'Loading…'
+                        : '${h.onlineCount} files · updated ${TimeOfDay.fromDateTime(h.onlineAt!).format(context)}'),
+        value: s.dlnaOnline && s.loggedIn,
+        onChanged: s.loggedIn ? (v) => h.setOnline(v) : null,
+      ),
+      if (s.dlnaOnline && s.loggedIn) ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(72, 0, 16, 4),
+          child: Row(children: [
+            Expanded(child: Text('Convert online files on', style: Theme.of(context).textTheme.bodyMedium)),
+            TextButton.icon(onPressed: h.refreshOnline, icon: const Icon(Icons.refresh, size: 18), label: const Text('Refresh list')),
+          ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(72, 4, 16, 4),
+          child: SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'pc', icon: Icon(Icons.computer), label: Text('This PC')),
+              ButtonSegment(value: 'server', icon: Icon(Icons.dns_outlined), label: Text('Server')),
+            ],
+            selected: {s.dlnaConvertAt},
+            onSelectionChanged: (v) {
+              s.dlnaConvertAt = v.first;
+              h.changed();
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(72, 4, 16, 8),
+          child: Text(
+              s.dlnaConvertAt == 'pc'
+                  ? 'This PC: the server only sends the file; ffmpeg here converts the sound (light work). Needs the converter above.'
+                  : 'Server: the seedbox converts the sound and this PC just passes it on. Uses the server\'s CPU and counts as a stream there.',
+              style: muted),
+        ),
+      ],
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final srv = h.server;
@@ -109,6 +227,8 @@ class _DlnaScreenState extends State<DlnaScreen> {
             subtitle: Text(active.isEmpty ? 'None in the last minute' : active.join(', ')),
           ),
         ],
+        ..._audioSection(context),
+        ..._onlineSection(context),
         const Divider(),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
