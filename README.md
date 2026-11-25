@@ -116,15 +116,16 @@ Use your phone as the remote for Delos on a PC or TV (the app, or the web page i
 - Commands go through your server, so the phone and the TV don't need to be on the same Wi-Fi. A device appears while Delos is open on it.
 - Rename a device: Remote → 🪪 (e.g. "Living room PC").
 
-## Share to TV (DLNA, Windows app)
+## Share to TV (DLNA, desktop apps)
 
-The Windows app can act as a DLNA media server so a smart TV on the same network plays what's saved on that PC (offline downloads and your own folders) — handy on a PC or handheld (e.g. ROG Ally) next to the TV.
+The desktop apps (Windows, macOS, Linux) can act as a DLNA media server so a smart TV on the same network plays what's saved on that PC (offline downloads and your own folders) — handy on a PC or handheld (e.g. ROG Ally) next to the TV.
 
-- Turn it on: Settings → **Share to TV (DLNA)** (or 📺 in Offline). Allow Delos on *Private networks* when Windows asks.
+- Turn it on: Settings → **Share to TV (DLNA)** (or 📺 in Offline). On Windows allow Delos on *Private networks* when asked; on Linux with a firewall allow UDP 1900 and TCP 58200.
 - On the TV: LG → Media Player / Photo & Video; Samsung → Connected devices; Android TV → VLC / Kodi (UPnP). Open **Delos (PC name)**: Recently added, Movies, TV shows → seasons → episodes, Videos, Music (albums / artists / all songs), with posters.
 - Files are sent as they are (no transcoding), with seeking; a `.srt` next to a video is offered to the TV as subtitles.
 - It runs while the app is open; rename it on the same page.
 - **Audio the TV can't play** (DTS, TrueHD/Atmos — you pick which): converted to Dolby Digital 5.1 on the fly, the picture untouched, seeking by time. Needs the converter (ffmpeg), which the page downloads for you (≈ 150 MB).
+- **Convert ahead (TV copies)**: make a converted copy of a file (or all of them, or automatically for new files) so nothing is converted while you watch and seeking works on every TV. Copies live in the app's folder; delete them any time. Online files can get a copy too (fetched from the server).
 - **Online library (passthrough)**: also show the server's libraries in an "Online" folder; files stream from the server through the PC (seeking works). For files that need converting, choose where: **This PC** (ffmpeg on the PC) or **Server** (the seedbox converts; uses its CPU).
 
 ## Ranking
