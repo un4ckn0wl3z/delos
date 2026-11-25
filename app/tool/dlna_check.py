@@ -52,7 +52,7 @@ NS = {'d': 'urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/', 'dc': 'http://purl.or
 didl, n, t = browse('0')
 titles = [c.find('dc:title', NS).text for c in didl.findall('d:container', NS)]
 print('root', titles)
-check(titles == ['Recently added', 'Movies', 'TV shows', 'Music'], 'root folders')
+check(titles == ['Recently added', 'Movies', 'TV shows', 'Music', 'Online'], 'root folders')
 didl, n, t = browse('0', 'BrowseMetadata'); check(n == 1, 'root metadata')
 
 # walk everything
@@ -75,7 +75,8 @@ murl = res[0].text
 check(mv.find('upnp:albumArtURI', NS) is not None, 'poster uri')
 
 # paging
-didl, n, t = browse('t', start=0, count=1); check(n == 1 and t == 1, 'paging tv')
+root = {c.find('dc:title', NS).text: c.get('id') for c in browse('0')[0].findall('d:container', NS)}
+didl, n, t = browse(root['TV shows'], start=0, count=1); check(n == 1 and t == 1, 'paging tv')
 sid = didl.find('d:container', NS).get('id')
 didl, n, t = browse(sid); check(t == 2, 'two seasons')
 didl, n, t = browse(sid + '/s1', start=1, count=5); check(n == 1 and t == 2, 'paging episodes')
@@ -100,4 +101,35 @@ try:
 except urllib.error.HTTPError as e:
     check(e.code == 500 and '701' in e.read().decode(), 'fault 701 for unknown object')
 x = soap(ctl, 'GetSystemUpdateID', {}); check('<Id>' in x, 'GetSystemUpdateID')
+
+# online (passthrough): Online → Films → the movie, ranges forwarded
+on = [i for i in items if i.find('dc:title', NS).text == 'Pitch Black online']
+check(len(on) == 1, 'online item listed')
+ou = on[0].find('d:res', NS).text
+r = urllib.request.urlopen(urllib.request.Request(ou, headers={'Range': 'bytes=1000-1099'})); d = r.read()
+check(r.status == 206 and len(d) == 100 and d[0] == 1000 % 251, 'passthrough range')
+check(r.headers['Content-Range'] == 'bytes 1000-1099/300000', 'passthrough content-range')
+
+import os, subprocess, tempfile
+ff = os.environ.get('FFMPEG')
+if ff:
+    dv = [i for i in items if i.find('dc:title', NS).text == 'DTS Movie (TV audio)' or i.find('dc:title', NS).text.startswith('DTS Movie')]
+    check(len(dv) >= 1, 'DTS movie listed')
+    res = dv[0].find('d:res', NS)
+    check('DLNA.ORG_OP=10' in res.get('protocolInfo') and res.get('size') is None, 'converted: time-seek flags, no size')
+    probe = os.path.join(os.path.dirname(ff), 'ffprobe' + ('.exe' if ff.lower().endswith('.exe') else ''))
+    def grab(hdr):
+        r = urllib.request.urlopen(urllib.request.Request(res.text, headers=hdr), timeout=60)
+        f = tempfile.NamedTemporaryFile(suffix='.mkv', delete=False); f.write(r.read()); f.close()
+        out = subprocess.run([probe, '-v', 'error', '-show_entries', 'stream=codec_type,codec_name:format=duration', '-of', 'compact', f.name], capture_output=True, text=True).stdout
+        return r, out
+    r, out = grab({})
+    print(out)
+    check('codec_name=ac3' in out and 'codec_name=h264' in out and 'codec_type=subtitle' in out, 'converted: h264 + ac3 + subs')
+    r, out = grab({'TimeSeekRange.dlna.org': 'npt=10.0-'})
+    dur = float(re.search(r'duration=([0-9.]+)', out).group(1))
+    print('seek out', r.headers.get('TimeSeekRange.dlna.org'), dur)
+    check(r.headers.get('TimeSeekRange.dlna.org', '').startswith('npt=10.000-20.000/20.000') and 8 <= dur <= 12, 'time seek to 10 s')
+else:
+    print('no FFMPEG: conversion not checked')
 sys.exit(0 if ok else 1)

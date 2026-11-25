@@ -280,6 +280,15 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	if audio >= len(info.Audio) {
 		audio = 0
 	}
+	// fmt=mkv|ts for TVs (DLNA via the app): keeps 5.1 as AC3 (acodec=ac3) and, in mkv, the subtitles
+	format := r.URL.Query().Get("fmt")
+	if format != "mkv" && format != "ts" {
+		format = "mp4"
+	}
+	acodec := r.URL.Query().Get("acodec")
+	if acodec != "ac3" {
+		acodec = "aac"
+	}
 
 	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin"}
 	if start > 0 {
@@ -305,9 +314,19 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "-map", fmt.Sprintf("0:a:%d", audio))
 	}
 
+	// subtitles ride along in mkv, unless one can't go into matroska as-is (mp4 text)
+	subsOK := format == "mkv" && burn < 0
+	for _, sb := range info.Subs {
+		if sb.Codec == "mov_text" || sb.Codec == "eia_608" {
+			subsOK = false
+		}
+	}
+	if subsOK {
+		args = append(args, "-map", "0:s?", "-c:s", "copy")
+	}
 	if mode == "copy" {
 		args = append(args, "-c:v", "copy")
-		if info.Video.Codec == "hevc" {
+		if info.Video.Codec == "hevc" && format == "mp4" {
 			args = append(args, "-tag:v", "hvc1")
 		}
 	} else {
@@ -317,11 +336,31 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "-c:v", "libx264", "-preset", "veryfast", "-crf", strconv.Itoa(crf),
 			"-profile:v", "high", "-g", "60")
 	}
-	args = append(args,
-		"-c:a", "aac", "-ac", "2", "-b:a", "192k",
-		"-sn", "-dn", "-map_metadata", "-1", "-map_chapters", "-1",
-		"-avoid_negative_ts", "make_zero", "-max_muxing_queue_size", "4096",
-		"-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof", "pipe:1")
+	if acodec == "ac3" {
+		ch := 2
+		if audio >= 0 && audio < len(info.Audio) && info.Audio[audio].Channels > 0 {
+			ch = min(info.Audio[audio].Channels, 6)
+		}
+		args = append(args, "-c:a", "ac3", "-ac", strconv.Itoa(ch), "-b:a", map[bool]string{true: "640k", false: "224k"}[ch > 2])
+	} else {
+		args = append(args, "-c:a", "aac", "-ac", "2", "-b:a", "192k")
+	}
+	if !subsOK {
+		args = append(args, "-sn")
+	}
+	args = append(args, "-dn", "-map_metadata", "-1", "-map_chapters", "-1",
+		"-avoid_negative_ts", "make_zero", "-max_muxing_queue_size", "4096")
+	contentType := "video/mp4"
+	switch format {
+	case "mkv":
+		args = append(args, "-f", "matroska", "-live", "1", "pipe:1")
+		contentType = "video/x-matroska"
+	case "ts":
+		args = append(args, "-f", "mpegts", "pipe:1")
+		contentType = "video/mp2t"
+	default:
+		args = append(args, "-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof", "pipe:1")
+	}
 
 	// limit concurrent ffmpeg processes: copy (remux) is light, re-encoding is heavy
 	class := ClassTranscode
@@ -353,7 +392,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.conns.Add(userOf(r), r, r.URL.Query().Get("path"), kind)()
 
-	w.Header().Set("Content-Type", "video/mp4")
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no") // nginx: don't buffer
 	w.WriteHeader(200)

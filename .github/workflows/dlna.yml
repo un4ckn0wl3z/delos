@@ -10,13 +10,25 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 15
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
+      - name: ffmpeg (the same builds the app downloads)
+        run: |
+          mkdir -p ../ff && cd ../ff
+          if [ "$RUNNER_OS" = Windows ]; then
+            curl -sSfL -o ff.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
+            tar -xf ff.zip
+            echo "FFMPEG=$(cygpath -w "$(ls -d $PWD/ffmpeg-*/bin)")\\ffmpeg.exe" >> $GITHUB_ENV
+          else
+            curl -sSfL -o ff.tar.xz https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
+            tar -xf ff.tar.xz
+            echo "FFMPEG=$(ls -d $PWD/ffmpeg-*/bin)/ffmpeg" >> $GITHUB_ENV
+          fi
       - name: Analyze
         run: |
           mkdir -p ../d/bin && cp app/lib/dlna/dlna_server.dart app/tool/dlna_check.dart ../d/bin/
@@ -24,9 +36,10 @@ jobs:
           cd ../d && dart pub get && dart analyze --fatal-infos bin
       - name: Serve and browse like a TV
         run: |
+          echo "ffmpeg: $FFMPEG"
           W=$PWD
           (cd ../d && dart run bin/dlna_check.dart > ../srv.log 2>&1 &)
-          for i in $(seq 1 90); do grep -q READY ../srv.log && break; sleep 1; done
+          for i in $(seq 1 120); do grep -q READY ../srv.log && break; sleep 1; done
           cat ../srv.log
           python "$W/app/tool/dlna_check.py" || (cat ../srv.log; exit 1)
           pkill -f dlna_check.dart || true
