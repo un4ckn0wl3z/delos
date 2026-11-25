@@ -121,7 +121,10 @@ if ff:
     def grab(hdr):
         r = urllib.request.urlopen(urllib.request.Request(res.text, headers=hdr), timeout=60)
         f = tempfile.NamedTemporaryFile(suffix='.mkv', delete=False); f.write(r.read()); f.close()
-        out = subprocess.run([probe, '-v', 'error', '-show_entries', 'stream=codec_type,codec_name:format=duration', '-of', 'compact', f.name], capture_output=True, text=True).stdout
+        out = subprocess.run([probe, '-v', 'error', '-show_entries', 'stream=codec_type,codec_name', '-of', 'compact', f.name], capture_output=True, text=True).stdout
+        pts = [float(x) for x in subprocess.run([probe, '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'packet=pts_time', '-of', 'csv=p=0', f.name],
+                                                capture_output=True, text=True).stdout.split() if x.strip() not in ('', 'N/A')]
+        out += f'\nduration={max(pts) - min(pts) if pts else 0:.2f}'
         return r, out
     r, out = grab({})
     print(out)
