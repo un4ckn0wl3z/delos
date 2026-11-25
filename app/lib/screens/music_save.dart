@@ -4,6 +4,7 @@ import '../library.dart';
 import '../offline/store.dart';
 import 'home_screen.dart';
 import 'playlists.dart';
+import 'remote.dart';
 
 /// Save songs to this device (needs the "offline" permission).
 Future<void> saveMusic(BuildContext context, AppCtx app, List<Item> tracks) async {
@@ -57,6 +58,8 @@ Future<void> songMenu(BuildContext context, AppCtx app, Item t) async {
         ListTile(leading: const Icon(Icons.queue_play_next), title: const Text('Play next'), onTap: () => Navigator.pop(ctx, 'next')),
         ListTile(leading: const Icon(Icons.queue_music), title: const Text('Add to queue'), onTap: () => Navigator.pop(ctx, 'queue')),
         ListTile(leading: const Icon(Icons.playlist_add), title: const Text('Add to playlist…'), onTap: () => Navigator.pop(ctx, 'playlist')),
+        if (app.remote != null)
+          ListTile(leading: const Icon(Icons.cast), title: const Text('Play on…'), onTap: () => Navigator.pop(ctx, 'playon')),
         if (app.offline && saved == null)
           ListTile(leading: const Icon(Icons.download_for_offline_outlined), title: const Text('Save to this device'), onTap: () => Navigator.pop(ctx, 'save')),
         if (saved != null)
@@ -77,6 +80,8 @@ Future<void> songMenu(BuildContext context, AppCtx app, Item t) async {
       await enqueue(context, app, [t]);
     case 'playlist':
       await addToPlaylist(context, app, [t]);
+    case 'playon':
+      await playOnDevice(context, app, t);
     case 'save':
       await saveMusic(context, app, [t]);
     case 'unsave':

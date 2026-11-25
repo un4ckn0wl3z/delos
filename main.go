@@ -67,6 +67,7 @@ type Server struct {
 	stats     *Stats
 	parties   *Parties
 	clients   *Clients
+	remotes   *Remotes
 	ann       *Announcements
 	started   time.Time
 }
@@ -242,6 +243,7 @@ func main() {
 	s.playlistRoutes(mux)
 	s.statsRoutes(mux)
 	s.partyRoutes(mux)
+	s.remoteRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,

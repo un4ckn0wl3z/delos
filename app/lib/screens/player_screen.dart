@@ -79,6 +79,12 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
   void close() {
     if (mounted) Navigator.of(context).pop();
   }
+  @override
+  double get duration => _duration;
+  @override
+  double get volume => _player.state.volume;
+  @override
+  void setVolume(double v) => _player.setVolume(v.clamp(0, 100).toDouble());
 
   late final Player _player = Player(
     configuration: PlayerConfiguration(title: widget.file.name, bufferSize: 64 * 1024 * 1024),

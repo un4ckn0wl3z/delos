@@ -19,6 +19,9 @@ abstract class PartyVideo {
   Future<void> partySeek(double t);
   Future<void> partyPlay(bool play);
   void close();
+  double get duration;
+  double get volume; // 0–100
+  void setVolume(double v);
 }
 
 /// Something for the UI to show: an invite, a join request, "you were removed", …

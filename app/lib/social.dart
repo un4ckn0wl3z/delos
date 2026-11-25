@@ -41,6 +41,9 @@ class Social extends ChangeNotifier {
   /// Watch-party events (party.dart listens).
   final partyEvents = StreamController<(String, Map)>.broadcast();
 
+  /// Remote-control events (remote.dart listens): remote-cmd, remote-state, remote-devices, and 'connected'.
+  final remoteEvents = StreamController<(String, Map)>.broadcast();
+
   /// A message arrived for a chat that isn't open (for a SnackBar).
   final incoming = StreamController<(String conv, Map msg)>.broadcast();
 
@@ -109,6 +112,7 @@ class Social extends ChangeNotifier {
     try {
       final res = await api.events();
       connected = true;
+      remoteEvents.add(('connected', const {}));
       loadAnnouncements(); // catch up after (re)connecting
       _backoff = 2;
       notifyListeners();
@@ -164,6 +168,10 @@ class Social extends ChangeNotifier {
         }
       default:
         if (event.startsWith('part') && v is Map) partyEvents.add((event, Map.from(v)));
+        if (event.startsWith('remote-') && v is Map) {
+          remoteEvents.add((event, Map.from(v)));
+          return;
+        }
     }
     notifyListeners();
   }

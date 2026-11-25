@@ -106,6 +106,15 @@ Watch a movie or listen to music together: one **host** plays, everyone in the p
 - **In the party:** chat, emoji that float over the video, members (👑 = host). **Mute chat** hides chat and emoji just for you. The host can turn chat off for everyone, invite people, let people in, **remove** someone (they can't come back unless invited again), change the title / visibility / password, hand the party over, or end it. If the host leaves, the next person becomes host.
 - Time is synced to the server clock; a guest drifting more than ~2.5 s is moved back in step. A guest needs access to the library of what's playing. Parties nobody's in for 30 minutes end by themselves.
 
+## Remote control
+
+Use your phone as the remote for Delos on a PC or TV (the app, or the web page in any browser, TV browsers included), signed in as the same user.
+
+- Phone: long-press a movie, episode or song → **Play on…** → pick the device. It starts there, and the phone shows the remote.
+- Remote (📡 in the top bar): your online devices and what each one is playing. Controls: play/pause, seek, ±10/30 s, previous/next song, volume, stop, and full screen for web pages.
+- Commands go through your server, so the phone and the TV don't need to be on the same Wi-Fi. A device appears while Delos is open on it.
+- Rename a device: Remote → 🪪 (e.g. "Living room PC").
+
 ## Ranking
 
 🏆 *Ranking* (web sidebar; app: Chat → Ranking) shows who watched and listened the most this week / month / year / ever, with badges for hours, finished titles, songs, streaks and this month's top watcher / listener. Only time actually playing counts. People who hide their activity aren't ranked.

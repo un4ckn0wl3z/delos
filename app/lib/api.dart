@@ -103,6 +103,12 @@ class Api {
   /// join · leave · request · answer · invite · kick · state · settings · msg · react · start
   Future<dynamic> partyAction(String id, String action, Map<String, dynamic> body) =>
       _req('POST', 'parties/${Uri.encodeComponent(id)}/$action', body: body);
+  // remote control
+  Future<void> remoteHello(Map<String, dynamic> body) => _req('POST', 'remote/hello', body: body);
+  Future<void> remoteBye(String id) => _req('POST', 'remote/bye', body: {'id': id});
+  Future<List<Map>> remoteDevices(String self) async =>
+      List<Map>.from(((await _req('GET', 'remote/devices?self=${Uri.encodeQueryComponent(self)}')) as Map)['devices'] as List? ?? const []);
+  Future<void> remoteCmd(String device, Map<String, dynamic> body) => _req('POST', 'remote/devices/${Uri.encodeComponent(device)}/cmd', body: body);
   Future<void> partyEnd(String id) => _req('DELETE', 'parties/${Uri.encodeComponent(id)}');
   /// "Can I watch with you?" to a friend who's playing something.
   Future<Map> partyAsk(String user) async => await _req('POST', 'parties/ask', body: {'user': user}) as Map;

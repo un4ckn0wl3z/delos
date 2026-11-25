@@ -13,6 +13,7 @@ import 'announcements.dart';
 import '../offline/offline_view.dart';
 import '../offline/store.dart';
 import '../party.dart';
+import '../remote.dart';
 import '../social.dart';
 import '../update.dart';
 import '../util.dart';
@@ -24,6 +25,7 @@ import 'movies.dart';
 import 'music.dart';
 import 'party_screen.dart';
 import 'player_screen.dart';
+import 'remote.dart';
 import 'settings_screen.dart';
 import 'shows.dart';
 
@@ -46,6 +48,8 @@ class AppCtx {
   Social? social;
   /// Watch party (live, with [social]).
   PartyController? party;
+  /// Remote control (this device as a target + driving your other devices).
+  RemoteController? remote;
 }
 
 /// Plays a video item; for episodes, offers the next one when it ends.
@@ -123,7 +127,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 0 = Videos, 1 = Music, 2 = Chat, 3 = Downloads, 4 = Offline — separate sides with their own menus
   static int section = 0;
   int _lastMedia = 0;
-  StreamSubscription? _incoming, _announce, _partyNotes;
+  StreamSubscription? _incoming, _announce, _partyNotes, _remoteNotes;
 
   /// A party opens a video: find it in the libraries and play it at the party's spot.
   Future<void> _partyOpenVideo(String path, double pos, bool playing) async {
@@ -190,6 +194,10 @@ class _HomeScreenState extends State<HomeScreen> {
     app.party = PartyController(widget.api, app.audio, app.social!, app.repo);
     app.party!.openVideo = _partyOpenVideo;
     _partyNotes = listenPartyNotices(() => context, app);
+    app.remote = RemoteController(widget.api, app.audio, app.social!, app.party!, app.repo);
+    _remoteNotes = app.remote!.notices.stream.listen((m) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m), duration: const Duration(seconds: 2)));
+    });
     NowPlaying.onParty = (ctx) => openPartyUi(ctx, app);
     _incoming = app.social!.incoming.stream.listen((e) {
       if (!mounted) return;
@@ -233,6 +241,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _incoming?.cancel();
     _announce?.cancel();
     _partyNotes?.cancel();
+    _remoteNotes?.cancel();
+    app.remote?.dispose();
     NowPlaying.onParty = null;
     app.party?.dispose();
     app.social?.dispose();
@@ -452,6 +462,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
+          if (app.remote != null)
+            IconButton(tooltip: 'Remote — control your PC / TV', icon: const Icon(Icons.settings_remote_outlined), onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => RemoteScreen(app: app)))),
           if (app.party != null)
             IconButton(tooltip: 'Party — watch together', icon: const Icon(Icons.celebration_outlined), onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => app.party!.party != null ? PartyRoomScreen(app: app) : PartyListScreen(app: app)))),

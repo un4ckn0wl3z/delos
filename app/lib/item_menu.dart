@@ -5,6 +5,7 @@ import 'library.dart';
 import 'offline/store.dart';
 import 'screens/chat.dart';
 import 'screens/home_screen.dart';
+import 'screens/remote.dart';
 import 'util.dart';
 import 'widgets.dart';
 
@@ -57,6 +58,13 @@ Future<void> showItemMenu(
             leading: const Icon(Icons.play_arrow),
             title: Text(play.pos > 0 ? 'Resume from ${fmtDur(play.pos)}' : 'Play'),
             onTap: () => Navigator.pop(ctx, 'play'),
+          ),
+        if (play != null && app.remote != null)
+          ListTile(
+            leading: const Icon(Icons.cast),
+            title: const Text('Play on…'),
+            subtitle: const Text('Your PC or TV — this phone becomes the remote'),
+            onTap: () => Navigator.pop(ctx, 'playon'),
           ),
         if (canGroup)
           ListTile(
@@ -128,6 +136,8 @@ Future<void> showItemMenu(
       }
     case 'play':
       await openVideo(context, app, d, play!);
+    case 'playon':
+      await playOnDevice(context, app, play!);
     case 'restart':
       await openVideo(context, app, d, play!, startOver: true);
     case 'save':

@@ -1914,6 +1914,8 @@
       if (SO.es || !BR.me || !window.EventSource) return;
       const es = SO.es = new EventSource(new URL('api/events', BASE), { withCredentials: true });
       partySocial(es);
+      es.addEventListener('remote-cmd', (e) => { const c = JSON.parse(e.data); if (c.to === RM.id) remoteCmd(c).catch((x) => toast(x.message, 3000)); });
+      es.addEventListener('open', () => remoteHello(true));
       es.addEventListener('people', (e) => { SO.people = JSON.parse(e.data); drawPeople(); });
       es.addEventListener('announcement', () => loadAnnouncements());
       es.addEventListener('open', () => loadAnnouncements()); // also catches up after a reconnect
@@ -3354,6 +3356,68 @@
     // back in after a page refresh
     $('#smkv-vparty').onclick = () => (P.party ? (P.min = false, drawParty()) : newPartyDialog());
     $('#smkv-aparty').onclick = () => (P.party ? (P.min = false, drawParty()) : newPartyDialog());
+    // ------------------------------------------------------------ remote control
+    // This page is a device your phone (the Delos app) can drive: open, play/pause, seek, volume…
+    const RM = { id: lsGet('deviceId', null), timer: 0, last: 0 };
+    if (!RM.id) { RM.id = 'w' + Math.random().toString(36).slice(2, 12); lsSet('deviceId', RM.id); }
+    function deviceName() {
+      const ua = navigator.userAgent;
+      const b = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+      const os = /Web0S|webOS/i.test(ua) ? 'LG TV' : /Tizen/i.test(ua) ? 'Samsung TV' : /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : '';
+      return lsGet('deviceName', '') || `${b}${os ? ' on ' + os : ''}`;
+    }
+    function remoteState() {
+      let a = myActivity();
+      if (!a && A.cur) a = { kind: 'music', path: A.cur.path, title: A.cur.title || A.cur.name, sub: [A.cur.artist, A.cur.album].filter(Boolean).join(' — '),
+        image: A.cur.cover ? 'cover:' + A.cur.cover : '', pos: Math.round(aTime()), dur: Math.round(A.cur.duration || 0) };
+      if (!a) return { idle: true };
+      return Object.assign({}, a, { playing: S.file ? !media.paused : !A.el.paused, volume: Math.round(((S.file ? video.volume : A.el.volume) || 0) * 100) });
+    }
+    function remoteHello(withState) {
+      const body = { id: RM.id, name: deviceName(), platform: navigator.platform || '', kind: 'web' };
+      if (withState) body.state = remoteState();
+      apiPost('remote/hello', body).catch(() => {});
+    }
+    // state goes out at most once a second, and on every play / pause / seek / new file
+    function remoteChanged() {
+      const now = Date.now();
+      clearTimeout(RM.timer);
+      if (now - RM.last > 1000) { RM.last = now; remoteHello(true); } else RM.timer = setTimeout(() => remoteChanged(), 1000 - (now - RM.last));
+    }
+    ['play', 'pause', 'seeked', 'loadeddata', 'volumechange'].forEach((ev) => { video.addEventListener(ev, remoteChanged); A.el.addEventListener(ev, remoteChanged); });
+    setInterval(() => remoteHello(true), 30000);
+    window.addEventListener('pagehide', () => { try { navigator.sendBeacon && navigator.sendBeacon(new URL('api/remote/bye', BASE), new Blob([JSON.stringify({ id: RM.id })], { type: 'application/json' })); } catch (_) { /* gone */ } });
+    async function remoteCmd(c) {
+      const vid = !!S.file;
+      switch (c.cmd) {
+        case 'open': {
+          const lib = String(c.path || '').split('/')[0];
+          if (libType(lib) === 'music') {
+            const d = await libData(lib), t = d.items.find((x) => x.path === c.path);
+            if (!t) return toast('Remote: song not found', 3000);
+            if (S.file) closeVideo();
+            A.queue = [t]; A.idx = 0; loadTrack(+c.pos || 0, true);
+          } else {
+            if (A.cur && !A.el.paused) A.el.pause();
+            await playVideo(c.path, c.pos != null ? { start: +c.pos } : {});
+          }
+          toast(`📱 ${c.from || 'Remote'}: playing here`, 2500);
+          break;
+        }
+        case 'toggle': vid ? togglePlay() : aToggle(); break;
+        case 'play': if (vid ? media.paused : A.el.paused) (vid ? togglePlay() : aToggle()); break;
+        case 'pause': if (!(vid ? media.paused : A.el.paused)) (vid ? togglePlay() : aToggle()); break;
+        case 'seek': vid ? seekTo(+c.pos || 0) : aSeek(+c.pos || 0); break;
+        case 'seekBy': vid ? seekBy(+c.by || 0) : aSeek(aTime() + (+c.by || 0)); break;
+        case 'stop': if (vid) closeVideo(); else if (A.cur) A.el.pause(); break;
+        case 'next': if (!vid) aNext(true); break;
+        case 'previous': if (!vid) aPrev(); break;
+        case 'volume': { const v = Math.max(0, Math.min(100, +c.volume || 0)) / 100; if (vid) setVolume(v); else { A.el.volume = v; $('#smkv-avol').value = String(v); } break; }
+        case 'fullscreen': try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch (_) { toast('Fullscreen needs a click on this screen', 3000); } break;
+      }
+      remoteChanged();
+    }
+
     async function partyResume() {
       const id = lsGet('partyId', null);
       if (!id) return;
