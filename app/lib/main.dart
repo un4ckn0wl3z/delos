@@ -3,6 +3,7 @@ import 'package:media_kit/media_kit.dart';
 
 import 'api.dart';
 import 'autotest.dart';
+import 'dlna/dlna_host.dart';
 import 'offline/offline_home.dart';
 import 'offline/store.dart';
 import 'screens/home_screen.dart';
@@ -21,6 +22,8 @@ Future<void> main() async {
   } catch (e) {
     debugPrint('offline store: $e');
   }
+  // DLNA server for TVs (Windows); never hold up app start for it
+  DlnaHost.instance.init(settings).catchError((Object e) => debugPrint('dlna: $e'));
   runApp(StreamMkvApp(settings: settings));
 }
 

@@ -116,6 +116,15 @@ Use your phone as the remote for Delos on a PC or TV (the app, or the web page i
 - Commands go through your server, so the phone and the TV don't need to be on the same Wi-Fi. A device appears while Delos is open on it.
 - Rename a device: Remote → 🪪 (e.g. "Living room PC").
 
+## Share to TV (DLNA, Windows app)
+
+The Windows app can act as a DLNA media server so a smart TV on the same network plays what's saved on that PC (offline downloads and your own folders) — handy on a PC or handheld (e.g. ROG Ally) next to the TV.
+
+- Turn it on: Settings → **Share to TV (DLNA)** (or 📺 in Offline). Allow Delos on *Private networks* when Windows asks.
+- On the TV: LG → Media Player / Photo & Video; Samsung → Connected devices; Android TV → VLC / Kodi (UPnP). Open **Delos (PC name)**: Recently added, Movies, TV shows → seasons → episodes, Videos, Music (albums / artists / all songs), with posters.
+- Files are sent as they are (no transcoding), with seeking; a `.srt` next to a video is offered to the TV as subtitles.
+- It runs while the app is open; rename it on the same page.
+
 ## Ranking
 
 🏆 *Ranking* (web sidebar; app: Chat → Ranking) shows who watched and listened the most this week / month / year / ever, with badges for hours, finished titles, songs, streaks and this month's top watcher / listener. Only time actually playing counts. People who hide their activity aren't ranked.

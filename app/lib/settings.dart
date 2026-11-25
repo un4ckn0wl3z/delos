@@ -46,6 +46,14 @@ class Settings {
   String get offlineDir => _p.getString('offlineDir') ?? '';
   set offlineDir(String v) => _p.setString('offlineDir', v);
 
+  /// DLNA server for TVs on the home network (Windows).
+  bool get dlnaOn => _p.getBool('dlnaOn') ?? false;
+  set dlnaOn(bool v) => _p.setBool('dlnaOn', v);
+  String get dlnaName => _p.getString('dlnaName') ?? '';
+  set dlnaName(String v) => _p.setString('dlnaName', v.trim());
+  String get dlnaUuid => _p.getString('dlnaUuid') ?? '';
+  set dlnaUuid(String v) => _p.setString('dlnaUuid', v);
+
   /// Download to this device only on Wi-Fi.
   bool get wifiOnly => _p.getBool('wifiOnly') ?? true;
   set wifiOnly(bool v) => _p.setBool('wifiOnly', v);

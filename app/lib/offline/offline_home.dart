@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../api.dart';
 import '../audio.dart';
+import '../dlna/dlna_host.dart';
+import '../dlna/dlna_screen.dart';
 import '../media_session.dart';
 import '../screens/login_screen.dart';
 import '../settings.dart';
@@ -41,6 +43,11 @@ class _OfflineHomeState extends State<OfflineHome> {
             Text('Offline'),
           ]),
           actions: [
+            if (DlnaHost.supported)
+              IconButton(
+                  tooltip: 'Share to TV (DLNA)',
+                  icon: const Icon(Icons.connected_tv),
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DlnaScreen()))),
             IconButton(tooltip: 'Offline settings', icon: const Icon(Icons.tune), onPressed: () => offlineSettings(context, widget.settings)),
             TextButton.icon(
               icon: const Icon(Icons.login),

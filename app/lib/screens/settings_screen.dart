@@ -2,6 +2,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../api.dart';
+import '../dlna/dlna_host.dart';
+import '../dlna/dlna_screen.dart';
 import '../settings.dart';
 import '../social.dart';
 import '../update.dart';
@@ -152,6 +154,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Text('Comma-separated ISO codes, first match wins. Your choice per movie is remembered '
                 'and synced with the browser.', style: TextStyle(fontSize: 12, color: Color(0xFF7D8696))),
           ),
+          if (DlnaHost.supported) ...[
+            const _Section('TV'),
+            ListTile(
+              leading: const Icon(Icons.connected_tv),
+              title: const Text('Share to TV (DLNA)'),
+              subtitle: Text(DlnaHost.instance.running ? 'On — "${DlnaHost.instance.name}"' : 'Off — let a TV play your offline files'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DlnaScreen())).then((_) => setState(() {})),
+            ),
+          ],
           const _Section('About'),
           ListTile(title: const Text('App version'), subtitle: Text(appVersion)),
           ListTile(title: const Text('Server version'), subtitle: Text(_server)),
