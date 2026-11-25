@@ -130,7 +130,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
     );
   }
 
-  List<Widget> _videoExtras(Map s) {
+  List<Widget> _videoExtras(Map d, Map s) {
     final audios = (s['audios'] as List?) ?? const [];
     final subs = (s['subs'] as List?) ?? const [];
     final aSel = ((s['audioSel'] as num?) ?? 0).toInt();
@@ -139,10 +139,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
     final next = s['next'] as String?;
     final fs = s['fs'] == true;
     final cs = Theme.of(context).colorScheme;
-    void local(String k, Object v) {
-      s[k] = v; // shows right away; the device confirms
-      setState(() {});
-    }
+    void local(String k, Object v) => rc.expect(d, {k: v}); // shows right away; the device confirms
 
     return [
       const Divider(height: 24),
@@ -284,10 +281,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
                 iconSize: 44,
                 icon: Icon(playing ? Icons.pause : Icons.play_arrow),
                 onPressed: () {
-                  (d['state'] as Map)['playing'] = !playing; // feels instant; the device confirms
-                  (d['state'] as Map)['pos'] = rc.positionOf(d);
-                  d['_at'] = DateTime.now();
-                  setState(() {});
+                  rc.expect(d, {'playing': !playing}); // feels instant; the device confirms
                   _send(playing ? 'pause' : 'play');
                 },
               ),
@@ -299,7 +293,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
               IconButton(
                 tooltip: vol > 0 ? 'Mute' : 'Unmute',
                 icon: Icon(vol == 0 ? Icons.volume_off : Icons.volume_up),
-                onPressed: () => _send('volume', {'volume': vol > 0 ? 0 : 100}),
+                onPressed: () {
+                  rc.expect(d, {'volume': vol > 0 ? 0 : 100});
+                  _send('volume', {'volume': vol > 0 ? 0 : 100});
+                },
               ),
               Expanded(
                 child: Slider(
@@ -310,13 +307,13 @@ class _RemoteScreenState extends State<RemoteScreen> {
                   onChanged: (v) => setState(() => _vol = v),
                   onChangeEnd: (v) {
                     _send('volume', {'volume': v.round()});
-                    (d['state'] as Map)['volume'] = v.round();
+                    rc.expect(d, {'volume': v.round()});
                     setState(() => _vol = null);
                   },
                 ),
               ),
             ]),
-            if (!music) ..._videoExtras(s),
+            if (!music) ..._videoExtras(d, s),
             const SizedBox(height: 8),
             Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
               OutlinedButton.icon(icon: const Icon(Icons.stop), label: const Text('Stop'), onPressed: () => _send('stop')),

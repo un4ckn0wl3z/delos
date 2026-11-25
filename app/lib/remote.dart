@@ -255,9 +255,15 @@ class RemoteController extends ChangeNotifier {
     loading = true;
     notifyListeners();
     try {
+      final old = {for (final d in devices) d['id']: d};
       devices = await api.remoteDevices(id);
       for (final d in devices) {
         d['_at'] = DateTime.fromMillisecondsSinceEpoch((((d['seen'] as num?) ?? 0) * 1000).round());
+        final p = old[d['id']]?['_pending'];
+        if (p != null) {
+          d['_pending'] = p;
+          _applyPending(d);
+        }
       }
       error = null;
       if (selected == null || target == null) {
@@ -281,6 +287,41 @@ class RemoteController extends ChangeNotifier {
     final to = device ?? selected;
     if (to == null) throw 'Pick a device first';
     await api.remoteCmd(to, {'cmd': cmd, 'from': name, ...args});
+  }
+
+  /// Shows [kv] (e.g. playing: false) on [d] right away, and keeps showing it for a few seconds
+  /// even if a state that was already on its way says otherwise — until the device confirms.
+  void expect(Map d, Map<String, dynamic> kv) {
+    final s = d['state'];
+    if (s is! Map) return;
+    if (kv.containsKey('playing')) {
+      s['pos'] = positionOf(d);
+      d['_at'] = DateTime.now();
+    }
+    s.addAll(kv);
+    final p = (d['_pending'] as Map?) ?? {};
+    final until = DateTime.now().add(const Duration(seconds: 4));
+    for (final e in kv.entries) {
+      p[e.key] = (e.value, until);
+    }
+    d['_pending'] = p;
+    notifyListeners();
+  }
+
+  void _applyPending(Map d) {
+    final p = d['_pending'] as Map?;
+    final s = d['state'];
+    if (p == null || s is! Map) return;
+    final now = DateTime.now();
+    p.removeWhere((k, v) {
+      final (want, until) = v as (Object?, DateTime);
+      final have = s[k];
+      final same = have is num && want is num ? (have - want).abs() < 1e-6 : '$have' == '$want';
+      if (now.isAfter(until) || same) return true; // confirmed (or gave up waiting)
+      s[k] = want;
+      return false;
+    });
+    if (p.isEmpty) d.remove('_pending');
   }
 
   /// Where the target's playback is now (extrapolated between updates).
@@ -313,6 +354,7 @@ class RemoteController extends ChangeNotifier {
         if (d != null) {
           d['state'] = v['state'];
           d['_at'] = DateTime.now();
+          _applyPending(d);
           notifyListeners();
         } else if (v['id'] != id && hasListeners) {
           refresh();
