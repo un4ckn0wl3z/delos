@@ -42,6 +42,9 @@ type User struct {
 	HideActivity bool `json:"hideActivity,omitempty"`
 	// Offline: may save files to their own device (apps / browser download).
 	Offline bool `json:"offline,omitempty"`
+	// Roles (ids) the user has: they add libraries and permissions. With roles, Libraries
+	// above means extra libraries for this user only (nil = none extra).
+	Roles []string `json:"roles,omitempty"`
 }
 
 type UserView struct {
@@ -55,7 +58,10 @@ type UserView struct {
 	Downloader bool      `json:"downloader"`
 	MaxItems   int       `json:"maxItems,omitempty"`
 	MaxBytes   int64     `json:"maxBytes,omitempty"`
-	Offline    bool      `json:"offline"`
+	Roles      []string  `json:"roles"`
+	// What the user can see in the end (roles + own); nil = all.
+	Access  *[]string `json:"access"`
+	Offline bool      `json:"offline"`
 }
 
 // UserStore keeps users.json in memory. The file is re-read when it changes on
@@ -65,16 +71,18 @@ type UserStore struct {
 	file     string
 	mtime    time.Time
 	users    map[string]*User
+	roles    map[string]*Role
 	lastSeen map[string]int64 // memory only
 }
 
 type usersFile struct {
 	Version int              `json:"version"`
 	Users   map[string]*User `json:"users"`
+	Roles   map[string]*Role `json:"roles,omitempty"`
 }
 
 func NewUserStore(dir string) (*UserStore, error) {
-	us := &UserStore{file: filepath.Join(dir, "users.json"), users: map[string]*User{}, lastSeen: map[string]int64{}}
+	us := &UserStore{file: filepath.Join(dir, "users.json"), users: map[string]*User{}, roles: map[string]*Role{}, lastSeen: map[string]int64{}}
 	if err := us.load(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
@@ -97,7 +105,10 @@ func (us *UserStore) load() error {
 	if f.Users == nil {
 		f.Users = map[string]*User{}
 	}
-	us.users, us.mtime = f.Users, st.ModTime()
+	if f.Roles == nil {
+		f.Roles = map[string]*Role{}
+	}
+	us.users, us.roles, us.mtime = f.Users, f.Roles, st.ModTime()
 	return nil
 }
 
@@ -121,7 +132,7 @@ func (us *UserStore) Watch() {
 }
 
 func (us *UserStore) saveLocked() error {
-	b, err := json.MarshalIndent(usersFile{Version: 1, Users: us.users}, "", "  ")
+	b, err := json.MarshalIndent(usersFile{Version: 1, Users: us.users, Roles: us.roles}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -211,7 +222,11 @@ func (us *UserStore) List() []UserView {
 	defer us.mu.Unlock()
 	out := make([]UserView, 0, len(us.users))
 	for n, u := range us.users {
-		out = append(out, UserView{Name: n, Admin: u.Admin, Created: u.Created, LastSeen: us.lastSeen[n], Libraries: u.Libraries, Editor: u.Editor, Downloader: u.Downloader, MaxItems: u.MaxItems, MaxBytes: u.MaxBytes, Offline: u.Offline})
+		v := UserView{Name: n, Admin: u.Admin, Created: u.Created, LastSeen: us.lastSeen[n], Libraries: u.Libraries, Editor: u.Editor, Downloader: u.Downloader, MaxItems: u.MaxItems, MaxBytes: u.MaxBytes, Offline: u.Offline, Roles: append([]string{}, u.Roles...)}
+		if acc := us.librariesLocked(u); acc != nil {
+			v.Access = &acc
+		}
+		out = append(out, v)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -287,7 +302,7 @@ func (us *UserStore) IsEditor(name string) bool {
 	us.mu.Lock()
 	defer us.mu.Unlock()
 	u, ok := us.users[name]
-	return ok && (u.Editor || u.Admin)
+	return ok && (u.Editor || u.Admin || us.roleHasLocked(u, func(r *Role) bool { return r.Editor }))
 }
 
 func (us *UserStore) SetEditor(name string, editor bool) error {
@@ -305,7 +320,7 @@ func (us *UserStore) IsDownloader(name string) bool {
 	us.mu.Lock()
 	defer us.mu.Unlock()
 	u, ok := us.users[name]
-	return ok && (u.Downloader || u.Admin)
+	return ok && (u.Downloader || u.Admin || us.roleHasLocked(u, func(r *Role) bool { return r.Downloader }))
 }
 
 func (us *UserStore) SetDownloader(name string, on bool) error {
@@ -369,10 +384,38 @@ func (us *UserStore) Libraries(name string) []string {
 	if !ok {
 		return []string{}
 	}
-	if u.Libraries == nil {
-		return nil
+	return us.librariesLocked(u)
+}
+
+// librariesLocked: what [u] may see, nil = all. Without roles: the user's own list. With roles:
+// all if any role has all, else the roles' libraries plus the user's extra ones.
+func (us *UserStore) librariesLocked(u *User) []string {
+	if len(us.rolesOfLocked(u)) == 0 {
+		if u.Libraries == nil {
+			return nil
+		}
+		return append([]string{}, (*u.Libraries)...)
 	}
-	return append([]string{}, (*u.Libraries)...)
+	seen := map[string]bool{}
+	out := []string{}
+	add := func(ids []string) {
+		for _, id := range ids {
+			if !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+	}
+	for _, r := range us.rolesOfLocked(u) {
+		if r.Libraries == nil {
+			return nil
+		}
+		add(*r.Libraries)
+	}
+	if u.Libraries != nil {
+		add(*u.Libraries)
+	}
+	return out
 }
 
 // SetLibraries restricts a user to the given libraries; nil gives access to all.

@@ -24,7 +24,7 @@ func (us *UserStore) IsOffline(name string) bool {
 	us.mu.Lock()
 	defer us.mu.Unlock()
 	u, ok := us.users[name]
-	return ok && (u.Offline || u.Admin)
+	return ok && (u.Offline || u.Admin || us.roleHasLocked(u, func(r *Role) bool { return r.Offline }))
 }
 
 func (us *UserStore) SetOffline(name string, on bool) error {

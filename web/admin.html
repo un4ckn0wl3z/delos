@@ -86,6 +86,7 @@
   .folders div{padding:7px 12px;cursor:pointer;border-bottom:1px solid #1d222b}
   .folders div:hover{background:#1d232d}
   .checks label{display:flex;gap:8px;align-items:center;padding:4px 0}
+  .badge.role{background:rgba(160,120,255,.18);color:#cdb6ff}
   form.add{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px;border-top:1px solid var(--line)}
   #login,#modal{position:fixed;inset:0;display:none;place-items:center;background:rgba(5,6,8,.75);z-index:20}
   #login.show,#modal.show{display:grid}
@@ -228,6 +229,11 @@
   <section id="tls-sec">
     <h2>HTTPS</h2>
     <div id="tls-info" style="padding:4px 18px 14px;font-size:13.5px;line-height:1.7"></div>
+  </section>
+
+  <section>
+    <h2>Roles <span class="count" id="n-roles">0</span><span class="dim" style="font-weight:normal;font-size:12px;margin-left:8px">which libraries a group of users sees</span><span class="sp"></span><button id="role-new" class="primary" style="font-size:12px">+ New role</button></h2>
+    <div id="roles"></div>
   </section>
 
   <section>
@@ -541,13 +547,63 @@
   let lastUsers = null;
   const clientIcon = (c) => c.kind === 'app' ? ({ Android: '🤖', iOS: '📱', Windows: '🪟', macOS: '🍎', Linux: '🐧' }[(c.os || '').split(' ')[0]] || '📱') : '🌐';
   const clientLabel = (c) => c.kind === 'app' ? `${c.os || 'App'} app ${c.version || ''}`.trim() : `${c.browser || 'Browser'}${c.os ? ' · ' + c.os : ''}${c.version ? ' · web ' + c.version : ''}`;
+  // ---------------------------------------------------------- roles
+  let roles = [];
+  const roleName = (id) => (roles.find((r) => r.id === id) || {}).name || id;
+  const roleLibs = (r) => r.libraries == null ? 'all libraries' : r.libraries.length ? r.libraries.map((id) => (libs.find((l) => l.id === id) || {}).name || id).join(', ') : 'no libraries';
+  async function renderRoles(d) {
+    roles = d.roles || [];
+    if (!libs.length) await loadLibs();
+    $('#n-roles').textContent = roles.length;
+    $('#roles').innerHTML = roles.length ? `<table><tr><th>Role</th><th>Libraries</th><th class="h-m">Members</th><th></th></tr>${roles.map((r) => `<tr data-r="${esc(r.id)}">
+        <td><b>${esc(r.name)}</b>${r.editor ? '<span class="badge t-tv">editor</span>' : ''}${r.downloader ? '<span class="badge t-music">downloader</span>' : ''}${r.offline ? '<span class="badge t-videos">offline</span>' : ''}</td>
+        <td class="dim">${r.libraries == null ? '<b>All</b> (and new ones)' : r.libraries.length ? r.libraries.map((id) => { const l = libs.find((x) => x.id === id); return l ? `<span class="badge t-${esc(l.type)}">${esc(l.name)}</span>` : ''; }).join(' ') : 'none'}</td>
+        <td class="h-m dim">${r.members.length ? r.members.map(esc).join(', ') : '—'}</td>
+        <td><div class="actions"><button data-a="edit">Edit</button><button class="danger" data-a="delete">Delete</button></div></td></tr>`).join('')}</table>`
+      : '<div class="empty">No roles. A role is a set of libraries (e.g. "Family": Movies + Kids) you give to several users at once.</div>';
+    $('#roles').querySelectorAll('button[data-a]').forEach((b) => {
+      const r = roles.find((x) => x.id === b.closest('tr').dataset.r);
+      b.onclick = () => b.dataset.a === 'edit' ? roleDialog(r)
+        : confirmBox(`Delete the role "${r.name}"?${r.members.length ? ` ${r.members.length} user${r.members.length > 1 ? 's' : ''} lose what it gave them.` : ''}`, 'Delete', async () => {
+          try { await api(`admin/roles/${encodeURIComponent(r.id)}`, { method: 'DELETE' }); toast('Role deleted'); loadUsers(); } catch (x) { toast(x.message); }
+        });
+    });
+  }
+  async function roleDialog(r) {
+    if (!libs.length) await loadLibs();
+    const all = r ? r.libraries == null : false;
+    modal(`<h3>${r ? 'Edit role' : 'New role'}</h3>
+      <input type="text" id="nm" placeholder="Name, e.g. Family" maxlength="40" value="${esc(r ? r.name : '')}">
+      <div class="checks"><label><input type="checkbox" id="all" ${all ? 'checked' : ''}> <b>All libraries</b> (including ones added later)</label>
+      <div id="list" style="padding-left:22px">${libs.filter((l) => !l.owner || l.shared).map((l) => `<label><input type="checkbox" value="${esc(l.id)}" ${all || (r && (r.libraries || []).includes(l.id)) ? 'checked' : ''}> ${esc(l.name)} <span class="badge t-${esc(l.type)}">${typeName[l.type]}</span>${l.owner ? ` <span class="dim">· ${esc(l.owner)}'s</span>` : ''}</label>`).join('')}</div></div>
+      <div class="checks" style="margin-top:6px"><div class="dim" style="font-size:12px">Members may also…</div>
+        <label><input type="checkbox" id="ed" ${r && r.editor ? 'checked' : ''}> fix movie / show / music info (editor)</label>
+        <label><input type="checkbox" id="dl" ${r && r.downloader ? 'checked' : ''}> add downloads (downloader)</label>
+        <label><input type="checkbox" id="of" ${r && r.offline ? 'checked' : ''}> save files to their device (offline)</label></div>
+      <div class="err" id="e"></div><div class="row"><button data-close>Cancel</button><button class="primary" id="ok">${r ? 'Save' : 'Create'}</button></div>`,
+      (b, close) => {
+        const sync = () => b.querySelectorAll('#list input').forEach((c) => { c.disabled = b.querySelector('#all').checked; });
+        b.querySelector('#all').onchange = sync; sync();
+        b.querySelector('#ok').onclick = async () => {
+          const body = {
+            name: b.querySelector('#nm').value.trim(),
+            libraries: b.querySelector('#all').checked ? null : [...b.querySelectorAll('#list input:checked')].map((c) => c.value),
+            editor: b.querySelector('#ed').checked, downloader: b.querySelector('#dl').checked, offline: b.querySelector('#of').checked,
+          };
+          try { await api(r ? `admin/roles/${encodeURIComponent(r.id)}` : 'admin/roles', { method: 'POST', body }); close(); toast(r ? 'Role saved' : 'Role created'); loadUsers(); }
+          catch (x) { b.querySelector('#e').textContent = x.message; }
+        };
+      });
+  }
+  $('#role-new').onclick = () => roleDialog(null);
+
   function renderUsers(d) {
     lastUsers = d;
     $('#n-users').textContent = d.users.length;
     const pu = page('users', d.users, () => renderUsers(lastUsers));
     $('#users').innerHTML = `<table><tr><th>User</th><th class="h-m">Last seen</th><th class="h-m">Watching</th><th class="h-m">Created</th><th></th></tr>${
       pu.items.map((u) => `<tr data-u="${esc(u.name)}">
-        <td>${u.avatar ? `<img src="${BASE}api/avatar/${encodeURIComponent(u.name)}?v=${u.avatar}" alt="" style="width:26px;height:26px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:7px">` : ''}<b>${esc(u.name)}</b>${u.admin ? '<span class="badge">admin</span>' : ''}${!u.admin && u.editor ? '<span class="badge t-tv">editor</span>' : ''}${!u.admin && u.downloader ? '<span class="badge t-music">downloader</span>' : ''}${!u.admin && u.offline ? '<span class="badge t-videos" title="May save files to their own device">offline</span>' : ''}${u.name === d.me ? '<span class="badge you">you</span>' : ''}
+        <td>${u.avatar ? `<img src="${BASE}api/avatar/${encodeURIComponent(u.name)}?v=${u.avatar}" alt="" style="width:26px;height:26px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:7px">` : ''}<b>${esc(u.name)}</b>${u.admin ? '<span class="badge">admin</span>' : ''}${!u.admin && u.editor ? '<span class="badge t-tv">editor</span>' : ''}${!u.admin && u.downloader ? '<span class="badge t-music">downloader</span>' : ''}${!u.admin && u.offline ? '<span class="badge t-videos" title="May save files to their own device">offline</span>' : ''}${!u.admin ? (u.roles || []).map((id) => `<span class="badge role" title="Role">🏷 ${esc(roleName(id))}</span>`).join('') : ''}${u.name === d.me ? '<span class="badge you">you</span>' : ''}
           ${u.streams ? `<span class="dim"> · ${u.streams} stream${u.streams > 1 ? 's' : ''}</span>` : ''}
           ${(u.clients || []).length ? `<div class="clients">${u.clients.slice(0, 4).map((c) => `<span class="client${c.outdated ? ' old' : ''}" title="${esc(clientLabel(c))} · last used ${ago(c.last)}${c.outdated ? ' · older than the server — update the app' : ''}">${clientIcon(c)} ${esc(clientLabel(c))}${c.outdated ? ' ⚠' : ''}</span>`).join('')}</div>` : ''}</td>
         <td class="h-m dim">${ago(u.lastSeen)}</td>
@@ -555,7 +611,8 @@
         <td class="h-m dim">${new Date(u.created * 1000).toLocaleDateString()}</td>
         <td><div class="actions">
           <button data-a="history">History</button>
-          ${u.admin ? '' : `<button data-a="libs" title="Which libraries this user can see">Libraries${u.libraries ? ` (${u.libraries.length})` : ''}</button>`}
+          ${u.admin ? '' : `<button data-a="roles" title="Give this user roles (groups of libraries)">Roles${(u.roles || []).length ? ` (${u.roles.length})` : ''}</button>`}
+          ${u.admin ? '' : `<button data-a="libs" title="${(u.roles || []).length ? 'Libraries for this user on top of their roles' : 'Which libraries this user can see'}">${(u.roles || []).length ? 'Extra libraries' : 'Libraries'}${(u.roles || []).length ? (u.libraries && u.libraries.length ? ` (+${u.libraries.length})` : '') : u.libraries ? ` (${u.libraries.length})` : ''}</button>`}
           <button data-a="password">Reset password</button>
           ${u.admin ? '' : `<button data-a="editor" title="Editors can fix wrong movie / show / music info">${u.editor ? 'Remove editor' : 'Make editor'}</button>`}
           ${u.admin ? '' : `<button data-a="downloader" title="Downloaders can add HTTP and torrent downloads into libraries they can see">${u.downloader ? 'Remove downloader' : 'Make downloader'}</button>`}
@@ -627,6 +684,30 @@
         confirmBox(`Delete ${u.name} and their watch history?`, 'Delete', async () => {
           await api(`admin/users/${n}`, { method: 'DELETE' }); toast('Deleted'); loadUsers();
         });
+      } else if (a === 'roles') {
+        if (!roles.length) return toast('Make a role first (Roles → + New role)');
+        modal(`<h3>Roles · ${esc(u.name)}</h3>
+          <div class="dim" style="font-size:12px">The user sees every library of their roles${(u.libraries || []).length ? ', plus their extra libraries' : ''}. Permissions add up too.</div>
+          <div class="checks" id="list">${roles.map((r) => `<label><input type="checkbox" value="${esc(r.id)}" ${(u.roles || []).includes(r.id) ? 'checked' : ''}> <b>${esc(r.name)}</b> <span class="dim">· ${roleLibs(r)}</span></label>`).join('')}</div>
+          <div class="row"><button data-close>Cancel</button><button class="primary" id="ok">Save</button></div>`,
+          (b, close) => b.querySelector('#ok').onclick = async () => {
+            const sel = [...b.querySelectorAll('#list input:checked')].map((c) => c.value);
+            try { await api(`admin/users/${n}/roles`, { method: 'POST', body: { roles: sel } }); close(); toast('Saved'); loadUsers(); }
+            catch (x) { toast(x.message); }
+          });
+      } else if (a === 'libs' && (u.roles || []).length) {
+        if (!libs.length) await loadLibs();
+        const fromRoles = new Set(u.roles.flatMap((id) => { const r = roles.find((x) => x.id === id); return r && r.libraries ? r.libraries : []; }));
+        const allByRole = u.roles.some((id) => { const r = roles.find((x) => x.id === id); return r && r.libraries == null; });
+        modal(`<h3>Extra libraries · ${esc(u.name)}</h3>
+          <div class="dim" style="font-size:12px">${allByRole ? 'A role of this user already sees every library.' : 'On top of what their roles give (greyed out).'}</div>
+          <div class="checks" id="list">${libs.map((l) => `<label><input type="checkbox" value="${esc(l.id)}" ${allByRole || fromRoles.has(l.id) ? 'checked disabled' : (u.libraries || []).includes(l.id) ? 'checked' : ''}> ${esc(l.name)} <span class="badge t-${esc(l.type)}">${typeName[l.type]}</span></label>`).join('')}</div>
+          <div class="row"><button data-close>Cancel</button><button class="primary" id="ok">Save</button></div>`,
+          (b, close) => b.querySelector('#ok').onclick = async () => {
+            const sel = [...b.querySelectorAll('#list input:checked:not(:disabled)')].map((c) => c.value);
+            try { await api(`admin/users/${n}/libraries`, { method: 'POST', body: { libraries: sel } }); close(); toast('Saved'); loadUsers(); }
+            catch (x) { toast(x.message); }
+          });
       } else if (a === 'libs') {
         if (!libs.length) await loadLibs();
         const all = u.libraries == null;
@@ -1253,7 +1334,7 @@
   };
 
   const loadOverview = () => api('admin/overview').then(renderOverview).catch(() => {});
-  const loadUsers = () => api('admin/users').then(renderUsers).catch(() => {});
+  const loadUsers = () => Promise.all([api('admin/roles').then(renderRoles).catch(() => {}), api('admin/users').then(renderUsers).catch(() => {})]);
   const loadTLS = () => api('admin/tls').then(renderTLS).catch(() => {});
   function renderTLS(t) {
     const el = $('#tls-info');

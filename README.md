@@ -129,6 +129,10 @@ The desktop apps (Windows, macOS, Linux) can act as a DLNA media server so a sma
 - **Convert ahead (TV copies)**: make a converted copy of a file (or all of them, or automatically for new files) so nothing is converted while you watch and seeking works on every TV. Copies live in the app's folder; delete them any time. Online files can get a copy too (fetched from the server).
 - **Online library (passthrough)**: also show the server's libraries in an "Online" folder; files stream from the server through the PC (seeking works). For files that need converting, choose where: **This PC** (ffmpeg on the PC) or **Server** (the seedbox converts; uses its CPU).
 
+## Roles
+
+Admin → **Roles**: a role is a named set of libraries (e.g. *Family*: Movies + Kids, *Music only*: Music, or *All libraries* including ones added later), optionally with permissions (editor, downloader, offline). Give users one or more roles in **Users → Roles**; they see every library of their roles, and the permissions add up. **Extra libraries** gives one user more on top of their roles. Deleting a role takes it off its members. Users without roles keep working as before (their own library list).
+
 ## Ranking
 
 🏆 *Ranking* (web sidebar; app: Chat → Ranking) shows who watched and listened the most this week / month / year / ever, with badges for hours, finished titles, songs, streaks and this month's top watcher / listener. Only time actually playing counts. People who hide their activity aren't ranked.

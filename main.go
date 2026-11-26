@@ -244,6 +244,7 @@ func main() {
 	s.statsRoutes(mux)
 	s.partyRoutes(mux)
 	s.remoteRoutes(mux)
+	s.roleRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
