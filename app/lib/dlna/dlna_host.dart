@@ -12,6 +12,7 @@ import '../library.dart';
 import '../offline/store.dart';
 import '../settings.dart';
 import 'dlna_server.dart';
+import 'keep_awake.dart';
 
 /// Runs the DLNA server on this PC (Windows): the files saved for offline use, and optionally the
 /// server's libraries passed through this PC ("Online"). Audio a TV can't play (DTS, TrueHD) is
@@ -680,7 +681,12 @@ class DlnaHost extends ChangeNotifier {
       try {
         OfflineStore.instance.addListener(_storeChanged);
       } catch (_) {}
-      _tick = Timer.periodic(const Duration(seconds: 5), (_) => notifyListeners()); // "watching now" list
+      _tick = Timer.periodic(const Duration(seconds: 5), (_) {
+        // no sleep while a TV watches (or paused within the last few minutes), or while converting
+        final busy = (_settings?.dlnaKeepAwake ?? true) && (srv.watching || copyKey != null);
+        KeepAwake.instance.set(busy);
+        notifyListeners(); // "watching now" list
+      });
       _onlineTimer = Timer.periodic(const Duration(minutes: 15), (_) => refreshOnline());
       refreshOnline();
       _probeAll();
@@ -693,6 +699,7 @@ class DlnaHost extends ChangeNotifier {
 
   Future<void> stop() async {
     _tick?.cancel();
+    KeepAwake.instance.set(false);
     _onlineTimer?.cancel();
     try {
       OfflineStore.instance.removeListener(_storeChanged);

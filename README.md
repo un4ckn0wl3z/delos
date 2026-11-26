@@ -124,6 +124,7 @@ The desktop apps (Windows, macOS, Linux) can act as a DLNA media server so a sma
 - On the TV: LG → Media Player / Photo & Video; Samsung → Connected devices; Android TV → VLC / Kodi (UPnP). Open **Delos (PC name)**: Recently added, Movies, TV shows → seasons → episodes, Videos, Music (albums / artists / all songs), with posters.
 - Files are sent as they are (no transcoding), with seeking; a `.srt` next to a video is offered to the TV as subtitles.
 - It runs while the app is open; rename it on the same page.
+- The computer doesn't go to sleep while a TV is playing from it (or paused in the last few minutes) or while converting; on Modern Standby PCs (ROG Ally, most laptops) the screen stays on for that, since screen-off is sleep there. Can be turned off.
 - **Audio the TV can't play** (DTS, TrueHD/Atmos — you pick which): converted to Dolby Digital 5.1 on the fly, the picture untouched, seeking by time. Needs the converter (ffmpeg), which the page downloads for you (≈ 150 MB).
 - **Convert ahead (TV copies)**: make a converted copy of a file (or all of them, or automatically for new files) so nothing is converted while you watch and seeking works on every TV. Copies live in the app's folder; delete them any time. Online files can get a copy too (fetched from the server).
 - **Online library (passthrough)**: also show the server's libraries in an "Online" folder; files stream from the server through the PC (seeking works). For files that need converting, choose where: **This PC** (ffmpeg on the PC) or **Server** (the seedbox converts; uses its CPU).

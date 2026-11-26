@@ -143,6 +143,13 @@ class DlnaServer {
 
   /// Conversions running now (for the settings page).
   int converting = 0;
+
+  /// Media requests being answered now, and when the last one started / ended.
+  int streaming = 0;
+  DateTime? lastMedia;
+
+  /// A TV is (probably) watching: streaming now, or did in the last few minutes (paused).
+  bool get watching => streaming > 0 || (lastMedia != null && DateTime.now().difference(lastMedia!).inMinutes < 5);
   final _http2 = HttpClient()..connectionTimeout = const Duration(seconds: 15);
 
   HttpServer? _http;
@@ -642,19 +649,33 @@ class DlnaServer {
         return res.close();
       }
       final kind = m.group(1);
-      if (kind == 'm' && _converts(e)) return _live(r, e);
-      if (kind == 'm' && e.remote) return _proxy(r, e.url, e.headers, mimeOf(Uri.parse(e.url).queryParameters['path'] ?? e.url));
+      if (kind == 'm') {
+        // a TV is playing: counted so the host can keep the computer awake
+        streaming++;
+        lastMedia = DateTime.now();
+        try {
+          if (_converts(e)) return await _live(r, e);
+          if (e.remote) return await _proxy(r, e.url, e.headers, mimeOf(Uri.parse(e.url).queryParameters['path'] ?? e.url));
+          final f = File(e.file);
+          if (!f.existsSync()) {
+            res.statusCode = 404;
+            return await res.close();
+          }
+          final srt = e.kind == 'music' ? null : _srtOf(e.file);
+          if (srt != null) res.headers.set('CaptionInfo.sec', '$base/s/${m.group(2)}.srt');
+          return await _file(r, f, mimeOf(e.file));
+        } finally {
+          streaming--;
+          lastMedia = DateTime.now();
+        }
+      }
       if (kind == 'a' && e.poster.startsWith('http')) return _proxy(r, e.poster, e.headers, '');
-      final f = kind == 'm' ? e.file : kind == 'a' ? e.poster : _srtOf(e.file);
+      final f = kind == 'a' ? e.poster : _srtOf(e.file);
       if (f == null || f.isEmpty || !File(f).existsSync()) {
         res.statusCode = 404;
         return res.close();
       }
-      if (kind == 'm') {
-        final srt = e.kind == 'music' ? null : _srtOf(e.file);
-        if (srt != null) res.headers.set('CaptionInfo.sec', '$base/s/${m.group(2)}.srt');
-      }
-      return _file(r, File(f), kind == 's' ? 'text/srt' : kind == 'a' ? mimeOf(f) : mimeOf(e.file));
+      return _file(r, File(f), kind == 's' ? 'text/srt' : mimeOf(f));
     }
     res.statusCode = 404;
     await res.close();

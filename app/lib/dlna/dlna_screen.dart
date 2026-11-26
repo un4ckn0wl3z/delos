@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import 'dlna_host.dart';
+import 'keep_awake.dart';
 
 String _size(int b) => b >= 1 << 30 ? '${(b / (1 << 30)).toStringAsFixed(1)} GB' : '${(b / (1 << 20)).toStringAsFixed(0)} MB';
 
@@ -359,6 +360,20 @@ class _DlnaScreenState extends State<DlnaScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text("Couldn't start: ${h.error}", style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ),
+        if (h.settings != null)
+          SwitchListTile(
+            secondary: const Icon(Icons.bedtime_off_outlined),
+            title: const Text("Don't sleep while a TV is watching"),
+            subtitle: Text(KeepAwake.instance.on
+                ? 'Keeping this computer awake now'
+                : 'Also while converting. On handhelds / Modern Standby PCs (screen off = sleep) the screen stays on — dim it if you like.'),
+            value: h.settings!.dlnaKeepAwake,
+            onChanged: (v) {
+              h.settings!.dlnaKeepAwake = v;
+              if (!v) KeepAwake.instance.set(false);
+              setState(() {});
+            },
           ),
         ListTile(
           leading: const Icon(Icons.badge_outlined),

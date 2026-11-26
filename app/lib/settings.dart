@@ -59,6 +59,9 @@ class Settings {
   /// Also share the server's libraries (passthrough via this PC).
   bool get dlnaOnline => _p.getBool('dlnaOnline') ?? false;
   set dlnaOnline(bool v) => _p.setBool('dlnaOnline', v);
+  /// Keep the computer awake while a TV plays from it (DLNA).
+  bool get dlnaKeepAwake => _p.getBool('dlnaKeepAwake') ?? true;
+  set dlnaKeepAwake(bool v) => _p.setBool('dlnaKeepAwake', v);
   /// Make TV copies (convert ahead) of new files on this PC automatically.
   bool get dlnaAutoCopy => _p.getBool('dlnaAutoCopy') ?? false;
   set dlnaAutoCopy(bool v) => _p.setBool('dlnaAutoCopy', v);
