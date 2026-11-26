@@ -122,6 +122,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (v) => setState(() => s.stereoDownmix = v),
           ),
           ListTile(
+            title: const Text('Streaming buffer'),
+            subtitle: Text(s.bufferMode == 'auto'
+                ? 'Auto — about 2 minutes of the file, kept in memory (more for 4K, less for small files)'
+                : '${s.bufferMode} MB read ahead, kept in memory. Bigger rides out a slow connection; uses more RAM.'),
+            trailing: DropdownButton<String>(
+              value: s.bufferMode,
+              underline: const SizedBox.shrink(),
+              items: const [
+                DropdownMenuItem(value: 'auto', child: Text('Auto')),
+                DropdownMenuItem(value: '64', child: Text('64 MB')),
+                DropdownMenuItem(value: '256', child: Text('256 MB')),
+                DropdownMenuItem(value: '512', child: Text('512 MB')),
+                DropdownMenuItem(value: '1024', child: Text('1 GB')),
+              ],
+              onChanged: (v) => setState(() => s.bufferMode = v ?? 'auto'),
+            ),
+          ),
+          ListTile(
             title: const Text('Subtitle size'),
             subtitle: Slider(
               value: s.subScale,

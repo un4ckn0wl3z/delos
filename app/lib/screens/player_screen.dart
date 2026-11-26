@@ -341,9 +341,24 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
       await _mpv('audio-buffer', '0.5');
     }
     if (api.settings.stereoDownmix) await _mpv('audio-channels', 'stereo');
-    // read further ahead so a slow seedbox connection doesn't starve playback
-    await _mpv('demuxer-readahead-secs', '30');
-    await _mpv('cache-secs', '60');
+    // read further ahead so a slow seedbox connection doesn't starve playback (in RAM)
+    final mb = bufferMB(api.settings.bufferMode, widget.file.size, _info?.duration ?? widget.file.duration);
+    await _mpv('demuxer-max-bytes', '${mb}MiB');
+    await _mpv('demuxer-max-back-bytes', '${math.max(32, mb ~/ 4)}MiB'); // rewinding a bit needs no reload
+    await _mpv('demuxer-readahead-secs', mb > 64 ? '120' : '30');
+    await _mpv('cache-secs', mb > 64 ? '600' : '60');
+  }
+
+  /// Buffer size in MB: a fixed size, or "auto" ≈ 2 minutes of this file's bitrate
+  /// (64 MB is ~1 min of 1080p but only ~8 s of a 4K remux), capped by the device.
+  static int bufferMB(String mode, int size, double duration) {
+    final fixed = int.tryParse(mode);
+    if (fixed != null) return fixed;
+    final mobile = Platform.isAndroid || Platform.isIOS;
+    if (size <= 0 || duration <= 0) return 128;
+    final perSec = size / duration; // bytes per second
+    final mb = (perSec * 120 / (1 << 20)).ceil();
+    return mb.clamp(64, mobile ? 256 : 768);
   }
 
   Future<void> _open(double start, {bool? play}) async {

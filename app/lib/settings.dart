@@ -31,6 +31,10 @@ class Settings {
   bool get stereoDownmix => _p.getBool('stereoDownmix') ?? (Platform.isAndroid || Platform.isIOS);
   set stereoDownmix(bool v) => _p.setBool('stereoDownmix', v);
 
+  /// Read-ahead buffer for streaming: auto (≈ 2 minutes of the file) or a size in MB.
+  String get bufferMode => _p.getString('bufferMode') ?? 'auto';
+  set bufferMode(String v) => _p.setString('bufferMode', v);
+
   // ---------------------------------------------------------------- offline
   /// Use the app without a server (offline library only).
   bool get offlineMode => _p.getBool('offlineMode') ?? false;
