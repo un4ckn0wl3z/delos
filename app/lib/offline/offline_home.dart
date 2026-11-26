@@ -4,6 +4,7 @@ import '../api.dart';
 import '../audio.dart';
 import '../dlna/dlna_host.dart';
 import '../dlna/dlna_screen.dart';
+import '../fullscreen.dart';
 import '../media_session.dart';
 import '../screens/login_screen.dart';
 import '../settings.dart';
@@ -43,6 +44,7 @@ class _OfflineHomeState extends State<OfflineHome> {
             Text('Offline'),
           ]),
           actions: [
+            const FullscreenButton(),
             if (DlnaHost.supported)
               IconButton(
                   tooltip: 'Share to TV (DLNA)',

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'api.dart';
 import 'autotest.dart';
 import 'dlna/dlna_host.dart';
+import 'fullscreen.dart';
 import 'offline/offline_home.dart';
 import 'offline/store.dart';
 import 'screens/home_screen.dart';
@@ -25,6 +27,8 @@ Future<void> main() async {
   // DLNA server for TVs (Windows); never hold up app start for it
   DlnaHost.instance.init(settings).catchError((Object e) => debugPrint('dlna: $e'));
   runApp(StreamMkvApp(settings: settings));
+  // back in full screen if the app was closed that way (after the window is up)
+  WidgetsBinding.instance.addPostFrameCallback((_) => AppFullscreen.instance.restore().catchError((Object e) => debugPrint('fullscreen: $e')));
 }
 
 class StreamMkvApp extends StatelessWidget {
@@ -43,6 +47,13 @@ class StreamMkvApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFF0D0F13),
         appBarTheme: const AppBarTheme(backgroundColor: Color(0xFF11141A)),
       ),
+      // F11: full screen for the whole app (desktop)
+      builder: (context, child) => AppFullscreen.supported
+          ? CallbackShortcuts(
+              bindings: {const SingleActivator(LogicalKeyboardKey.f11): AppFullscreen.instance.toggle},
+              child: child ?? const SizedBox.shrink(),
+            )
+          : child ?? const SizedBox.shrink(),
       home: settings.loggedIn
           ? HomeScreen(api: Api(settings))
           : settings.offlineMode

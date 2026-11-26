@@ -12,6 +12,7 @@ import '../offline/local_player.dart';
 import 'announcements.dart';
 import '../offline/offline_view.dart';
 import '../offline/store.dart';
+import '../fullscreen.dart';
 import '../party.dart';
 import '../remote.dart';
 import '../social.dart';
@@ -465,6 +466,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
+          const FullscreenButton(),
           if (app.remote != null)
             IconButton(tooltip: 'Remote — control your PC / TV', icon: const Icon(Icons.settings_remote_outlined), onPressed: () => Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => RemoteScreen(app: app)))),

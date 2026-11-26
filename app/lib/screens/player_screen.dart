@@ -8,6 +8,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../api.dart';
+import '../fullscreen.dart';
 import '../social.dart';
 import '../models.dart';
 import '../offline/save_button.dart';
@@ -168,7 +169,12 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
   double _tapX = 0;
   BoxFit _fit = BoxFit.contain;
   final bool _desktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
-  bool _fullscreen = false;
+  bool get _fullscreen => AppFullscreen.instance.value;
+  final bool _wasFullscreen = AppFullscreen.instance.value; // leave it as it was on close
+  void _fsChanged() {
+    if (mounted) setState(() {});
+  }
+
   final _focus = FocusNode();
 
   double get _duration {
@@ -183,6 +189,7 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
   @override
   void initState() {
     super.initState();
+    AppFullscreen.instance.addListener(_fsChanged);
     if (!_desktop) {
       FocusManager.instance.primaryFocus?.unfocus();
       SystemChannels.textInput.invokeMethod('TextInput.hide');
@@ -252,6 +259,7 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
 
   @override
   void dispose() {
+    AppFullscreen.instance.removeListener(_fsChanged);
     if (widget.party?.video == this) widget.party!.video = null;
     _saveProgress();
     if (NowWatching.activity?['path'] == path) NowWatching.set(null);
@@ -266,7 +274,7 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
     _player.dispose();
     _focus.dispose();
     if (_desktop) {
-      if (_fullscreen) defaultExitNativeFullscreen();
+      if (_fullscreen && !_wasFullscreen) AppFullscreen.instance.set(false);
     } else {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setPreferredOrientations([]);
@@ -448,9 +456,7 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
 
   Future<void> _toggleFullscreen() async {
     if (!_desktop) return;
-    _fullscreen = !_fullscreen;
-    await (_fullscreen ? defaultEnterNativeFullscreen() : defaultExitNativeFullscreen());
-    if (mounted) setState(() {});
+    await AppFullscreen.instance.toggle();
   }
 
   void _cycleAudio() {

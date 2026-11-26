@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../api.dart';
+import '../fullscreen.dart';
 import '../settings.dart';
 import '../social.dart';
 import '../util.dart';
@@ -46,7 +47,12 @@ class _LocalPlayerScreenState extends State<LocalPlayerScreen> {
   bool _flashLeft = false;
   double _tapX = 0;
   BoxFit _fit = BoxFit.contain;
-  bool _fullscreen = false;
+  bool get _fullscreen => AppFullscreen.instance.value;
+  final bool _wasFullscreen = AppFullscreen.instance.value; // leave it as it was on close
+  void _fsChanged() {
+    if (mounted) setState(() {});
+  }
+
   double _subDelay = 0;
   final _focus = FocusNode();
 
@@ -59,6 +65,7 @@ class _LocalPlayerScreenState extends State<LocalPlayerScreen> {
   @override
   void initState() {
     super.initState();
+    AppFullscreen.instance.addListener(_fsChanged);
     if (!_desktop) {
       FocusManager.instance.primaryFocus?.unfocus();
       SystemChannels.textInput.invokeMethod('TextInput.hide');
@@ -149,6 +156,7 @@ class _LocalPlayerScreenState extends State<LocalPlayerScreen> {
 
   @override
   void dispose() {
+    AppFullscreen.instance.removeListener(_fsChanged);
     _hideTimer?.cancel();
     _saveTimer?.cancel();
     _flashTimer?.cancel();
@@ -160,7 +168,7 @@ class _LocalPlayerScreenState extends State<LocalPlayerScreen> {
     if (NowWatching.activity?['title'] != null) NowWatching.set(null);
     _player.dispose();
     _focus.dispose();
-    if (_fullscreen) defaultExitNativeFullscreen();
+    if (_fullscreen && !_wasFullscreen) AppFullscreen.instance.set(false);
     if (!_desktop) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setPreferredOrientations([]);
@@ -185,9 +193,7 @@ class _LocalPlayerScreenState extends State<LocalPlayerScreen> {
 
   Future<void> _toggleFullscreen() async {
     if (!_desktop) return;
-    _fullscreen = !_fullscreen;
-    await (_fullscreen ? defaultEnterNativeFullscreen() : defaultExitNativeFullscreen());
-    if (mounted) setState(() {});
+    await AppFullscreen.instance.toggle();
   }
 
   Future<void> _setSubDelay(double d) async {
