@@ -3872,6 +3872,9 @@ body.smkv-raw-on .smkv-raw{display:block}
 #smkv-chat.show{display:flex}
 body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 .smkv-ch{display:flex;align-items:center;gap:8px;padding:12px;border-bottom:1px solid #1f242d}
+/* the chat panel's ✕ sits in the header row (the global .smkv-x floats over dialogs) */
+.smkv-ch .smkv-x{position:static!important;flex:none;width:30px;height:30px;background:transparent!important;font-size:15px}
+.smkv-ch .smkv-x:hover{background:rgba(255,255,255,.08)!important}
 .smkv-ch b{font-size:15px}
 .smkv-priv{padding:8px 14px;font-size:12px;color:#9aa3b2;display:flex;gap:6px;align-items:center}
 .smkv-convs{overflow:auto;flex:1}
