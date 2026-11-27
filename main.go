@@ -216,7 +216,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.auth(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "editor": s.canEdit(r), "downloader": s.users.IsDownloader(userOf(r)), "offline": s.users.IsOffline(userOf(r)), "avatar": s.avatars.Version(userOf(r)), "version": version, "https": s.tls.Enabled(), "chatMaxMB": s.settings.Get().ChatMaxMB})
+		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "roles": s.users.RoleNames(userOf(r)), "editor": s.canEdit(r), "downloader": s.users.IsDownloader(userOf(r)), "offline": s.users.IsOffline(userOf(r)), "avatar": s.avatars.Version(userOf(r)), "version": version, "https": s.tls.Enabled(), "chatMaxMB": s.settings.Get().ChatMaxMB})
 	}))
 	mux.HandleFunc("POST /api/me/password", s.auth(s.handleOwnPassword))
 	mux.HandleFunc("GET /admin", s.handleAdminPage)

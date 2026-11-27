@@ -1861,6 +1861,17 @@
       return `<span class="smkv-pav" style="width:${size}px;height:${size}px">${inner}${dot === null ? '' : `<i class="smkv-pdot ${dot ? 'on' : ''}"></i>`}</span>`;
     }
     const adminBadge = (name) => (SO.people.find((x) => x.name === name) || {}).admin ? '<span class="smkv-adm" title="Admin">ADMIN</span>' : '';
+    // my roles (what decides which libraries I see); no role = Guest
+    const myRoles = () => (BR.me && BR.me.admin ? '<span class="smkv-role adm" title="Admin: sees everything">Admin</span>' : '')
+      + ((BR.me && BR.me.roles) || []).map((r) => `<span class="smkv-role ${r.id === 'guest' ? 'guest' : ''}" title="${r.id === 'guest' ? 'No role yet — ask the admin for one' : 'Your role'}">${r.id === 'guest' ? '' : '🏷 '}${esc(r.name)}</span>`).join('');
+    function drawWhoami() {
+      const el = $('#smkv-whoami');
+      if (!el || !BR.me || !BR.me.user) return;
+      el.hidden = false;
+      el.innerHTML = `${avatarHtml(BR.me.user, 24)}<b>${esc(BR.me.user)}</b><span class="smkv-roles">${myRoles()}</span>`;
+      el.title = `Signed in as ${BR.me.user}`;
+      el.onclick = () => toggleChat(true);
+    }
     async function changeAvatar() {
       const inp = document.createElement('input');
       inp.type = 'file'; inp.accept = 'image/jpeg,image/png,image/gif';
@@ -1962,7 +1973,7 @@
       SO.open = null;
       const c = $('#smkv-chat');
       c.innerHTML = `<div class="smkv-ch"><b>Chats</b><span class="smkv-sp"></span><button id="smkv-newgroup">＋ Group</button><button class="smkv-x">✕</button></div>
-        <div class="smkv-me">${avatarHtml(BR.me.user, 40)}<div style="flex:1;min-width:0"><b>${esc(BR.me.user)}</b>${adminBadge(BR.me.user)}
+        <div class="smkv-me">${avatarHtml(BR.me.user, 40)}<div style="flex:1;min-width:0"><b>${esc(BR.me.user)}</b>${adminBadge(BR.me.user)}<div class="smkv-roles">${(BR.me.roles || []).map((r) => `<span class="smkv-role ${r.id === 'guest' ? 'guest' : ''}">${r.id === 'guest' ? '' : '🏷 '}${esc(r.name)}</span>`).join('')}</div>
           <div><button class="smkv-link" id="smkv-avset">Change picture</button>${BR.me.avatar ? ' · <button class="smkv-link" id="smkv-avdel">Remove</button>' : ''}</div></div></div>
         <label class="smkv-check smkv-priv"><input type="checkbox" id="smkv-hideact" ${SO.hide ? 'checked' : ''}> Hide what I'm watching from others</label>
         <div class="smkv-convs">${SO.convs.length ? SO.convs.map((v) => `<div class="smkv-conv" data-id="${esc(v.id)}">
@@ -3532,6 +3543,7 @@
         ver.textContent = v ? (/^\d/.test(v) ? 'v' + v : v) : '';
         ver.title = `Delos ${v} · signed in as ${BR.me.user}`;
         drawSecBar();
+        drawWhoami();
       } catch { /* old server */ }
       await loadLibs();
       route();
@@ -3553,6 +3565,7 @@
       <button id="smkv-settings" class="smkv-hb" title="Settings · reload libraries · log out"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>
       <button id="smkv-logout" class="smkv-hb" title="Log out" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h10"/></svg></button>
     </header>
+    <div id="smkv-whoami" hidden></div>
     <nav id="smkv-nav"></nav>
     <div id="smkv-people"></div>
     <div id="smkv-mini" hidden title="Music is playing — open the music player"><span class="smkv-mini-i">🎵</span><div><b></b><span></span></div><button title="Play/Pause">❚❚</button></div>
@@ -3784,6 +3797,13 @@ body.smkv-in-party:not(.smkv-party-min) #smkv-browse{padding-right:350px}
 .smkv-pickwrap.picked::after{content:'✓';background:#3b6fd6;border-color:#3b6fd6;color:#fff;font-size:13px;line-height:20px;text-align:center}
 .smkv-item.picked{background:#1c2638;outline:1px solid #3b6fd6}
 .smkv-pick{margin-right:8px;vertical-align:-2px;pointer-events:none}
+#smkv-whoami{display:flex;align-items:center;gap:7px;margin:0 10px 8px;padding:6px 8px;border-radius:10px;background:rgba(255,255,255,.04);cursor:pointer;min-width:0;flex-wrap:wrap}
+#smkv-whoami:hover{background:rgba(255,255,255,.08)}
+#smkv-whoami b{font-size:13px;color:#e8ecf2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px}
+.smkv-roles{display:inline-flex;flex-wrap:wrap;gap:4px}
+.smkv-role{font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;background:rgba(160,120,255,.18);color:#cdb6ff;white-space:nowrap}
+.smkv-role.guest{background:rgba(255,255,255,.09);color:#aab3c0}
+.smkv-role.adm{background:#4a3a1c;color:#ffcf7a}
 #smkv-ver{font-size:11px;color:#6f7988;margin-left:6px;align-self:center;font-weight:500;letter-spacing:.2px}
 .smkv-badges{display:inline-flex;gap:1px;margin-left:5px;font-size:12px;vertical-align:1px}
 .smkv-badges i{font-style:normal;cursor:default}

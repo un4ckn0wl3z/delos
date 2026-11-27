@@ -37,6 +37,26 @@ func (us *UserStore) rolesOfLocked(u *User) []*Role {
 	return out
 }
 
+// RoleNames: the user's roles for showing ({id, name}); someone without roles is a Guest.
+func (us *UserStore) RoleNames(name string) []map[string]string {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	u, ok := us.users[name]
+	if !ok {
+		return []map[string]string{}
+	}
+	out := []map[string]string{}
+	for _, id := range u.Roles {
+		if r := us.roles[id]; r != nil {
+			out = append(out, map[string]string{"id": id, "name": r.Name})
+		}
+	}
+	if len(out) == 0 && !u.Admin {
+		out = append(out, map[string]string{"id": "guest", "name": "Guest"})
+	}
+	return out
+}
+
 func (us *UserStore) roleHasLocked(u *User, f func(*Role) bool) bool {
 	for _, r := range us.rolesOfLocked(u) {
 		if f(r) {

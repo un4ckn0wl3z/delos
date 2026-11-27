@@ -7,6 +7,7 @@ import '../dlna/dlna_screen.dart';
 import '../settings.dart';
 import '../social.dart';
 import '../update.dart';
+import '../widgets.dart';
 
 /// Pops `true` when the user chose to sign out.
 class SettingsScreen extends StatefulWidget {
@@ -25,6 +26,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _server = '…';
   int _avatar = 0;
   bool _avBusy = false;
+  bool _admin = false;
+  List<Map> _roles = const [];
 
   @override
   void initState() {
@@ -34,6 +37,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         setState(() {
           _server = '${m['version'] ?? 'older than 1.2'}${m['admin'] == true ? ' · you are admin' : ''}';
           _avatar = (m['avatar'] as num? ?? 0).toInt();
+          _admin = m['admin'] == true;
+          _roles = List<Map>.from(m['roles'] as List? ?? const []);
         });
       }
     }).catchError((_) {
@@ -200,8 +205,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                   : Text(s.username.isNotEmpty ? s.username[0].toUpperCase() : '?', style: const TextStyle(fontWeight: FontWeight.bold)),
             ),
-            title: Text(s.username),
-            subtitle: const Text('Profile picture — shown in People and Chat'),
+            title: Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              Text(s.username),
+              if (_admin) const RolePill('Admin', kind: RolePillKind.admin),
+              for (final r in _roles) RolePill('${r['name']}', kind: r['id'] == 'guest' ? RolePillKind.guest : RolePillKind.role),
+            ]),
+            subtitle: Text(_roles.any((r) => r['id'] == 'guest')
+                ? 'Guest: no role yet — the admin decides which libraries you see. Profile picture — shown in People and Chat'
+                : 'Profile picture — shown in People and Chat'),
             trailing: Wrap(spacing: 4, children: [
               TextButton(onPressed: _avBusy ? null : _pickAvatar, child: const Text('Change')),
               if (_avatar > 0) TextButton(onPressed: _avBusy ? null : _removeAvatar, child: const Text('Remove')),

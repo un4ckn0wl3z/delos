@@ -262,3 +262,26 @@ String fmtDur(double secs) {
   final ss = s.toString().padLeft(2, '0');
   return h > 0 ? '$h:${m.toString().padLeft(2, '0')}:$ss' : '$m:$ss';
 }
+
+
+enum RolePillKind { role, guest, admin }
+
+/// "🏷 Family" / "Guest" / "Admin": the user's role (it decides which libraries they see).
+class RolePill extends StatelessWidget {
+  const RolePill(this.name, {super.key, this.kind = RolePillKind.role});
+  final String name;
+  final RolePillKind kind;
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg) = switch (kind) {
+      RolePillKind.admin => (const Color(0xFF4A3A1C), const Color(0xFFFFCF7A)),
+      RolePillKind.guest => (const Color(0x17FFFFFF), const Color(0xFFAAB3C0)),
+      RolePillKind.role => (const Color(0x2EA078FF), const Color(0xFFCDB6FF)),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(99)),
+      child: Text(kind == RolePillKind.role ? '🏷 $name' : name, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg)),
+    );
+  }
+}
