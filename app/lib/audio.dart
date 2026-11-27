@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
@@ -292,46 +293,81 @@ class NowPlaying extends StatelessWidget {
               const SizedBox(height: 18),
               Text(t.title.isNotEmpty ? t.title : t.name, textAlign: TextAlign.center, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
               Text([t.artist, t.album].where((e) => e.isNotEmpty).join(' · '), textAlign: TextAlign.center, style: const TextStyle(color: Color(0xFF8B95A5))),
-              Slider(
-                value: audio.position.inMilliseconds.clamp(0, maxMs.toInt()).toDouble(),
-                max: maxMs,
-                onChanged: (v) => audio.seek(Duration(milliseconds: v.round())),
-              ),
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                Text(fmtDur(audio.position.inMilliseconds / 1000), style: const TextStyle(fontSize: 12)),
-                Text(fmtDur(dur.inMilliseconds / 1000), style: const TextStyle(fontSize: 12)),
+              const SizedBox(height: 10),
+              // times sit beside the bar, so they line up with the track's ends
+              Row(children: [
+                SizedBox(
+                  width: 48,
+                  child: Text(fmtDur(audio.position.inMilliseconds / 1000),
+                      maxLines: 1, softWrap: false,
+                      style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()])),
+                ),
+                Expanded(
+                  child: Slider(
+                    value: audio.position.inMilliseconds.clamp(0, maxMs.toInt()).toDouble(),
+                    max: maxMs,
+                    onChanged: (v) => audio.seek(Duration(milliseconds: v.round())),
+                  ),
+                ),
+                SizedBox(
+                  width: 48,
+                  child: Text(fmtDur(dur.inMilliseconds / 1000),
+                      textAlign: TextAlign.right, maxLines: 1, softWrap: false,
+                      style: const TextStyle(fontSize: 12, fontFeatures: [FontFeature.tabularFigures()])),
+                ),
               ]),
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                IconButton(
-                  icon: Icon(audio.repeat == RepeatMode.one ? Icons.repeat_one : Icons.repeat,
-                      color: audio.repeat == RepeatMode.off ? Colors.white38 : Theme.of(context).colorScheme.primary),
-                  onPressed: audio.cycleRepeat,
-                ),
-                IconButton(iconSize: 40, icon: const Icon(Icons.skip_previous), onPressed: audio.previous),
-                IconButton(iconSize: 64, icon: Icon(audio.playing ? Icons.pause_circle_filled : Icons.play_circle_filled), onPressed: audio.toggle),
-                IconButton(iconSize: 40, icon: const Icon(Icons.skip_next), onPressed: audio.next),
-                IconButton(
-                  icon: const Icon(Icons.stop_circle_outlined),
-                  onPressed: () {
-                    audio.stop();
-                    Navigator.pop(context);
-                  },
-                ),
-                if (audio.lyrics)
+              // transport: always five buttons, scaled down rather than overflowing on narrow phones
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
                   IconButton(
-                    tooltip: 'Lyrics',
-                    icon: const Icon(Icons.lyrics_outlined),
-                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => LyricsView(audio: audio))),
+                    tooltip: switch (audio.repeat) { RepeatMode.off => 'Repeat: off', RepeatMode.all => 'Repeat: all', RepeatMode.one => 'Repeat: one' },
+                    icon: Icon(audio.repeat == RepeatMode.one ? Icons.repeat_one : Icons.repeat,
+                        color: audio.repeat == RepeatMode.off ? Colors.white38 : Theme.of(context).colorScheme.primary),
+                    onPressed: audio.cycleRepeat,
                   ),
-                if (audio.canSave && !t.path.startsWith('file:'))
-                  SaveButton(
-                    api: audio.api,
-                    path: t.path,
-                    onSave: () async => OfflineStore.instance.downloadMusic(audio.api, [t]),
+                  const SizedBox(width: 6),
+                  IconButton(tooltip: 'Previous', iconSize: 40, icon: const Icon(Icons.skip_previous), onPressed: audio.previous),
+                  const SizedBox(width: 6),
+                  IconButton(iconSize: 64, icon: Icon(audio.playing ? Icons.pause_circle_filled : Icons.play_circle_filled), onPressed: audio.toggle),
+                  const SizedBox(width: 6),
+                  IconButton(tooltip: 'Next', iconSize: 40, icon: const Icon(Icons.skip_next), onPressed: audio.next),
+                  const SizedBox(width: 6),
+                  IconButton(
+                    tooltip: 'Stop',
+                    icon: const Icon(Icons.stop_circle_outlined, color: Colors.white70),
+                    onPressed: () {
+                      audio.stop();
+                      Navigator.pop(context);
+                    },
                   ),
-                if (onParty != null && !t.path.startsWith('file:'))
-                  IconButton(tooltip: 'Listen together (party)', icon: const Icon(Icons.celebration_outlined), onPressed: () => onParty!(context)),
-              ]),
+                ]),
+              ),
+              // extras get their own row (lyrics · save · party) so they never push the transport off-screen
+              Builder(builder: (context) {
+                final online = !t.path.startsWith('file:');
+                final extras = <Widget>[
+                  if (audio.lyrics)
+                    IconButton(
+                      tooltip: 'Lyrics',
+                      icon: const Icon(Icons.lyrics_outlined),
+                      onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => LyricsView(audio: audio))),
+                    ),
+                  if (audio.canSave && online)
+                    SaveButton(
+                      api: audio.api,
+                      path: t.path,
+                      onSave: () async => OfflineStore.instance.downloadMusic(audio.api, [t]),
+                    ),
+                  if (onParty != null && online)
+                    IconButton(tooltip: 'Listen together (party)', icon: const Icon(Icons.celebration_outlined), onPressed: () => onParty!(context)),
+                ];
+                if (extras.isEmpty) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Wrap(alignment: WrapAlignment.center, spacing: 18, children: extras),
+                );
+              }),
               const Divider(height: 28),
               const Text('Queue', style: TextStyle(fontWeight: FontWeight.w600)),
               for (var i = 0; i < audio.queue.length; i++)

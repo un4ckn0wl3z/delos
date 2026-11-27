@@ -3826,13 +3826,13 @@
       <button id="smkv-refresh" class="smkv-hb" title="Reload libraries" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>
       <button id="smkv-ann" class="smkv-hb" title="Announcements"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4a1 1 0 0 0 1 1h2l6 4V5L7 9H5a1 1 0 0 0-1 1z"/><path d="M17 9.5a3.5 3.5 0 0 1 0 5"/><path d="M19.5 7a7 7 0 0 1 0 10"/></svg><i hidden></i></button>
       <button id="smkv-settings" class="smkv-hb" title="Settings · reload libraries · log out"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>
-      <button id="smkv-fold" class="smkv-hb" title="Fold the sidebar (Ctrl+B)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path class="smkv-fold-ar" d="M15.5 10l-2 2 2 2"/></svg></button>
       <button id="smkv-logout" class="smkv-hb" title="Log out" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h10"/></svg></button>
     </header>
     <div id="smkv-whoami" hidden></div>
     <nav id="smkv-nav"></nav>
     <div id="smkv-people"></div>
     <div id="smkv-mini" hidden title="Music is playing — open the music player"><span class="smkv-mini-i">🎵</span><div><b></b><span></span></div><button title="Play/Pause">❚❚</button></div>
+    <footer id="smkv-sidefoot"><button id="smkv-fold" title="Fold the sidebar (Ctrl+B)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path class="smkv-fold-ar" d="M15.5 10l-2 2 2 2"/></svg><span>Fold sidebar</span><kbd>Ctrl B</kbd></button></footer>
   </aside>
   <section id="smkv-chat"></section>
   <main id="smkv-browse">
@@ -4142,6 +4142,16 @@ body.smkv-raw-on .smkv-raw{display:block}
 #smkv-side header .smkv-hb:hover{background:#1c212a!important;border-color:#2a313c!important;color:#fff!important}
 #smkv-side header .smkv-hb[hidden]{display:none}
 #smkv-side header b{white-space:nowrap}
+#smkv-side header>b{flex:none}
+#smkv-ver{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#smkv-side header .smkv-sp{min-width:0}
+#smkv-sidefoot{margin-top:auto;padding:6px 8px 8px;border-top:1px solid #1f242d}
+#smkv-mini:not([hidden])~#smkv-sidefoot{margin-top:0}
+#smkv-app #smkv-sidefoot #smkv-fold{display:flex;align-items:center;gap:9px;width:100%;padding:7px 10px;background:transparent;border:1px solid transparent;border-radius:7px;color:#8b95a5;font-size:13px;text-align:left}
+#smkv-app #smkv-sidefoot #smkv-fold:hover{background:#181c24;color:#fff}
+#smkv-sidefoot #smkv-fold svg{flex:none}
+#smkv-sidefoot #smkv-fold span{flex:1}
+#smkv-sidefoot kbd{font:11px/1 system-ui,sans-serif;color:#6f7988;border:1px solid #2a313c;border-radius:4px;padding:3px 5px}
 #smkv-people{border-top:1px solid #1f242d;padding:6px 8px;max-height:38vh;overflow:auto}
 .smkv-ph{display:flex;align-items:center;gap:6px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#8b95a5;padding:4px 4px 6px}
 .smkv-ph button{margin-left:auto;position:relative;background:transparent!important;border:none!important;font-size:16px!important;padding:2px 4px!important}
@@ -4468,7 +4478,9 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
   body.smkv-side-mini #smkv-app{grid-template-columns:62px 1fr}
   body.smkv-side-mini #smkv-side header{flex-direction:column;padding:10px 0 6px;gap:6px!important}
   body.smkv-side-mini #smkv-side header>b,body.smkv-side-mini #smkv-side header>small,body.smkv-side-mini #smkv-side header>.smkv-sp{display:none}
-  body.smkv-side-mini #smkv-fold{order:-1}
+  body.smkv-side-mini #smkv-sidefoot{padding:6px 7px 8px}
+  body.smkv-side-mini #smkv-sidefoot #smkv-fold{justify-content:center;padding:8px 0}
+  body.smkv-side-mini #smkv-sidefoot #smkv-fold>span,body.smkv-side-mini #smkv-sidefoot kbd{display:none}
   body.smkv-side-mini .smkv-fold-ar{transform:rotate(180deg);transform-origin:14.5px 12px}
   body.smkv-side-mini #smkv-whoami{justify-content:center;margin:0 8px 8px;padding:6px 0}
   body.smkv-side-mini #smkv-whoami>:not(.smkv-pav){display:none}
@@ -4491,7 +4503,7 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
   body.smkv-side-mini #smkv-mini{justify-content:center;margin:auto 6px 8px;padding:8px 0}
   body.smkv-side-mini #smkv-mini>div,body.smkv-side-mini #smkv-mini>button{display:none}
 }
-@media (max-width:820px){#smkv-fold{display:none!important}}
+@media (max-width:820px){#smkv-sidefoot{display:none!important}}
 @media (max-width:820px){
   #smkv-app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr}
   #smkv-app>*{min-width:0}
