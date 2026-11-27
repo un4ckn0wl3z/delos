@@ -250,7 +250,7 @@ admin เพิ่ม library ได้ไม่จำกัดที่ **/admi
 - **magnet:… , ลิงก์ `.torrent` และอัปโหลดไฟล์ `.torrent`** — ส่งให้ **rtorrent** บน seedbox โหลดตรงเข้าโฟลเดอร์ library และ seed ต่อตามปกติ ใน ruTorrent จะมี label `StreamMKV` (ชื่อเดิม)
 - **ลิงก์ YouTube / YouTube Music และ playlist** — โหลดด้วย [yt-dlp](https://github.com/yt-dlp/yt-dlp) ถ้าโหลดเข้า library **เพลง** จะได้เสียง (m4a ใส่ tag ชื่อ / ศิลปิน / อัลบั้ม และฝังปก) ถ้าเข้า library วิดีโอจะได้วิดีโอ (สูงสุด 1080p, mkv) ลิงก์ playlist จะโหลดทุกเพลงเข้าโฟลเดอร์ชื่อ playlist (tag อัลบั้มเป็นชื่อ playlist) ถ้าวางลิงก์วิดีโอที่อยู่ใน playlist ติ๊ก **Whole playlist** ได้ ปุ่ม **Update** ที่ playlist ที่โหลดเสร็จแล้วจะโหลดเฉพาะที่เพิ่มมาใหม่ yt-dlp และ Deno (JavaScript runtime ที่ YouTube ต้องใช้แล้ว) ใช้จาก PATH หรือตั้งด้วย `STREAMMKV_YTDLP` / `STREAMMKV_YTDLP_JS` ถ้าไม่มีจะโหลดเข้า `<data>/bin` ครั้งแรกและอัปเดตให้เอง โหลดเฉพาะสิ่งที่คุณมีสิทธิ์
 - **หา rtorrent:** Delos ดูใน `~/.rtorrent.rc` / `~/.config/rtorrent/rtorrent.rc` หา `network.scgi.open_local` / `scgi_port` และเช็คที่อยู่ socket ที่ใช้บ่อย ถ้าหาไม่เจอ ใส่เองที่ **Downloads → rtorrent**: path ของ socket, `127.0.0.1:5000` หรือ URL ของ ruTorrent เช่น `https://user:pass@host/rutorrent/plugins/httprpc/action.php` หรือ `/RPC2` แล้วกด **Test**
-- **บน VPS ของตัวเอง:** ติดตั้ง rtorrent (`apt install rtorrent`) เพิ่ม `network.scgi.open_local = ~/.rtorrent.sock` ใน `~/.rtorrent.rc` แล้วเปิดค้างไว้ (tmux หรือ systemd) ดาวน์โหลด HTTP ใช้ได้โดยไม่ต้องมี rtorrent
+- **rtorrent มาจากไหน:** อิมเมจ Docker มีในตัว สคริปต์ติดตั้งบน seedbox ใช้ตัวที่รันอยู่แล้ว หรือเสนอติดตั้งแบบ static ถ้าไม่มี บน VPS ที่ไม่ใช้ Docker ติดตั้งเองก็ได้ (`apt install rtorrent` เพิ่ม `network.scgi.open_local = ~/.rtorrent.sock` ใน `~/.rtorrent.rc` แล้วเปิดค้างไว้) ดาวน์โหลด http และ YouTube ใช้ได้โดยไม่ต้องมี rtorrent
 - **ไฟล์ซ้ำ:** ก่อนโหลด Delos เช็ค 3 แบบ:
   - **torrent เดียวกัน** (ดูจาก info hash ของ magnet, ไฟล์ .torrent และลิงก์ .torrent) ถ้ามีใน rtorrent แล้วจะไม่ให้โหลด และบอกว่าอยู่ที่ไหน
   - **ไฟล์หรือลิงก์เดียวกัน** สำหรับลิงก์ http(s) เช็คชื่อไฟล์ก่อน
@@ -544,6 +544,8 @@ curl -fsSL https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/deploy/insta
 ```
 
 รันซ้ำเพื่ออัปเกรด port/รหัสผ่านเดิม จัดการด้วย `~/streammkv/run.sh {start|stop|restart|status}` การตั้งค่าอยู่ที่ `~/streammkv/streammkv.env`
+
+**rtorrent:** ถ้า seedbox มี rtorrent รันอยู่แล้ว (เกือบทุกเจ้ามี) Delos จะหาเจอและใช้ตัวนั้น ถ้าไม่เจอ สคริปต์จะถามว่าจะติดตั้งไหม — เป็น rTorrent 0.9.8 แบบ static ([jesec/rtorrent](https://github.com/jesec/rtorrent)) ไม่ต้องใช้ root โหลดเข้า `<media>/downloads` มี port ของตัวเอง และ `run.sh` เปิด / ปิด / เฝ้าดูให้พร้อมกับ Delos ตอบล่วงหน้าได้ด้วย `INSTALL_RTORRENT=1` (หรือ `0`) ดาวน์โหลด http และ YouTube ใช้ได้โดยไม่ต้องมี rtorrent
 
 #### ติดตั้งเอง
 

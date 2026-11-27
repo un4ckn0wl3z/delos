@@ -253,7 +253,7 @@ Use **/admin → Downloads** to paste a link, then pick a library and an optiona
 - **magnet:… links, `.torrent` URLs and `.torrent` uploads** — these are handed to the seedbox's **rtorrent**, which downloads straight into the library folder and keeps seeding as usual. They are labelled `StreamMKV` in ruTorrent (the label is kept from the old name).
 - **YouTube / YouTube Music links and playlists** — downloaded with [yt-dlp](https://github.com/yt-dlp/yt-dlp). Into a **music** library you get the audio (m4a, tagged with title / artist / album, cover art embedded); into a video library, the video (up to 1080p, mkv). A playlist link downloads every entry into a folder named after the playlist (the album tag is the playlist name); for a video link that's part of a playlist you can tick **Whole playlist**. **Update** on a finished playlist fetches only what was added since. yt-dlp and Deno (the JavaScript runtime YouTube now needs) are used from PATH, or set with `STREAMMKV_YTDLP` / `STREAMMKV_YTDLP_JS`, or else downloaded into `<data>/bin` the first time and kept up to date. Only download what you have the right to.
 - **Finding rtorrent:** Delos looks in `~/.rtorrent.rc` / `~/.config/rtorrent/rtorrent.rc` for `network.scgi.open_local` / `scgi_port` and checks common socket paths. If that doesn't find it, enter the address under **Downloads → rtorrent**: a socket path, `127.0.0.1:5000`, or a ruTorrent URL like `https://user:pass@host/rutorrent/plugins/httprpc/action.php` or `/RPC2`. Then press **Test**.
-- **On your own VPS:** install rtorrent (`apt install rtorrent`), add `network.scgi.open_local = ~/.rtorrent.sock` to `~/.rtorrent.rc` and keep it running (tmux or systemd). HTTP downloads work without rtorrent.
+- **Where rtorrent comes from:** the Docker image has one built in; the seedbox installer uses the one already running, or offers to install a static build when there's none; on your own VPS without Docker you can also install it yourself (`apt install rtorrent`, add `network.scgi.open_local = ~/.rtorrent.sock` to `~/.rtorrent.rc` and keep it running). HTTP and YouTube downloads work without rtorrent.
 - **Duplicates:** before downloading, Delos checks for three kinds:
   - **The same torrent** (by info hash, for magnets, .torrent files and .torrent links). If it's already in rtorrent, the download is refused and you're told where it is.
   - **The same file or link.** For http(s) links the file name is checked first.
@@ -565,6 +565,8 @@ curl -fsSL https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/deploy/insta
 ```
 
 Re-running it upgrades to the latest release and keeps the port/password. Manage with `~/streammkv/run.sh {start|stop|restart|status}`; config lives in `~/streammkv/streammkv.env`.
+
+**rtorrent:** if the seedbox already runs rtorrent (almost all do), Delos finds and uses it. If none is found, the installer asks whether to install one — a fully static rTorrent 0.9.8 ([jesec/rtorrent](https://github.com/jesec/rtorrent)), no root needed. It downloads into `<media>/downloads`, gets its own port, and `run.sh` starts, stops and watches it together with Delos. Answer ahead with `INSTALL_RTORRENT=1` (or `0`). http and YouTube downloads work without rtorrent.
 
 #### Manual install
 

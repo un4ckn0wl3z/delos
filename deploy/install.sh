@@ -12,6 +12,8 @@
 #   SMKV_DIR        install dir                          (default: $HOME/streammkv)
 #   SMKV_VERSION    release tag                          (default: latest)
 #   SMKV_BINARY     use this local binary instead of downloading
+#   INSTALL_RTORRENT 1 = install rtorrent (static build) when none is found, 0 = don't
+#                   (default: ask; without a terminal, don't)
 #
 # Re-running upgrades the binary and keeps port / password / secret.
 set -euo pipefail
@@ -90,8 +92,70 @@ else
 fi
 "$FFMPEG" -hide_banner -version 2>/dev/null | head -1 || true
 
-# ---------------------------------------------------------------- config
+# ---------------------------------------------------------------- rtorrent (for torrent downloads)
 port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+RT_DIR="$DIR/rtorrent"
+RT_SOCK="${STREAMMKV_RTORRENT:-}"
+have_rtorrent() {
+  pgrep -u "$(id -u)" -x rtorrent >/dev/null 2>&1 || command -v rtorrent >/dev/null 2>&1 \
+    || [ -f "$HOME/.rtorrent.rc" ] || [ -f "$HOME/.config/rtorrent/rtorrent.rc" ]
+}
+if [ -f "$RT_DIR/rtorrent.rc" ]; then
+  say "Updating the rtorrent installed by Delos"
+  WANT_RT=1
+elif have_rtorrent; then
+  say "Found rtorrent on this machine — Delos will use it for torrents"
+  WANT_RT=0
+else
+  WANT_RT="${INSTALL_RTORRENT:-}"
+  if [ -z "$WANT_RT" ]; then
+    if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+      printf '\033[1;36m==>\033[0m rtorrent was not found. Install it (no root needed) so Delos can download torrents? [Y/n] ' >/dev/tty
+      read -r ans </dev/tty || ans=n
+      case "$ans" in n|N|no|NO) WANT_RT=0 ;; *) WANT_RT=1 ;; esac
+    else
+      WANT_RT=0
+      echo "  (rtorrent not found; re-run with INSTALL_RTORRENT=1 to install it — http and YouTube downloads work without it)"
+    fi
+  fi
+fi
+if [ "$WANT_RT" = 1 ]; then
+  # fully static rTorrent 0.9.8 builds (github.com/jesec/rtorrent), amd64 + arm64
+  say "Downloading rtorrent ($ARCH)"
+  fetch "https://github.com/jesec/rtorrent/releases/latest/download/rtorrent-linux-$ARCH" "$BIN/rtorrent.new" \
+    || die "could not download rtorrent; re-run with INSTALL_RTORRENT=0 to skip it"
+  chmod +x "$BIN/rtorrent.new"
+  mv -f "$BIN/rtorrent.new" "$BIN/rtorrent"
+  mkdir -p "$RT_DIR/session" "$MEDIA_ROOT/downloads"
+  RT_PORT="$(cat "$RT_DIR/port" 2>/dev/null || true)"
+  if [ -z "$RT_PORT" ]; then
+    for _ in $(seq 1 50); do c=$(( 40000 + RANDOM % 20000 )); port_busy "$c" || { RT_PORT=$c; break; }; done
+    echo "$RT_PORT" >"$RT_DIR/port"
+  fi
+  cat > "$RT_DIR/rtorrent.rc" <<EOF
+# written by the Delos installer — edit freely, it is kept on re-install unless you delete it
+directory.default.set = $MEDIA_ROOT/downloads
+session.path.set = $RT_DIR/session
+network.scgi.open_local = $RT_DIR/rtorrent.sock
+system.daemon.set = true
+network.port_range.set = $RT_PORT-$RT_PORT
+network.port_random.set = no
+dht.mode.set = auto
+dht.port.set = $RT_PORT
+protocol.pex.set = yes
+trackers.use_udp.set = yes
+throttle.max_uploads.set = 100
+throttle.max_uploads.global.set = 250
+throttle.min_peers.normal.set = 20
+throttle.max_peers.normal.set = 80
+pieces.hash.on_completion.set = no
+encoding.add = utf8
+schedule2 = session_save, 1200, 1200, ((session.save))
+EOF
+  RT_SOCK="$RT_DIR/rtorrent.sock"
+fi
+
+# ---------------------------------------------------------------- config
 if [ -z "${PORT:-}" ]; then
   PORT="${STREAMMKV_LISTEN:-}"; PORT="${PORT##*:}"
 fi
@@ -120,6 +184,7 @@ STREAMMKV_FFPROBE='$FFPROBE'
 STREAMMKV_CACHE='$DIR/cache'
 STREAMMKV_DATA='$DIR/data'
 EOF
+[ -n "$RT_SOCK" ] && echo "STREAMMKV_RTORRENT='$RT_SOCK'" >>"$ENVF"
 umask 022
 
 FIRST_INSTALL=1
@@ -131,7 +196,20 @@ cat > "$DIR/run.sh" <<'EOF'
 # usage: run.sh [start|stop|restart|status|ensure|version|user ...]
 DIR="$(cd "$(dirname "$0")" && pwd)"
 PID="$DIR/streammkv.pid"
+RT="$DIR/rtorrent"
 running() { [ -f "$PID" ] && kill -0 "$(cat "$PID")" 2>/dev/null; }
+# rtorrent installed by the installer (if any): started and watched together with Delos
+rt_running() { [ -f "$RT/rtorrent.pid" ] && kill -0 "$(cat "$RT/rtorrent.pid")" 2>/dev/null; }
+rt_start() {
+  [ -f "$RT/rtorrent.rc" ] && [ -x "$DIR/bin/rtorrent" ] || return 0
+  rt_running && return 0
+  rm -f "$RT/rtorrent.sock" "$RT/session/rtorrent.lock"
+  nohup "$DIR/bin/rtorrent" -n -o import="$RT/rtorrent.rc" >>"$RT/rtorrent.log" 2>&1 &
+  echo $! >"$RT/rtorrent.pid"
+  sleep 1
+  rt_running && echo "rtorrent started (pid $(cat "$RT/rtorrent.pid"))" || { echo "rtorrent failed to start, see $RT/rtorrent.log"; tail -5 "$RT/rtorrent.log"; }
+}
+rt_stop() { rt_running && kill "$(cat "$RT/rtorrent.pid")" && echo "rtorrent stopped"; rm -f "$RT/rtorrent.pid"; }
 start() {
   running && { echo "already running (pid $(cat "$PID"))"; return; }
   set -a; . "$DIR/streammkv.env"; set +a
@@ -142,11 +220,13 @@ start() {
 }
 stop() { running && kill "$(cat "$PID")" && echo stopped; rm -f "$PID"; }
 case "${1:-start}" in
-  start) start ;;
-  stop) stop ;;
-  restart) stop; sleep 1; start ;;
-  status) running && echo "running (pid $(cat "$PID"))" || echo "not running" ;;
-  ensure) running || start ;;
+  start) rt_start; start ;;
+  stop) stop; rt_stop ;;
+  restart) stop; sleep 1; rt_start; start ;;
+  status) running && echo "running (pid $(cat "$PID"))" || echo "not running"
+          [ -f "$RT/rtorrent.rc" ] && { rt_running && echo "rtorrent running (pid $(cat "$RT/rtorrent.pid"))" || echo "rtorrent not running"; } ;;
+  ensure) rt_running || rt_start; running || start ;;
+  rtorrent-restart) rt_stop; sleep 2; rt_start ;;
   version) "$DIR/bin/streammkv" version ;;
   user) shift; set -a; . "$DIR/streammkv.env"; set +a; exec "$DIR/bin/streammkv" user "$@" ;;
   *) echo "usage: $0 {start|stop|restart|status|version|user ...}"; exit 2 ;;
@@ -184,6 +264,7 @@ cat <<EOF
   Manage    : $DIR/run.sh {start|stop|restart|status|version}
   Users CLI : $DIR/run.sh user {list|add NAME [--admin]|passwd NAME|del NAME}
   Log       : $DIR/streammkv.log
+$([ -f "$RT_DIR/rtorrent.rc" ] && printf '  rtorrent  : installed · downloads to %s · port %s (open it in your firewall for incoming peers)\n' "$MEDIA_ROOT/downloads" "$(cat "$RT_DIR/port")")
 
 Web app    : ${URL}   (open it in any browser — installable as an app)
 Apps       : https://github.com/$REPO/releases/latest
