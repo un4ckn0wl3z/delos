@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../item_menu.dart';
 import '../library.dart';
+import '../trailers.dart';
 import '../widgets.dart';
 import 'home_screen.dart';
 import 'movies.dart' show CastRow;
@@ -211,6 +212,7 @@ class _ShowScreenState extends State<ShowScreen> {
               RawText('${RawNames.tmdb(m?.tmdbId ?? 0)} · series key “${widget.show}” · parsed “${eps.isNotEmpty ? eps.first.title : ''}”'),
               const SizedBox(height: 8),
               Chips(m?.genres ?? const []),
+              TrailerButton(app: widget.app, lib: widget.data.info.id, show: widget.show),
               if ((m?.overview ?? '').isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child: Text(m!.overview, style: const TextStyle(height: 1.5))),
               if (next != null)
                 Padding(

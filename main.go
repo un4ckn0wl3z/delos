@@ -230,7 +230,9 @@ func main() {
 	mux.HandleFunc("GET /api/stream/check", s.auth(s.handleStreamCheck))
 	mux.HandleFunc("GET /api/subtitle", s.auth(s.handleSubtitle))
 	mux.HandleFunc("GET /api/lyrics", s.auth(s.handleLyrics))
+	go s.cleanOldTrickplay()
 	mux.HandleFunc("GET /api/trickplay", s.auth(s.handleTrickplay))
+	mux.HandleFunc("GET /api/trailers", s.auth(s.handleTrailers))
 	mux.HandleFunc("GET /api/trickplay/sheet", s.auth(s.handleTrickSheet))
 	mux.HandleFunc("GET /api/raw", s.auth(s.handleRaw))
 	mux.HandleFunc("GET /api/progress", s.auth(s.handleProgressGet))
@@ -507,5 +509,6 @@ func envInt(key string, def int) int {
 // features tells clients which optional parts the admin left on (to hide their buttons).
 func (s *Server) features() map[string]bool {
 	st := s.settings.Get()
-	return map[string]bool{"lyrics": !st.LyricsOff, "trickplay": !st.TrickplayOff, "requests": !st.RequestsOff}
+	return map[string]bool{"lyrics": !st.LyricsOff, "trickplay": !st.TrickplayOff, "requests": !st.RequestsOff,
+		"trailers": !st.TrailersOff}
 }

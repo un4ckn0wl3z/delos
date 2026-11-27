@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../offline/store.dart';
 import '../item_menu.dart';
 import '../library.dart';
+import '../trailers.dart';
 import '../util.dart';
 import '../widgets.dart';
 import 'home_screen.dart';
@@ -216,6 +217,7 @@ class _MovieScreenState extends State<MovieScreen> {
                   const SizedBox(height: 8),
                   Chips(m?.genres ?? const []),
                   if ((m?.director ?? '').isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Director: ${m!.director}', style: const TextStyle(color: Color(0xFF8B95A5)))),
+                  TrailerButton(app: widget.app, lib: widget.data.info.id, movie: g.key),
                 ]),
               ),
             ]),

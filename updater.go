@@ -291,6 +291,7 @@ type ServerSettings struct {
 	LyricsOff    bool `json:"lyricsOff,omitempty"`
 	TrickplayOff bool `json:"trickplayOff,omitempty"`
 	RequestsOff  bool `json:"requestsOff,omitempty"`
+	TrailersOff  bool `json:"trailersOff,omitempty"` // YouTube trailers (via TMDB)
 	// Where lyrics are looked up online: "" = LRCLIB (lrclib.net), "off" = only
 	// .lrc files and tags, or the address of another LRCLIB-compatible server
 	// (LRCLIB is open source and can be self-hosted).
@@ -384,6 +385,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		LyricsSource *string  `json:"lyricsSource"`
 		Trickplay    *bool    `json:"trickplay"`
 		Requests     *bool    `json:"requests"`
+		Trailers     *bool    `json:"trailers"`
 	}
 	if !decodeJSON(w, r, &b) {
 		return
@@ -460,6 +462,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if b.Requests != nil {
 		cur.RequestsOff = !*b.Requests
 	}
+	if b.Trailers != nil {
+		cur.TrailersOff = !*b.Trailers
+	}
 	if b.LyricsSource != nil {
 		v := strings.TrimRight(strings.TrimSpace(*b.LyricsSource), "/")
 		if strings.EqualFold(v, "https://lrclib.net") || strings.EqualFold(v, "lrclib") {
@@ -501,7 +506,7 @@ func (s *Server) adminSettings() map[string]any {
 	cur := s.settings.Get()
 	return map[string]any{"autoUpdate": cur.AutoUpdate, "tmdbKeySet": cur.TMDBKey != "", "tmdbLang": cur.TMDBLang, "rtorrent": cur.RTorrent, "userLibRoot": s.userLibRoot(),
 		"seed":     map[string]any{"ratio": cur.SeedRatio, "hours": cur.SeedHours, "action": cmp.Or(cur.SeedAction, "stop")},
-		"features": map[string]any{"lyrics": !cur.LyricsOff, "lyricsSource": cur.LyricsSource, "trickplay": !cur.TrickplayOff, "requests": !cur.RequestsOff},
+		"features": map[string]any{"lyrics": !cur.LyricsOff, "lyricsSource": cur.LyricsSource, "trickplay": !cur.TrickplayOff, "requests": !cur.RequestsOff, "trailers": !cur.TrailersOff},
 		"chat":     map[string]any{"maxMB": cur.ChatMaxMB, "keepDays": cur.ChatKeepDays, "usedBytes": s.chat.filesSize()}, "streams": s.streamUsage(), "update": s.updater.Status()}
 }
 

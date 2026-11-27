@@ -165,6 +165,7 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
   double? _drag; // slider value while dragging
   double? _hover; // desktop: time under the mouse on the seek bar
   Map? _tp; // seek-bar previews (sprite sheets), when the server has them
+  double? _tpPending; // 0..1 while the server is still making them
   Timer? _tpTimer;
   double? _pendingSeek; // transcode: target while waiting to re-open
   String? _flash; // "−10s" / "+10s" indicator
@@ -291,9 +292,13 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
       final d = await api.trickplay(path);
       if (!mounted) return;
       if (d['ready'] == true) {
-        setState(() => _tp = d);
-      } else if (d['pending'] == true && n < 150) {
-        _tpTimer = Timer(Duration(seconds: n < 12 ? 5 : 15), () => _loadTrickplay(n + 1));
+        setState(() {
+          _tp = d;
+          _tpPending = null;
+        });
+      } else if (d['pending'] == true && n < 400) {
+        setState(() => _tpPending = (d['progress'] as num?)?.toDouble() ?? 0);
+        _tpTimer = Timer(const Duration(seconds: 3), () => _loadTrickplay(n + 1));
       }
     } catch (_) {
       // no previews (audio only, turned off, older server)
@@ -345,7 +350,7 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
         final max = dur > 0 ? dur : 1.0;
         final at = _drag ?? _hover;
         final scale = box.maxWidth < 500 ? .6 : (box.maxWidth < 900 ? .8 : 1.0);
-        final pw = _tp == null ? 60.0 : (_tp!['w'] as num).toDouble() * scale + 4;
+        final pw = _tp == null ? (_tpPending != null ? 230.0 : 60.0) : (_tp!['w'] as num).toDouble() * scale + 4;
         final x = at == null ? 0.0 : 24 + (at / max).clamp(0.0, 1.0) * (box.maxWidth - 48);
         return Stack(clipBehavior: Clip.none, children: [
           MouseRegion(
@@ -377,7 +382,7 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
                     margin: const EdgeInsets.only(top: 4),
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(5)),
-                    child: Text(fmtTime(at),
+                    child: Text(fmtTime(at) + (_tp == null && _tpPending != null ? ' · preparing previews ${(_tpPending! * 100).round()}%' : ''),
                         style: const TextStyle(color: Colors.white, fontSize: 12, fontFeatures: [FontFeature.tabularFigures()])),
                   ),
                 ]),

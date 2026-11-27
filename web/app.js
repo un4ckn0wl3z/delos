@@ -649,6 +649,44 @@
       return close;
     }
 
+    // ------------------------------------------------------------ trailers (YouTube, found through TMDB)
+    const TRL = new Map();
+    async function trailerButton(slot, q, title) {
+      if (!slot || !feat('trailers') || q.lib === '_legacy') return;
+      const k = JSON.stringify(q);
+      let d = TRL.get(k);
+      if (!d) { try { d = await api('trailers', q); } catch { return; } TRL.set(k, d); }
+      const list = d.online.map((x) => ({ ...x, label: x.name }));
+      if (!list.length || !slot.isConnected) return;
+      slot.innerHTML = `<button class="smkv-trlbtn" title="${list.length > 1 ? list.length + ' trailers' : esc(list[0].label)}">🎞 Trailer${list.length > 1 ? `<small>${list.length}</small>` : ''}</button>`;
+      slot.firstChild.onclick = () => trailerPlay(list, 0, title);
+    }
+    function trailerPlay(list, i, title) {
+      const x = list[i];
+      let m = $('#smkv-trailer');
+      if (!m) { m = document.createElement('div'); m.id = 'smkv-trailer'; document.body.appendChild(m); }
+      if (!A.el.paused) { A.el.pause(); m.dataset.resume = '1'; }
+      m.innerHTML = `<div class="smkv-trlbox">
+          <div class="smkv-trlhead"><b>${esc(title)}</b><span class="smkv-dim2">${esc(x.label)}${x.lang ? ' · ' + esc(x.lang.toUpperCase()) : ''}</span>
+            <a class="smkv-trlyt" href="https://www.youtube.com/watch?v=${encodeURIComponent(x.key)}" target="_blank" rel="noopener" title="Open on YouTube">YouTube ↗</a>
+            <button class="smkv-x" title="Close (Esc)">✕</button></div>
+          <div class="smkv-trlvid"><iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(x.key)}?autoplay=1&rel=0&modestbranding=1&playsinline=1" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+          ${list.length > 1 ? `<div class="smkv-trllist">${list.map((y, j) => `<button data-j="${j}" class="${j === i ? 'on' : ''}">${esc(y.label)}</button>`).join('')}</div>` : ''}
+        </div>`;
+      m.classList.add('show');
+      m.querySelector('.smkv-x').onclick = trailerClose;
+      m.onclick = (e) => { if (e.target === m) trailerClose(); };
+      m.querySelectorAll('.smkv-trllist button').forEach((b) => b.onclick = () => trailerPlay(list, +b.dataset.j, title));
+    }
+    function trailerClose() {
+      const m = $('#smkv-trailer');
+      if (!m || !m.classList.contains('show')) return false;
+      m.classList.remove('show'); m.innerHTML = ''; // drops the iframe: the video stops
+      if (m.dataset.resume) { delete m.dataset.resume; A.el.play().catch(() => {}); }
+      return true;
+    }
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && trailerClose()) { e.stopPropagation(); e.preventDefault(); } }, true);
+
     async function movieDetail(lib, key) {
       const d = await libData(lib);
       const items = d.items.filter((it) => String(it.movieId || it.path) === String(key));
@@ -665,6 +703,7 @@
             <div class="smkv-facts">${[m?.year || items[0].year, m?.runtime ? m.runtime + ' min' : '', m?.rating ? '★ ' + m.rating.toFixed(1) : ''].filter(Boolean).map(esc).join(' · ')}</div>
             <div class="smkv-chips">${(m?.genres || []).map((g) => `<a href="#/lib/${encodeURIComponent(lib)}/${encodeURIComponent(g)}">${esc(g)}</a>`).join('')}</div>
             ${m?.director ? `<div class="smkv-dim2">Director: ${esc(m.director)}</div>` : ''}
+            <div class="smkv-trlslot"></div>
           </div>
         </div>
         ${m?.overview ? `<p class="smkv-ov">${esc(m.overview)}</p>` : ''}
@@ -679,6 +718,7 @@
         ${lib !== '_legacy' ? '<button class="smkv-sharebtn">📤 Send to a friend</button>' : ''}
         ${canEditLib(lib) && lib !== '_legacy' ? `<div class="smkv-admin-row">${m && m.id > 0 ? `TMDB #${m.id}` : m ? 'Edited manually' : 'Not matched'} · <a href="#" class="smkv-fix">✎ Edit / fix match…</a></div>` : ''}`,
         (root, close) => {
+          trailerButton(root.querySelector('.smkv-trlslot'), { lib, movie: String(key) }, t);
           root.querySelectorAll('.smkv-file').forEach((row) => {
             row.querySelector('.smkv-play').onclick = () => { close(); playVideo(row.dataset.p); };
             const r = row.querySelector('.smkv-restart');
@@ -873,7 +913,7 @@
               <div class="smkv-chips">${(sh.genres || []).map((g) => `<a href="#/lib/${encodeURIComponent(lib)}/${encodeURIComponent(g)}">${esc(g)}</a>`).join('')}</div>
               ${sh.overview ? `<p class="smkv-ov">${esc(sh.overview)}</p>` : ''}
               <div class="smkv-raw">${esc(tmdbTag(sh.tmdbId || 0))} · series key “${esc(key)}” · parsed title “${esc(eps[0]?.title || '')}”</div>
-              ${next ? `<button class="smkv-primary" id="smkv-next">▶ ${next.pos ? 'Resume' : 'Play'} S${next.season}E${next.episode}${next.episodeTitle ? ' · ' + esc(next.episodeTitle) : ''}</button>` : ''}
+              <div class="smkv-showbtns">${next ? `<button class="smkv-primary" id="smkv-next">▶ ${next.pos ? 'Resume' : 'Play'} S${next.season}E${next.episode}${next.episodeTitle ? ' · ' + esc(next.episodeTitle) : ''}</button>` : ''}<span class="smkv-trlslot"></span></div>
               ${canEditLib(lib) ? `<div class="smkv-admin-row">${sh.tmdbId ? 'TMDB #' + sh.tmdbId : 'Not matched'} · <a href="#" class="smkv-fix">✎ Edit show / fix match…</a></div>` : ''}
             </div>
           </div>
@@ -896,6 +936,7 @@
         view.querySelectorAll('.smkv-ep[data-p]').forEach((r) => r.onclick = () => playVideo(r.dataset.p));
         const n = view.querySelector('#smkv-next');
         if (n) n.onclick = () => playVideo(next.path);
+        trailerButton(view.querySelector('.smkv-trlslot'), { lib, show: key }, sh.title);
         const fix = view.querySelector('.smkv-fix');
         if (fix) fix.onclick = (ev) => {
           ev.preventDefault();
@@ -2990,16 +3031,17 @@
     seek.addEventListener('mouseleave', () => { if (!S.dragging) tpHide(); });
 
     // ---------------------------------------------------------- seek-bar previews (sprite sheets made by the server)
-    const TP = { path: null, info: null, timer: 0 };
+    const TP = { path: null, info: null, timer: 0, pending: null };
     function tpLoad(f) {
-      clearTimeout(TP.timer); TP.path = f.path; TP.info = null;
+      clearTimeout(TP.timer); TP.path = f.path; TP.info = null; TP.pending = null;
       if (!feat('trickplay')) return;
       const go = async (n) => {
         if (TP.path !== f.path) return;
         let d; try { d = await api('trickplay', { path: f.path }); } catch { return; } // no video / turned off
         if (TP.path !== f.path) return;
+        TP.pending = d.pending ? d.progress || 0 : null;
         if (d.ready) { TP.info = d; [...Array(Math.min(d.sheets, 3)).keys()].forEach((n) => { new Image().src = tpSheet(n); }); }
-        else if (d.pending && n < 150) TP.timer = setTimeout(() => go(n + 1), n < 12 ? 5000 : 15000);
+        else if (d.pending && n < 400) TP.timer = setTimeout(() => go(n + 1), 3000);
       };
       go(0);
     }
@@ -3010,8 +3052,8 @@
       if (!d) return;
       if (clientX == null) clientX = r.left + 6 + (r.width - 12) * (t / d); // where the thumb is
       const i = TP.info, img = box.querySelector('.img');
-      box.querySelector('span').textContent = fmtTime(t);
-      let w = 56;
+      box.querySelector('span').textContent = fmtTime(t) + (!i && TP.pending != null ? ` · preparing previews ${Math.round(TP.pending * 100)}%` : '');
+      let w = !i && TP.pending != null ? 220 : 56;
       if (i && i.count) {
         const k = Math.min(i.count - 1, Math.max(0, Math.round(t / i.interval))), per = i.cols * i.rows, c = k % per;
         const sc = ctl.width < 560 ? 0.6 : 1; w = i.w * sc;
@@ -4354,6 +4396,24 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 .smkv-sub{font-size:12px;color:#6f7988}
 .smkv-resume{color:#7cc4ff}
 /* detail modal */
+#smkv-trailer{position:fixed;inset:0;z-index:40;background:rgba(3,4,6,.9);display:none;place-items:center;padding:24px}
+#smkv-trailer.show{display:grid}
+.smkv-trlbox{width:min(1100px,100%,calc((100vh - 140px) * 16 / 9));display:flex;flex-direction:column;gap:10px}
+.smkv-trlhead{display:flex;align-items:center;gap:10px;min-width:0}
+.smkv-trlhead b{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smkv-trlhead .smkv-dim2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.smkv-trlhead .smkv-x{position:static!important;flex:none}
+.smkv-trlyt{color:#8b95a5;font-size:12px;text-decoration:none;white-space:nowrap}.smkv-trlyt:hover{color:#fff}
+.smkv-trlvid{position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.smkv-trlvid iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.smkv-trllist{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+.smkv-trllist button{flex:none;background:#151920;border:1px solid #2a313c;color:#aab3c0;border-radius:8px;padding:6px 10px;font:inherit;font-size:12.5px;cursor:pointer;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.smkv-trllist button.on{border-color:#3b6fd6;color:#fff;background:#1b2a45}
+.smkv-trlslot:empty{display:none}
+.smkv-dhead .smkv-trlslot{margin-top:10px}
+.smkv-trlbtn{display:inline-flex;align-items:center;gap:6px}
+.smkv-trlbtn small{background:#2a313c;border-radius:9px;padding:0 6px;font-size:11px}
+.smkv-showbtns{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 #smkv-detail{position:fixed;inset:0;background:rgba(4,5,7,.78);display:none;place-items:center;z-index:20;padding:20px}
 #smkv-detail.show{display:grid}
 .smkv-dbox{position:relative;box-sizing:border-box;background:#12161d;border:1px solid #232a34;border-radius:14px;width:min(900px,100%);max-height:92vh;overflow:auto;padding:0 24px 24px}

@@ -226,6 +226,7 @@
       <input name="lurl" placeholder="https://lyrics.example.com" style="width:220px" hidden>
       <label title="Small frames above the seek bar, made once per video from its keyframes (uses some CPU the first time)"><input type="checkbox" name="trick"> Seek-bar previews</label>
       <label title="Users can ask for films and series that aren't here yet"><input type="checkbox" name="req"> Requests</label>
+      <label title="A Trailer button on films and series: the trailer on YouTube, found through TMDB"><input type="checkbox" name="trl"> Trailers</label>
       <span class="sp" style="flex:1"></span>
       <button class="primary">Save</button>
     </form>
@@ -881,7 +882,7 @@
     if (st.features) {
       const ff = $('#feat-form'), fe = st.features;
       if (document.activeElement.form !== ff) {
-        ff.lyrics.checked = fe.lyrics; ff.trick.checked = fe.trickplay; ff.req.checked = fe.requests;
+        ff.lyrics.checked = fe.lyrics; ff.trick.checked = fe.trickplay; ff.req.checked = fe.requests; ff.trl.checked = fe.trailers !== false;
         const src = fe.lyricsSource || '';
         ff.lsrc.value = src === '' || src === 'off' ? src : 'custom';
         ff.lurl.value = ff.lsrc.value === 'custom' ? src : '';
@@ -1344,7 +1345,7 @@
     const src = f.lsrc.value === 'custom' ? f.lurl.value.trim() : f.lsrc.value;
     if (f.lsrc.value === 'custom' && !/^https?:\/\//.test(src)) return toast('Enter the server address (http:// or https://)');
     try {
-      renderMeta(await api('admin/settings', { method: 'POST', body: { lyrics: f.lyrics.checked, lyricsSource: src, trickplay: f.trick.checked, requests: f.req.checked } }));
+      renderMeta(await api('admin/settings', { method: 'POST', body: { lyrics: f.lyrics.checked, lyricsSource: src, trickplay: f.trick.checked, requests: f.req.checked, trailers: f.trl.checked } }));
       document.activeElement.blur(); toast('Saved');
     } catch (x) { toast(x.message); }
   };

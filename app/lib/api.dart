@@ -116,6 +116,10 @@ class Api {
       _req('POST', 'parties/ask/answer', body: {'user': user, 'accept': accept, 'pos': pos, 'playing': playing});
 
   /// Who watched / listened the most: period = week | month | year | all.
+  /// Trailers on YouTube (via TMDB) for a film (movie id or path) or a series (key).
+  Future<List<Map>> trailers(String lib, {String? movie, String? show}) async =>
+      List<Map>.from((await _req('GET', 'trailers', q: {'lib': lib, if (movie != null) 'movie': movie, if (show != null) 'show': show}) as Map)['online'] as List? ?? const []);
+
   // Requests: ask for films / series that aren't here yet
   Future<Map> requests() async => await _req('GET', 'requests') as Map;
   Future<List<Map>> requestSearch(String q, String kind) async =>

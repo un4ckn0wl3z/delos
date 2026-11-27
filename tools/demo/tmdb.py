@@ -30,6 +30,14 @@ class H(BaseHTTPRequestHandler):
             if not r: r = [s for s in SHOWS + WANTED_TV if norm(q.get('query', '')) in norm(s['title'])]
             return self.send({'results': [{'id': s['id'], 'name': s['title'], 'first_air_date': f"{s['year']}-03-01", 'poster_path': f"/p{s['id']}.jpg", 'overview': s['overview']} for s in r]})
             return self.send({'results': [{'id': s['id'], 'name': s['title'], 'first_air_date': f"{s['year']}-03-01"} for s in r]})
+        m = re.match(r'^/3/(movie|tv)/(\d+)/videos$', p)
+        if m:  # a couple of fake YouTube trailers (keys are made up)
+            i = int(m.group(2))
+            return self.send({'id': i, 'results': [
+                {'site': 'YouTube', 'key': f'demo{i}a', 'name': 'Official Trailer', 'type': 'Trailer', 'official': True, 'iso_639_1': 'en', 'size': 1080, 'published_at': '2024-05-01T00:00:00Z'},
+                {'site': 'YouTube', 'key': f'demo{i}b', 'name': 'Teaser', 'type': 'Teaser', 'official': True, 'iso_639_1': 'en', 'size': 1080, 'published_at': '2024-01-01T00:00:00Z'},
+                {'site': 'YouTube', 'key': f'demo{i}c', 'name': 'Behind the scenes', 'type': 'Featurette', 'official': True, 'iso_639_1': 'en', 'size': 720, 'published_at': '2024-02-01T00:00:00Z'},
+            ]})
         m = re.match(r'^/3/movie/(\d+)$', p)
         if m:
             x = next((m for m in MOVIES if m['id'] == int(m.group(1))), None) if False else next((mm for mm in MOVIES + WANTED if mm['id'] == int(m.group(1))), None)

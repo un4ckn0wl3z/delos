@@ -393,7 +393,7 @@ Everyone sees their own roles on the card under *Delos* in the web app, in Chats
 </details>
 
 <details>
-<summary><strong>🎤 Lyrics & seek-bar previews</strong></summary>
+<summary><strong>🎤 Lyrics, seek-bar previews & trailers</strong></summary>
 
 
 **Lyrics** — the 🎤 button in *Now playing* (web) or in the music player (app) shows the words of the song. Synced lyrics highlight the current line and scroll along; tap or click a line to jump there. Delos looks, in order, for:
@@ -404,7 +404,9 @@ Everyone sees their own roles on the card under *Delos* in the web app, in Chats
 
 Results are cached; "not found" is tried again after a week, or straight away with *Search again*. In **/admin → Features** you can turn lyrics off, or set *Look up online* to **local files only** or to **another LRCLIB server** — LRCLIB is open source, so if the public site ever goes away you can point Delos at your own copy.
 
-**Seek-bar previews** — hover the seek bar (web, desktop app) or drag it (phone) to see a small frame of that moment. The first time a video is played, the server makes a few sprite sheets from its keyframes only (no full decode: a two-hour film takes about a minute) and keeps them in the cache. Frames are every 2 s for short videos, 5 s up to 30 minutes, 10 s for anything longer. Turn them off in **/admin → Features** to save CPU.
+**Seek-bar previews** — hover the seek bar (web, desktop app) or drag it (phone) to see a small frame of that moment. The first time a video is played, the server jumps to each moment and grabs one keyframe there (it reads a few MB per frame, never the whole file, so a 60 GB remux costs the same as a small file), lays the frames out into sprite sheets and keeps them in the cache. Until they're ready the time bubble says *preparing previews · N %*. Frames are every 2 s for short videos, 5 s up to 30 minutes, 10 s beyond — at most 480 per video. Turn them off in **/admin → Features** to save CPU.
+
+**Trailers** — films and series matched on TMDB get a 🎞 *Trailer* button: the trailer plays on YouTube in a window over the page (official trailers first, in the server's TMDB language when there is one), with teasers and other trailers one click away. Turn it off in **/admin → Features**.
 
 </details>
 
@@ -724,6 +726,7 @@ GET  /api/me                              → {"user","admin","editor","version"
 GET  /api/lyrics       ?path=[&refresh=1] → {"synced" (LRC),"plain","source":"file|tags|lrclib"}
 GET  /api/trickplay    ?path=            → {ready,interval,w,h,cols,rows,sheets,count} · 202 {pending,progress} while being made
 GET  /api/trickplay/sheet ?path=&n=      → JPEG sprite sheet n (frame i: sheet i/(cols*rows), cell i%(cols*rows))
+GET  /api/trailers     ?lib=&movie=<id>|&show=<key> → {"online":[{site,key,name,type,official,lang}]} (YouTube, via TMDB)
 GET  /api/requests                        → {requests[],tmdb,manage}
 GET  /api/requests/search ?q=&kind=movie|tv → TMDB results + {have,lib,where,request}
 POST /api/requests     {"kind","tmdbId"}  (asks, or votes when it was already asked for)
@@ -743,7 +746,7 @@ POST   /api/admin/users/{name}/role       {"admin": bool}
 POST   /api/admin/users/{name}/revoke     DELETE /api/admin/users/{name}
 GET|DELETE /api/admin/users/{name}/progress
 GET    /api/admin/update                  POST /api/admin/update/check | /api/admin/update/install
-GET|POST /api/admin/settings              {"autoUpdate"?, "tmdbKey"?, "tmdbLang"?, "lyrics"?, "lyricsSource"? ("" | "off" | URL), "trickplay"?, "requests"?}
+GET|POST /api/admin/settings              {"autoUpdate"?, "tmdbKey"?, "tmdbLang"?, "lyrics"?, "lyricsSource"? ("" | "off" | URL), "trickplay"?, "requests"?, "trailers"?}
 POST   /api/requests/{id}/status          {"status":"pending|approved|declined|available","note"}
 GET|POST /api/admin/libraries             {"name","type":"movies|tv|music|videos","path"}
 PUT|DELETE /api/admin/libraries/{id}      POST /api/admin/libraries/{id}/scan[?refresh=1]
