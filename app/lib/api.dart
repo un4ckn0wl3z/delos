@@ -116,6 +116,10 @@ class Api {
       _req('POST', 'parties/ask/answer', body: {'user': user, 'accept': accept, 'pos': pos, 'playing': playing});
 
   /// Who watched / listened the most: period = week | month | year | all.
+  /// Seek-bar previews: the sheet layout, or {pending: true} while the server makes them.
+  Future<Map> trickplay(String path) async => await _req('GET', 'trickplay', q: {'path': path}) as Map;
+  String trickSheetUrl(String path, int n) => _u('trickplay/sheet', {'path': path, 'n': '$n'}).toString();
+
   /// Lyrics of a song: {synced, plain, source} (synced is LRC text).
   Future<Map> lyrics(String path, {bool refresh = false}) async =>
       await _req('GET', 'lyrics', q: {'path': path, if (refresh) 'refresh': '1'}) as Map;

@@ -2623,6 +2623,7 @@
         info.subs.map((t, i) => `<option value="${i}">${esc(trackLabel(t, i, 's'))}</option>`).join('');
       selSub.value = S.sub ? String(S.sub.idx) : '';
       seek.max = String(info.duration || 0);
+      tpLoad(f);
       updateMeta();
 
       // resume (a party says where instead)
@@ -2827,8 +2828,45 @@
     ppBtn.onclick = togglePlay;
     $('#smkv-back').onclick = () => seekBy(-10);
     $('#smkv-fwd').onclick = () => seekBy(30);
-    seek.addEventListener('input', () => { S.dragging = true; updateTime(); });
-    seek.addEventListener('change', () => { S.dragging = false; seekTo(+seek.value); });
+    seek.addEventListener('input', () => { S.dragging = true; updateTime(); tpAt(+seek.value); });
+    seek.addEventListener('change', () => { S.dragging = false; seekTo(+seek.value); tpHide(); });
+    seek.addEventListener('mousemove', (e) => {
+      const r = seek.getBoundingClientRect(), d = +seek.max || 0;
+      if (d && r.width) tpAt(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * d, e.clientX);
+    });
+    seek.addEventListener('mouseleave', () => { if (!S.dragging) tpHide(); });
+
+    // ---------------------------------------------------------- seek-bar previews (sprite sheets made by the server)
+    const TP = { path: null, info: null, timer: 0 };
+    function tpLoad(f) {
+      clearTimeout(TP.timer); TP.path = f.path; TP.info = null;
+      const go = async (n) => {
+        if (TP.path !== f.path) return;
+        let d; try { d = await api('trickplay', { path: f.path }); } catch { return; } // no video / turned off
+        if (TP.path !== f.path) return;
+        if (d.ready) { TP.info = d; [...Array(Math.min(d.sheets, 3)).keys()].forEach((n) => { new Image().src = tpSheet(n); }); }
+        else if (d.pending && n < 150) TP.timer = setTimeout(() => go(n + 1), n < 12 ? 5000 : 15000);
+      };
+      go(0);
+    }
+    function tpSheet(n) { const u = new URL('api/trickplay/sheet', BASE); u.searchParams.set('path', TP.path); u.searchParams.set('n', n); return u.href; }
+    function tpHide() { $('#smkv-tp').hidden = true; }
+    function tpAt(t, clientX) {
+      const box = $('#smkv-tp'), ctl = $('#smkv-controls').getBoundingClientRect(), r = seek.getBoundingClientRect(), d = +seek.max || 0;
+      if (!d) return;
+      if (clientX == null) clientX = r.left + 6 + (r.width - 12) * (t / d); // where the thumb is
+      const i = TP.info, img = box.querySelector('.img');
+      box.querySelector('span').textContent = fmtTime(t);
+      let w = 56;
+      if (i && i.count) {
+        const k = Math.min(i.count - 1, Math.max(0, Math.round(t / i.interval))), per = i.cols * i.rows, c = k % per;
+        const sc = ctl.width < 560 ? 0.6 : 1; w = i.w * sc;
+        img.style.cssText = `display:block;width:${w}px;height:${i.h * sc}px;background-image:url("${tpSheet(Math.floor(k / per))}");`
+          + `background-size:${i.cols * w}px auto;background-position:-${(c % i.cols) * w}px -${Math.floor(c / i.cols) * i.h * sc}px`;
+      } else img.style.display = 'none';
+      box.style.left = Math.max(6, Math.min(ctl.width - w - 6, clientX - ctl.left - w / 2)) + 'px';
+      box.hidden = false;
+    }
 
     const vol = $('#smkv-vol');
     const setVolume = (v) => { video.volume = v; if (wp) wp.volume = v; vol.value = String(v); lsSet('volume', v); };
@@ -3658,6 +3696,7 @@
     <div id="smkv-subs"></div>
     <div id="smkv-spinner"></div>
     <div id="smkv-controls">
+      <div id="smkv-tp" hidden><div class="img"></div><span></span></div>
       <input id="smkv-seek" type="range" min="0" max="0" step="0.1" value="0">
       <div class="smkv-row">
         <button id="smkv-pp" title="Play/Pause (space)">▶</button>
@@ -4189,6 +4228,10 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 #smkv-subs span{background:rgba(0,0,0,.18);padding:0 .2em;border-radius:3px;font-weight:500}
 #smkv-controls{position:absolute;left:0;right:0;bottom:0;padding:24px 12px 8px;background:linear-gradient(transparent,rgba(0,0,0,.85));opacity:0;transition:opacity .2s}
 #smkv-player.ctl #smkv-controls{opacity:1}
+#smkv-tp{position:absolute;bottom:calc(100% - 14px);display:flex;flex-direction:column;align-items:center;gap:4px;pointer-events:none;z-index:3}
+#smkv-tp[hidden]{display:none}
+#smkv-tp .img{border-radius:6px;border:2px solid rgba(255,255,255,.85);background:#000 no-repeat;box-shadow:0 6px 24px rgba(0,0,0,.6)}
+#smkv-tp span{font:600 12px/1 system-ui,sans-serif;color:#fff;background:rgba(0,0,0,.75);padding:4px 7px;border-radius:5px;font-variant-numeric:tabular-nums}
 #smkv-controls .smkv-row{display:flex;align-items:center;gap:8px;margin-top:4px}
 #smkv-watch #smkv-controls button{background:transparent;border:none;color:#fff;font-size:15px;padding:4px 8px}
 #smkv-watch #smkv-controls button:hover{background:rgba(255,255,255,.12)}

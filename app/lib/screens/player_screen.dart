@@ -163,6 +163,9 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
   /// Touch lock: ignores every tap/gesture/back until unlocked.
   bool _locked = false, _lockHint = false;
   double? _drag; // slider value while dragging
+  double? _hover; // desktop: time under the mouse on the seek bar
+  Map? _tp; // seek-bar previews (sprite sheets), when the server has them
+  Timer? _tpTimer;
   double? _pendingSeek; // transcode: target while waiting to re-open
   String? _flash; // "−10s" / "+10s" indicator
   bool _flashLeft = false;
@@ -267,6 +270,7 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
       s.cancel();
     }
     _hideTimer?.cancel();
+    _tpTimer?.cancel();
     _saveTimer?.cancel();
     _lockTimer?.cancel();
     _seekTimer?.cancel();
@@ -282,12 +286,114 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
     super.dispose();
   }
 
+  Future<void> _loadTrickplay([int n = 0]) async {
+    try {
+      final d = await api.trickplay(path);
+      if (!mounted) return;
+      if (d['ready'] == true) {
+        setState(() => _tp = d);
+      } else if (d['pending'] == true && n < 150) {
+        _tpTimer = Timer(Duration(seconds: n < 12 ? 5 : 15), () => _loadTrickplay(n + 1));
+      }
+    } catch (_) {
+      // no previews (audio only, turned off, older server)
+    }
+  }
+
+  /// The preview frame for [t] seconds, [scale] × the sheet's frame size.
+  Widget _tpFrame(double t, double scale) {
+    final i = _tp!;
+    final w = (i['w'] as num).toDouble() * scale, h = (i['h'] as num).toDouble() * scale;
+    final cols = (i['cols'] as num).toInt(), rows = (i['rows'] as num).toInt(), per = cols * rows;
+    final count = math.max(1, (i['count'] as num).toInt());
+    final k = (t / (i['interval'] as num).toDouble()).round().clamp(0, count - 1);
+    final c = k % per;
+    return Container(
+      width: w + 4,
+      height: h + 4,
+      decoration: BoxDecoration(
+        color: Colors.black,
+        border: Border.all(color: Colors.white70, width: 2),
+        borderRadius: BorderRadius.circular(6),
+        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 18)],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: OverflowBox(
+          alignment: Alignment.topLeft,
+          minWidth: 0,
+          minHeight: 0,
+          maxWidth: double.infinity,
+          maxHeight: double.infinity,
+          child: Transform.translate(
+            offset: Offset(-(c % cols) * w, -(c ~/ cols) * h),
+            child: Image.network(api.trickSheetUrl(path, k ~/ per),
+                headers: api.authHeaders,
+                width: cols * w,
+                height: rows * h,
+                fit: BoxFit.fill,
+                gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The seek bar, with a preview above it while dragging (or hovering on desktop).
+  Widget _seekBar(double pos, double dur) => LayoutBuilder(builder: (context, box) {
+        final max = dur > 0 ? dur : 1.0;
+        final at = _drag ?? _hover;
+        final scale = box.maxWidth < 500 ? .6 : (box.maxWidth < 900 ? .8 : 1.0);
+        final pw = _tp == null ? 60.0 : (_tp!['w'] as num).toDouble() * scale + 4;
+        final x = at == null ? 0.0 : 24 + (at / max).clamp(0.0, 1.0) * (box.maxWidth - 48);
+        return Stack(clipBehavior: Clip.none, children: [
+          MouseRegion(
+            onHover: (e) => setState(() => _hover = ((e.localPosition.dx - 24) / (box.maxWidth - 48)).clamp(0.0, 1.0) * max),
+            onExit: (_) => setState(() => _hover = null),
+            child: Slider(
+              value: pos,
+              max: max,
+              onChangeStart: (v) {
+                _hideTimer?.cancel();
+                setState(() => _drag = v);
+              },
+              onChanged: (v) => setState(() => _drag = v),
+              onChangeEnd: (v) {
+                setState(() => _drag = null);
+                _seekTo(v);
+                _scheduleHide();
+              },
+            ),
+          ),
+          if (at != null)
+            Positioned(
+              bottom: 38,
+              left: (x - pw / 2).clamp(0.0, math.max(0.0, box.maxWidth - pw)),
+              child: IgnorePointer(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  if (_tp != null) _tpFrame(at, scale),
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(5)),
+                    child: Text(fmtTime(at),
+                        style: const TextStyle(color: Colors.white, fontSize: 12, fontFeatures: [FontFeature.tabularFigures()])),
+                  ),
+                ]),
+              ),
+            ),
+        ]);
+      });
+
+
   Future<void> _init() async {
     try {
       final s = api.settings;
       final results = await Future.wait([api.probe(path), api.progress(path)]);
       final info = results[0] as ProbeInfo;
       final prog = results[1] as Map<String, dynamic>;
+      _loadTrickplay();
       final pick = pickTracks(info, prog, s.audioLang, s.subLang);
       _info = info;
       _audio = pick.audio;
@@ -1001,22 +1107,7 @@ class _PlayerScreenState extends State<PlayerScreen> implements PartyVideo {
                   top: false,
                   child: Row(children: [
                     Text(fmtTime(pos), style: const TextStyle(color: Colors.white, fontFeatures: [FontFeature.tabularFigures()])),
-                    Expanded(
-                      child: Slider(
-                        value: pos,
-                        max: dur > 0 ? dur : 1,
-                        onChangeStart: (v) {
-                          _hideTimer?.cancel();
-                          setState(() => _drag = v);
-                        },
-                        onChanged: (v) => setState(() => _drag = v),
-                        onChangeEnd: (v) {
-                          setState(() => _drag = null);
-                          _seekTo(v);
-                          _scheduleHide();
-                        },
-                      ),
-                    ),
+                    Expanded(child: _seekBar(pos, dur)),
                     Text(fmtTime(dur), style: const TextStyle(color: Colors.white70)),
                   ]),
                 ),
