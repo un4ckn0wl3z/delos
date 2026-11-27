@@ -1284,7 +1284,10 @@
       box.hidden = !on;
       if (!on) return;
       const path = A.cur.path;
-      if (LY.path === path && !refresh) return;
+      // same song and this very box is already filled: nothing to do
+      // (coming back to Now playing builds a new, empty box — fill it again, from the cache)
+      if (LY.path === path && !refresh && box.dataset.p === path) return;
+      box.dataset.p = path;
       LY.path = path; LY.data = null; LY.lines = []; LY.idx = -1;
       box.innerHTML = '<div class="smkv-dim2 smkv-lyr-msg">Looking for lyrics…</div>';
       let d = !refresh && LY.cache.get(path);
