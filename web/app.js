@@ -1257,6 +1257,7 @@
     }
 
     // ------------------------------------------------------------ lyrics (synced when we can get them)
+    const feat = (k) => !BR.me || !BR.me.features || BR.me.features[k] !== false; // older servers: everything on
     const LY = { path: null, data: null, lines: [], idx: -1, cache: new Map(), userScroll: 0 };
     function parseLrc(text) {
       let offset = 0; const out = [];
@@ -1271,7 +1272,8 @@
     async function drawLyrics(refresh) {
       const box = $('#smkv-np-lyr');
       if (!box || !A.cur) return;
-      const on = lsGet('lyrOn', true);
+      if ($('#smkv-np-lyrb')) $('#smkv-np-lyrb').hidden = !feat('lyrics');
+      const on = lsGet('lyrOn', true) && feat('lyrics');
       $('#smkv-np-lyrb') && $('#smkv-np-lyrb').classList.toggle('on', on);
       box.hidden = !on;
       if (!on) return;
@@ -2840,6 +2842,7 @@
     const TP = { path: null, info: null, timer: 0 };
     function tpLoad(f) {
       clearTimeout(TP.timer); TP.path = f.path; TP.info = null;
+      if (!feat('trickplay')) return;
       const go = async (n) => {
         if (TP.path !== f.path) return;
         let d; try { d = await api('trickplay', { path: f.path }); } catch { return; } // no video / turned off

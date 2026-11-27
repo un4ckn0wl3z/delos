@@ -51,6 +51,8 @@ class AppCtx {
   PartyController? party;
   /// Who I am here: my roles ({id, name}; Guest when none) and admin.
   List<Map> roles = const [];
+  /// Optional parts the admin left on (lyrics, trickplay, requests); missing = on.
+  Map<String, dynamic> features = const {};
   /// Remote control (this device as a target + driving your other devices).
   RemoteController? remote;
 }
@@ -161,6 +163,8 @@ class _HomeScreenState extends State<HomeScreen> {
       app.downloader = m['downloader'] == true || app.admin;
       app.offline = m['offline'] == true || app.admin;
       app.audio.canSave = app.offline;
+      app.features = Map<String, dynamic>.from(m['features'] as Map? ?? const {});
+      app.audio.lyrics = app.features['lyrics'] != false;
       if (!app.downloader && section == 3) section = 0;
       if (mounted) setState(() {});
     }).catchError((_) {});

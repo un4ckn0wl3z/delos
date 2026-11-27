@@ -182,6 +182,9 @@ func (ix *Indexer) Loop() {
 			ix.setErr(err.Error())
 		} else {
 			log.Printf("scanned %s (%s) in %s", lib.ID, lib.Type, time.Since(start).Round(time.Millisecond))
+			if ix.s.requests != nil && (lib.Type == LibMovies || lib.Type == LibTV) {
+				ix.s.requests.CheckAvailable() // a requested title may have just landed
+			}
 		}
 		ix.setStatus(ScanStatus{})
 	}

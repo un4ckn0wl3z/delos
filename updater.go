@@ -287,6 +287,14 @@ type ServerSettings struct {
 	// Chat attachments: largest file in MB (0 = attachments off) and how many days files are kept (0 = forever).
 	ChatMaxMB    int `json:"chatMaxMB"`
 	ChatKeepDays int `json:"chatKeepDays"`
+	// Features an admin can switch off (zero value = on).
+	LyricsOff    bool `json:"lyricsOff,omitempty"`
+	TrickplayOff bool `json:"trickplayOff,omitempty"`
+	RequestsOff  bool `json:"requestsOff,omitempty"`
+	// Where lyrics are looked up online: "" = LRCLIB (lrclib.net), "off" = only
+	// .lrc files and tags, or the address of another LRCLIB-compatible server
+	// (LRCLIB is open source and can be self-hosted).
+	LyricsSource string `json:"lyricsSource,omitempty"`
 }
 
 type SettingsStore struct {
@@ -372,6 +380,10 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		SeedAction   *string  `json:"seedAction"`
 		ChatMaxMB    *int     `json:"chatMaxMB"`
 		ChatKeepDays *int     `json:"chatKeepDays"`
+		Lyrics       *bool    `json:"lyrics"`
+		LyricsSource *string  `json:"lyricsSource"`
+		Trickplay    *bool    `json:"trickplay"`
+		Requests     *bool    `json:"requests"`
 	}
 	if !decodeJSON(w, r, &b) {
 		return
@@ -439,6 +451,26 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		cur.ChatKeepDays = *b.ChatKeepDays
 	}
+	if b.Lyrics != nil {
+		cur.LyricsOff = !*b.Lyrics
+	}
+	if b.Trickplay != nil {
+		cur.TrickplayOff = !*b.Trickplay
+	}
+	if b.Requests != nil {
+		cur.RequestsOff = !*b.Requests
+	}
+	if b.LyricsSource != nil {
+		v := strings.TrimRight(strings.TrimSpace(*b.LyricsSource), "/")
+		if strings.EqualFold(v, "https://lrclib.net") || strings.EqualFold(v, "lrclib") {
+			v = ""
+		}
+		if v != "" && v != "off" && !strings.HasPrefix(v, "http://") && !strings.HasPrefix(v, "https://") {
+			httpErr(w, 400, `lyrics source must be empty (LRCLIB), "off" or an http(s) address`)
+			return
+		}
+		cur.LyricsSource = v
+	}
 	if b.UserLibRoot != nil {
 		v := strings.TrimSpace(*b.UserLibRoot)
 		if v != "" {
@@ -468,8 +500,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) adminSettings() map[string]any {
 	cur := s.settings.Get()
 	return map[string]any{"autoUpdate": cur.AutoUpdate, "tmdbKeySet": cur.TMDBKey != "", "tmdbLang": cur.TMDBLang, "rtorrent": cur.RTorrent, "userLibRoot": s.userLibRoot(),
-		"seed": map[string]any{"ratio": cur.SeedRatio, "hours": cur.SeedHours, "action": cmp.Or(cur.SeedAction, "stop")},
-		"chat": map[string]any{"maxMB": cur.ChatMaxMB, "keepDays": cur.ChatKeepDays, "usedBytes": s.chat.filesSize()}, "streams": s.streamUsage(), "update": s.updater.Status()}
+		"seed":     map[string]any{"ratio": cur.SeedRatio, "hours": cur.SeedHours, "action": cmp.Or(cur.SeedAction, "stop")},
+		"features": map[string]any{"lyrics": !cur.LyricsOff, "lyricsSource": cur.LyricsSource, "trickplay": !cur.TrickplayOff, "requests": !cur.RequestsOff},
+		"chat":     map[string]any{"maxMB": cur.ChatMaxMB, "keepDays": cur.ChatKeepDays, "usedBytes": s.chat.filesSize()}, "streams": s.streamUsage(), "update": s.updater.Status()}
 }
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {

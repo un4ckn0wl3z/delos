@@ -218,6 +218,20 @@
   </section>
 
   <section>
+    <h2>Features</h2>
+    <form class="add" id="feat-form" style="border-top:none;font-size:13px;flex-wrap:wrap;gap:10px 18px">
+      <label title="Synced lyrics in the music player"><input type="checkbox" name="lyrics"> Lyrics</label>
+      <label class="dim" title="Where lyrics are looked up online. Lyrics in .lrc files next to the songs and in the songs' tags are always used.">Look up online
+        <select name="lsrc"><option value="">LRCLIB (lrclib.net)</option><option value="custom">Another LRCLIB server…</option><option value="off">Don't — local files only</option></select></label>
+      <input name="lurl" placeholder="https://lyrics.example.com" style="width:220px" hidden>
+      <label title="Small frames above the seek bar, made once per video from its keyframes (uses some CPU the first time)"><input type="checkbox" name="trick"> Seek-bar previews</label>
+      <label title="Users can ask for films and series that aren't here yet"><input type="checkbox" name="req"> Requests</label>
+      <span class="sp" style="flex:1"></span>
+      <button class="primary">Save</button>
+    </form>
+  </section>
+
+  <section>
     <h2>Chat files</h2>
     <form class="add" id="chatf-form" style="border-top:none;font-size:13px;flex-wrap:wrap">
       <label class="dim" title="0 turns attachments off">Largest file <input type="number" name="mb" min="0" max="4096" style="width:76px"> MB</label>
@@ -864,6 +878,17 @@
 
   // metadata settings
   function renderMeta(st) {
+    if (st.features) {
+      const ff = $('#feat-form'), fe = st.features;
+      if (document.activeElement.form !== ff) {
+        ff.lyrics.checked = fe.lyrics; ff.trick.checked = fe.trickplay; ff.req.checked = fe.requests;
+        const src = fe.lyricsSource || '';
+        ff.lsrc.value = src === '' || src === 'off' ? src : 'custom';
+        ff.lurl.value = ff.lsrc.value === 'custom' ? src : '';
+        ff.lurl.hidden = ff.lsrc.value !== 'custom';
+        ff.lsrc.disabled = !fe.lyrics;
+      }
+    }
     if (st.chat) {
       const cf = $('#chatf-form');
       if (document.activeElement.form !== cf) { cf.mb.value = st.chat.maxMB; cf.days.value = st.chat.keepDays; }
@@ -1311,6 +1336,18 @@
   $('#orph-btn').onclick = orphans;
   const loadTorrents = () => api('admin/torrents').then(renderTorrents).catch(() => {});
   $('#tor-q').oninput = () => { pageReset('tor'); if (torData) renderTorrents(torData); };
+  $('#feat-form').lsrc.onchange = (e) => { const f = e.target.form; f.lurl.hidden = f.lsrc.value !== 'custom'; if (!f.lurl.hidden) f.lurl.focus(); };
+  $('#feat-form').lyrics.onchange = (e) => { e.target.form.lsrc.disabled = !e.target.checked; };
+  $('#feat-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const src = f.lsrc.value === 'custom' ? f.lurl.value.trim() : f.lsrc.value;
+    if (f.lsrc.value === 'custom' && !/^https?:\/\//.test(src)) return toast('Enter the server address (http:// or https://)');
+    try {
+      renderMeta(await api('admin/settings', { method: 'POST', body: { lyrics: f.lyrics.checked, lyricsSource: src, trickplay: f.trick.checked, requests: f.req.checked } }));
+      document.activeElement.blur(); toast('Saved');
+    } catch (x) { toast(x.message); }
+  };
   $('#chatf-form').onsubmit = async (e) => {
     e.preventDefault();
     const f = e.target;

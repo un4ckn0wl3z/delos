@@ -69,6 +69,7 @@ type Server struct {
 	clients   *Clients
 	remotes   *Remotes
 	ann       *Announcements
+	requests  *Requests
 	started   time.Time
 }
 
@@ -201,6 +202,7 @@ func main() {
 	s.clients = NewClients(cfg.DataDir)
 	s.avatars = NewAvatars(cfg.DataDir)
 	s.ann = NewAnnouncements(s)
+	s.requests = NewRequests(s)
 	s.playlists = NewPlaylists(cfg.DataDir)
 	s.stats = NewStats(cfg.DataDir)
 	if s.tls, err = NewTLSManager(cfg, tlsMode); err != nil {
@@ -216,7 +218,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 	mux.HandleFunc("POST /api/logout", s.handleLogout)
 	mux.HandleFunc("GET /api/me", s.auth(func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "roles": s.users.RoleNames(userOf(r)), "editor": s.canEdit(r), "downloader": s.users.IsDownloader(userOf(r)), "offline": s.users.IsOffline(userOf(r)), "avatar": s.avatars.Version(userOf(r)), "version": version, "https": s.tls.Enabled(), "chatMaxMB": s.settings.Get().ChatMaxMB})
+		writeJSON(w, 200, map[string]any{"user": userOf(r), "admin": isAdmin(r), "roles": s.users.RoleNames(userOf(r)), "editor": s.canEdit(r), "downloader": s.users.IsDownloader(userOf(r)), "offline": s.users.IsOffline(userOf(r)), "avatar": s.avatars.Version(userOf(r)), "version": version, "https": s.tls.Enabled(), "chatMaxMB": s.settings.Get().ChatMaxMB, "features": s.features()})
 	}))
 	mux.HandleFunc("POST /api/me/password", s.auth(s.handleOwnPassword))
 	mux.HandleFunc("GET /admin", s.handleAdminPage)
@@ -248,6 +250,7 @@ func main() {
 	s.partyRoutes(mux)
 	s.remoteRoutes(mux)
 	s.roleRoutes(mux)
+	s.requestRoutes(mux)
 
 	srv := &http.Server{
 		Addr:              cfg.Listen,
@@ -499,4 +502,10 @@ func envInt(key string, def int) int {
 		return v
 	}
 	return def
+}
+
+// features tells clients which optional parts the admin left on (to hide their buttons).
+func (s *Server) features() map[string]bool {
+	st := s.settings.Get()
+	return map[string]bool{"lyrics": !st.LyricsOff, "trickplay": !st.TrickplayOff, "requests": !st.RequestsOff}
 }

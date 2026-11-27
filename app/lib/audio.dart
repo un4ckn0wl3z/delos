@@ -44,6 +44,8 @@ class AudioController extends ChangeNotifier {
   final Api api;
   /// The user may save songs to this device ("offline" permission).
   bool canSave = false;
+  /// The server has lyrics turned on.
+  bool lyrics = true;
   final player = Player(configuration: const PlayerConfiguration(title: 'Delos music'));
   final _subs = <StreamSubscription>[];
   List<Item> queue = [];
@@ -315,11 +317,12 @@ class NowPlaying extends StatelessWidget {
                     Navigator.pop(context);
                   },
                 ),
-                IconButton(
-                  tooltip: 'Lyrics',
-                  icon: const Icon(Icons.lyrics_outlined),
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => LyricsView(audio: audio))),
-                ),
+                if (audio.lyrics)
+                  IconButton(
+                    tooltip: 'Lyrics',
+                    icon: const Icon(Icons.lyrics_outlined),
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => LyricsView(audio: audio))),
+                  ),
                 if (audio.canSave && !t.path.startsWith('file:'))
                   SaveButton(
                     api: audio.api,

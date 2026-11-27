@@ -35,8 +35,7 @@ func TestLrclibGetFallsBackToSearch(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	t.Setenv("STREAMMKV_LRCLIB_URL", srv.URL)
-	l, ok := lrclibGet(context.Background(), "Artist", "Song", "Album", 180)
+	l, ok := lrclibGet(context.Background(), srv.URL, "Artist", "Song", "Album", 180)
 	if !ok || l.Synced != "[00:01.00]best" || l.Source != "lrclib" {
 		t.Fatalf("got %+v %v", l, ok)
 	}

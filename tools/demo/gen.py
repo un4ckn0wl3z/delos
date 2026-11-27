@@ -1,7 +1,7 @@
 import os, random, subprocess, json
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
-from catalog import MOVIES, SHOWS, ALBUMS
-R = os.path.dirname(os.path.abspath(__file__))
+from catalog import MOVIES, SHOWS, ALBUMS, WANTED, WANTED_TV
+R = '/home/claude/demo'
 IMG = f'{R}/img'; MEDIA = '/tmp/demo/media'
 os.makedirs(IMG, exist_ok=True)
 F = '/usr/share/fonts/opentype/inter/'
@@ -119,6 +119,9 @@ for s in SHOWS:
             st = scene(640, 360, *s['c'], (0.2 + (i * .13) % .6, .25 + (i % 3) * .08), s['id'] * 100 + se * 10 + i)
             st.save(f"{IMG}/s{s['id']}_{se}_{i}.jpg", quality=85)
             video(f"{IMG}/s{s['id']}_{se}_{i}.jpg", f"{MEDIA}/TV/{s['title']}/Season {se}/{s['title'].replace(' ', '.')}.S{se:02d}E{i:02d}.1080p.mkv", 44 * 60)
+for w in WANTED + WANTED_TV:  # posters only: not in the library
+    scene(500, 750, *w['c'], w['sun'], w['id'], w['title'], str(w['year'])).save(f"{IMG}/p{w['id']}.jpg", quality=90)
+    scene(1280, 720, *w['c'], w['sun'], w['id'] + 1).save(f"{IMG}/b{w['id']}.jpg", quality=88)
 for al in ALBUMS:
     folder = f"{MEDIA}/Music/{al['artist']}/{al['album']}"
     os.makedirs(folder, exist_ok=True)

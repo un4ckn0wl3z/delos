@@ -74,7 +74,7 @@ func (s *Server) trickDir(abs string, fi os.FileInfo) string {
 
 // GET /api/trickplay?path= — the sheet layout; 202 + {pending} while it is being made.
 func (s *Server) handleTrickplay(w http.ResponseWriter, r *http.Request) {
-	if os.Getenv("STREAMMKV_TRICKPLAY") == "0" {
+	if s.settings.Get().TrickplayOff {
 		httpErr(w, 404, "seek previews are turned off")
 		return
 	}

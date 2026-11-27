@@ -40,3 +40,21 @@ ALBUMS = [
   dict(artist="The Quiet Hours", album="Lo-Fi Sundays", year=2022, genre="Lo-fi", c=("#c3f0ca", "#22313a"),
        tracks=["Coffee Steam", "Window Seat", "Paper Planes", "Sunday Nap"]),
 ]
+
+# Titles TMDB knows but the demo library doesn't have (for the Requests page)
+WANTED = [
+  dict(id=9201, title="Silver Comet", year=2025, genres=["Adventure"], c=("#cfd8ff", "#1a2147"), sun=(0.55, 0.3), rating=7.7,
+       overview="A retired stunt pilot is hired to chase a comet across three continents."),
+  dict(id=9202, title="The Orchard Keeper", year=2019, genres=["Drama"], c=("#e8c27a", "#3a2312"), sun=(0.4, 0.35), rating=7.0,
+       overview="A boy and an old beekeeper look after a valley no one else remembers."),
+  dict(id=9203, title="Neon Harbor", year=2026, genres=["Thriller"], c=("#ff6fd8", "#120a2e"), sun=(0.6, 0.25), rating=6.9,
+       overview="A night-market courier finds a map hidden in a shipment of paper lanterns."),
+  dict(id=9204, title="Lanterns of Chiang Mai", year=2024, genres=["Romance"], c=("#ffb36b", "#2c0f24"), sun=(0.5, 0.32), rating=7.4,
+       overview="A tour guide and a stranded photographer have one festival week to find a lost camera."),
+  dict(id=9205, title="Copper Sky", year=2023, genres=["Science Fiction"], c=("#ff9a5a", "#21100a"), sun=(0.35, 0.4), rating=7.2,
+       overview="Terraformers on a red moon wake up to a sky that has turned green overnight."),
+]
+WANTED_TV = [
+  dict(id=9301, title="Rooftop Gardens", year=2025, genres=["Comedy"], c=("#9be38b", "#13301c"), sun=(0.6, 0.3), rating=7.9,
+       overview="Neighbours turn an abandoned roof into the city's most fought-over garden.", seasons={1: ["Seedlings", "Compost Wars"]}),
+]

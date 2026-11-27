@@ -29,22 +29,35 @@ type Lyrics struct {
 
 var lyricsMu sync.Mutex // one LRCLIB lookup at a time (be polite)
 
-func lrclibBase() string {
-	if u := os.Getenv("STREAMMKV_LRCLIB_URL"); u != "" { // tests
-		return strings.TrimRight(u, "/")
+// lrclibBase: where to look lyrics up online ("" = nowhere, admin turned it off).
+func (s *Server) lrclibBase() string {
+	switch src := s.settings.Get().LyricsSource; src {
+	case "":
+		if u := os.Getenv("STREAMMKV_LRCLIB_URL"); u != "" { // tests
+			return strings.TrimRight(u, "/")
+		}
+		return "https://lrclib.net"
+	case "off":
+		return ""
+	default:
+		return src
 	}
-	return "https://lrclib.net"
 }
 
 // GET /api/lyrics?path=<music file>[&refresh=1]
 func (s *Server) handleLyrics(w http.ResponseWriter, r *http.Request) {
+	if s.settings.Get().LyricsOff {
+		httpErr(w, 404, "lyrics are turned off on this server")
+		return
+	}
 	rel := r.URL.Query().Get("path")
 	abs, fi, err := s.resolveFor(r, rel)
 	if err != nil {
 		httpErr(w, 404, err.Error())
 		return
 	}
-	sum := sha1.Sum([]byte(fmt.Sprintf("%s|%d|%d", rel, fi.Size(), fi.ModTime().Unix())))
+	// the lookup source is part of the key: switching it looks again
+	sum := sha1.Sum([]byte(fmt.Sprintf("%s|%d|%d|%s", rel, fi.Size(), fi.ModTime().Unix(), s.lrclibBase())))
 	cache := filepath.Join(s.cfg.CacheDir, "lyrics", hex.EncodeToString(sum[:10])+".json")
 	if r.URL.Query().Get("refresh") == "" {
 		if b, err := os.ReadFile(cache); err == nil {
@@ -91,7 +104,11 @@ func (s *Server) findLyrics(ctx context.Context, rel, abs string) Lyrics {
 	if artist == "" {
 		artist = it.AlbumArtist
 	}
-	if l, ok := lrclibGet(ctx, artist, it.Title, it.Album, it.Duration); ok {
+	online := s.lrclibBase()
+	if online == "" {
+		return Lyrics{}
+	}
+	if l, ok := lrclibGet(ctx, online, artist, it.Title, it.Album, it.Duration); ok {
 		return l
 	}
 	return Lyrics{}
@@ -135,7 +152,7 @@ func (s *Server) tagLyrics(ctx context.Context, abs string) string {
 	return ""
 }
 
-func lrclibGet(ctx context.Context, artist, title, album string, dur float64) (Lyrics, bool) {
+func lrclibGet(ctx context.Context, base, artist, title, album string, dur float64) (Lyrics, bool) {
 	lyricsMu.Lock()
 	defer lyricsMu.Unlock()
 	q := url.Values{"artist_name": {artist}, "track_name": {title}}
@@ -196,11 +213,11 @@ func lrclibGet(ctx context.Context, artist, title, album string, dur float64) (L
 		}
 		return Lyrics{Synced: one.Synced, Plain: one.Plain, Source: "lrclib"}, true
 	}
-	if l, ok := try(lrclibBase() + "/api/get?" + q.Encode()); ok {
+	if l, ok := try(base + "/api/get?" + q.Encode()); ok {
 		return l, true
 	}
 	// tags often differ a little (feat., remaster…): a search is more forgiving
-	return try(lrclibBase() + "/api/search?" + url.Values{"track_name": {title}, "artist_name": {artist}}.Encode())
+	return try(base + "/api/search?" + url.Values{"track_name": {title}, "artist_name": {artist}}.Encode())
 }
 
 func lrcHasTimes(t string) bool {

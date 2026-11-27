@@ -2,7 +2,7 @@
 import json, re, sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
-from catalog import MOVIES, SHOWS
+from catalog import MOVIES, SHOWS, WANTED, WANTED_TV
 CAST = [("Mira Solano", "Ana"), ("Theo Hartley", "Jonah"), ("Ploy Chanthara", "Nim"), ("Idris Vale", "The Captain"), ("June Okafor", "Sasha")]
 # original demo lyrics (written for the demo)
 LYR = {
@@ -22,13 +22,17 @@ class H(BaseHTTPRequestHandler):
         if p.startswith('/3/search'): print(p, q, flush=True)
         if p == '/3/search/movie':
             r = [m for m in MOVIES if norm(m['title']) == norm(q.get('query', ''))]
+            if not r: r = [m for m in MOVIES + WANTED if norm(q.get('query', '')) in norm(m['title'])]  # a person typing, not the scanner
+            return self.send({'results': [{'id': m['id'], 'title': m['title'], 'release_date': f"{m['year']}-05-01", 'poster_path': f"/p{m['id']}.jpg", 'overview': m['overview']} for m in r]})
             return self.send({'results': [{'id': m['id'], 'title': m['title'], 'release_date': f"{m['year']}-05-01"} for m in r]})
         if p == '/3/search/tv':
             r = [s for s in SHOWS if norm(s['title']) == norm(q.get('query', ''))]
+            if not r: r = [s for s in SHOWS + WANTED_TV if norm(q.get('query', '')) in norm(s['title'])]
+            return self.send({'results': [{'id': s['id'], 'name': s['title'], 'first_air_date': f"{s['year']}-03-01", 'poster_path': f"/p{s['id']}.jpg", 'overview': s['overview']} for s in r]})
             return self.send({'results': [{'id': s['id'], 'name': s['title'], 'first_air_date': f"{s['year']}-03-01"} for s in r]})
         m = re.match(r'^/3/movie/(\d+)$', p)
         if m:
-            x = next((m for m in MOVIES if m['id'] == int(m.group(1))), None) if False else next((mm for mm in MOVIES if mm['id'] == int(m.group(1))), None)
+            x = next((m for m in MOVIES if m['id'] == int(m.group(1))), None) if False else next((mm for mm in MOVIES + WANTED if mm['id'] == int(m.group(1))), None)
             if not x: return self.send({}, 404)
             k = x['id'] % 5
             return self.send({'id': x['id'], 'title': x['title'], 'original_title': x['title'], 'overview': x['overview'], 'release_date': f"{x['year']}-05-01",
@@ -38,7 +42,7 @@ class H(BaseHTTPRequestHandler):
                                           'crew': [{'name': ['Rin Takeda', 'Lukas Brandt', 'Aree Wongsa'][x['id'] % 3], 'job': 'Director'}]}})
         m = re.match(r'^/3/tv/(\d+)$', p)
         if m:
-            s = next((s for s in SHOWS if s['id'] == int(m.group(1))), None)
+            s = next((s for s in SHOWS + WANTED_TV if s['id'] == int(m.group(1))), None)
             return self.send({'id': s['id'], 'name': s['title'], 'original_name': s['title'], 'overview': s['overview'], 'first_air_date': f"{s['year']}-03-01",
                               'poster_path': f"/p{s['id']}.jpg", 'backdrop_path': f"/b{s['id']}.jpg", 'vote_average': s['rating'],
                               'genres': [{'name': g} for g in s['genres']], 'number_of_seasons': len(s['seasons']),
