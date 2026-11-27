@@ -1335,7 +1335,12 @@
   };
 
   const loadOverview = () => api('admin/overview').then(renderOverview).catch(() => {});
-  const loadUsers = () => Promise.all([api('admin/roles').then(renderRoles).catch(() => {}), api('admin/users').then(renderUsers).catch(() => {})]);
+  // roles first: the users table shows role names
+  const loadUsers = async () => {
+    const [r, u] = await Promise.all([api('admin/roles').catch(() => null), api('admin/users').catch(() => null)]);
+    if (r) await renderRoles(r);
+    if (u) renderUsers(u);
+  };
   const loadTLS = () => api('admin/tls').then(renderTLS).catch(() => {});
   function renderTLS(t) {
     const el = $('#tls-info');

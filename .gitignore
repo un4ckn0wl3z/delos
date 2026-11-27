@@ -5,3 +5,5 @@ deploy-*.cmd
 signing/
 *.keystore
 *.jks
+tools/demo/img/
+tools/demo/out/

@@ -1,23 +1,226 @@
-# Delos
+<p align="center">
+  <img src="docs/images/banner.webp" alt="Delos" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/un4ckn0wl3z/delos/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/un4ckn0wl3z/delos?style=flat-square&color=3b6fd6"></a>
+  <img alt="Go" src="https://img.shields.io/badge/server-Go-00ADD8?style=flat-square&logo=go&logoColor=white">
+  <img alt="Flutter" src="https://img.shields.io/badge/apps-Flutter-02569B?style=flat-square&logo=flutter&logoColor=white">
+  <img alt="Platforms" src="https://img.shields.io/badge/Web%20·%20Android%20·%20iOS%20·%20Windows%20·%20macOS%20·%20Linux-2f9e74?style=flat-square">
+  <a href="https://github.com/un4ckn0wl3z/delos/pkgs/container/delos"><img alt="Docker" src="https://img.shields.io/badge/docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white"></a>
+</p>
+
+<p align="center">
+  <b>Your own streaming service on a seedbox.</b> One small Go server, a web app and apps for every platform.<br>
+  <b>บริการสตรีมมิ่งส่วนตัวบน seedbox</b> — server ภาษา Go ตัวเดียว พร้อมเว็บและแอปทุก platform
+</p>
+
+<p align="center">
+  <a href="#-quick-start--เริ่มใช้งาน">Quick start</a> ·
+  <a href="#-screenshots--ภาพตัวอย่าง">Screenshots</a> ·
+  <a href="#-how-it-fits-together--ภาพรวมระบบ">Architecture</a> ·
+  <a href="#-documentation--คู่มือ">Docs</a> ·
+  <a href="https://github.com/un4ckn0wl3z/delos/releases/latest">Download</a>
+</p>
+
+---
 
 *Formerly StreamMKV.* Named after the island where the twins Artemis and Apollo were born — 🌙 **Artemis** for films and series, ☀️ **Apollo** for music.
 
-ดูหนัง MKV จาก seedbox ผ่านเบราว์เซอร์ เลือก audio track / subtitle ได้ — พร้อมหลาย library (หนัง / ซีรีส์ / เพลง / วิดีโออื่น), ดึง metadata จาก TMDB + MusicBrainz, จัดกลุ่มตามแนว ศิลปิน อัลบั้ม และสตรีมเพลง (mp3/flac/…)
+*ชื่อเดิม StreamMKV* — ตั้งตามเกาะ Delos บ้านเกิดของฝาแฝด Artemis (หนังและซีรีส์) กับ Apollo (เพลง)
 
-เปิด URL ของ server ในเบราว์เซอร์ไหนก็ได้ (ติดตั้งเป็นแอปได้ — PWA) หรือใช้แอป Android / iOS / Windows / Linux / macOS
+## ✨ Highlights · จุดเด่น
 
+| | English | ไทย |
+|---|---|---|
+| 🎬 | **Plays any MKV in the browser** — the original file, any audio track (DTS / TrueHD / AC-3 decoded in WebAssembly), any subtitle. The server only transcodes when it must. | **เล่น MKV ได้ทุกไฟล์ใน browser** ใช้ไฟล์ต้นฉบับ เลือกเสียงพากย์และซับได้ทุกแทร็ก server แปลงไฟล์เฉพาะตอนจำเป็น |
+| 🗂️ | **Movies, series, music & videos** with posters and info from TMDB / MusicBrainz, series grouping and *Next up*. | **หนัง ซีรีส์ เพลง วิดีโอ** มีโปสเตอร์และข้อมูลจาก TMDB / MusicBrainz จัดซีรีส์เป็นซีซั่นและตอนถัดไปให้ |
+| ⬇️ | **Downloads** from http, torrents (rtorrent) and YouTube straight into a library, with duplicate checks. | **ดาวน์โหลด** จาก http, torrent และ YouTube เข้า library ตรงๆ พร้อมเช็คไฟล์ซ้ำ |
+| 📲 | **Apps for Android, iOS, Windows, macOS, Linux** (mpv inside), offline downloads and your own folders. | **แอปทุก platform** เล่นด้วย mpv ดาวน์โหลดไว้ดู offline และเพิ่มโฟลเดอร์ของตัวเองได้ |
+| 🎉 | **Watch party, chat & ranking** — watch together in sync, see what friends play, badges. | **ดูด้วยกัน แชท จัดอันดับ** ดูพร้อมกันแบบ sync เห็นว่าเพื่อนดูอะไร มี badge |
+| 📱 | **Remote control** — your phone drives Delos on the PC / TV, over the internet. | **รีโมต** ใช้มือถือคุม Delos บน PC / ทีวี ผ่านเน็ตได้ |
+| 📺 | **DLNA for TVs** from the desktop app, with on-the-fly audio conversion and TV copies. | **DLNA ให้ทีวี** จากแอปบน PC แปลงเสียงให้ทีวีได้ทั้งแบบสดและแปลงเก็บไว้ |
+| 🛡️ | **Multi-user** with roles, per-library access, limits, announcements and a full admin dashboard. | **หลาย user** มี role, กำหนด library ที่เห็น, โควต้า, ประกาศ และหน้า admin ครบ |
+
+## 📸 Screenshots · ภาพตัวอย่าง
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/home.webp" alt="Home"><br><sub><b>Home</b> — continue watching, recently added, who's online · หน้าแรก ดูต่อ เรื่องใหม่ และเพื่อนที่ออนไลน์</sub></td>
+    <td width="50%"><img src="docs/images/movie.webp" alt="Movie"><br><sub><b>Movie</b> — poster, cast, resume · รายละเอียดหนัง นักแสดง และดูต่อ</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/show.webp" alt="TV show"><br><sub><b>Series</b> — seasons, episodes, next up · ซีรีส์ แยกซีซั่นและตอน</sub></td>
+    <td><img src="docs/images/player.webp" alt="Player"><br><sub><b>Player</b> — plays the original file in the browser · ตัวเล่น เล่นไฟล์ต้นฉบับใน browser</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/music.webp" alt="Music"><br><sub><b>Music</b> — albums, queue, background play · เพลง อัลบั้ม คิว เล่นเบื้องหลัง</sub></td>
+    <td><img src="docs/images/admin.webp" alt="Admin"><br><sub><b>Admin</b> — roles, users, permissions · หน้า admin role ผู้ใช้ และสิทธิ์</sub></td>
+  </tr>
+</table>
+
+<sub>Screenshots use a made-up demo library (titles and artwork are generated). · ภาพตัวอย่างใช้ library สมมุติ ชื่อเรื่องและภาพสร้างขึ้นเอง</sub>
+
+## 🧭 How it fits together · ภาพรวมระบบ
+
+```mermaid
+flowchart LR
+  subgraph Seedbox["🌱 Seedbox / server"]
+    direction TB
+    S["Delos server<br/>(Go, one binary)"]
+    FF["ffmpeg / ffprobe"]
+    RT["rtorrent"]
+    YT["yt-dlp"]
+    LIB[("Media folders<br/>Movies · TV · Music")]
+    S --- FF
+    S --- RT
+    S --- YT
+    RT --> LIB
+    YT --> LIB
+    S --> LIB
+  end
+  TMDB["🎞️ TMDB<br/>🎵 MusicBrainz"]
+  S -->|metadata & posters| TMDB
+
+  subgraph Clients["👥 Clients"]
+    direction TB
+    W["🌐 Web app (PWA)"]
+    A["📱 Android / iOS app"]
+    D["💻 Desktop app<br/>Windows · macOS · Linux"]
+  end
+  W <-->|"HTTPS · API · live events"| S
+  A <-->|"HTTPS"| S
+  D <-->|"HTTPS"| S
+  TV["📺 Smart TV"]
+  D -->|"DLNA (home network)"| TV
+  A -.->|"📱 remote control<br/>via the server"| D
 ```
-┌────────────── Browser (any) ──────────────┐            ┌────────────── Seedbox ──────────────┐
-│ web app served by the server (PWA)        │    HTTPS   │ streammkv (Go, single binary)       │
-│  • libraries · music · chat · downloads   │ ─────────▶ │  /             the web app          │
-│  • player, two engines:                   │            │  /api/raw      original file (Range)│
-│     in browser — original file, demuxed   │ ◀───────── │  /api/stream   ffmpeg → fMP4        │
-│     here, WebCodecs + WASM audio          │            │  /api/probe    ffprobe → tracks     │
-│     server — remux / transcode (fallback) │            │  /api/subtitle track → WebVTT       │
-└───────────────────────────────────────────┘            └─────────────────────────────────────┘
+
+**EN** — Everything runs as one Go program next to your files. Browsers get a web app from the same address; the apps talk to the same API. The server fetches posters and info, drives rtorrent / yt-dlp for downloads, and uses ffmpeg only when a device can't play a file as it is.
+
+**TH** — ทุกอย่างรันเป็นโปรแกรม Go ตัวเดียวข้างๆ ไฟล์หนัง browser เปิดเว็บจาก address เดียวกัน แอปใช้ API เดียวกัน server ดึงโปสเตอร์และข้อมูลเอง สั่ง rtorrent / yt-dlp ดาวน์โหลด และใช้ ffmpeg เฉพาะตอนที่อุปกรณ์เล่นไฟล์ต้นฉบับไม่ได้
+
+### ▶️ How a video plays · เล่นวิดีโอยังไง
+
+```mermaid
+flowchart TD
+  P(["Press ▶ Play"]) --> Q{"Which client?<br/>ใช้อะไรเล่น"}
+  Q -->|"📲 App"| M["mpv plays the original file<br/>/api/raw · byte ranges<br/>เล่นไฟล์ต้นฉบับ ทุก codec"]
+  Q -->|"🌐 Browser"| C{"Can this device decode<br/>the video? (WebCodecs)<br/>เครื่องถอดรหัสภาพได้ไหม"}
+  C -->|"yes · ได้"| B["Plays in the browser<br/>Mediabunny + WebCodecs<br/>DTS/TrueHD/AC-3 → WASM<br/>ไม่ใช้ CPU ของ server"]
+  C -->|"no · ไม่ได้"| R{"Video codec OK<br/>for the browser?"}
+  R -->|"yes"| X["Server remux<br/>video copy · audio → AAC"]
+  R -->|"no / image subs"| T["Server transcode<br/>H.264 · burn-in PGS"]
+  M --> PR[("💾 Progress & tracks<br/>saved per user")]
+  B --> PR
+  X --> PR
+  T --> PR
 ```
 
-## Libraries & metadata
+### ⬇️ Adding a download · เพิ่มดาวน์โหลด
+
+```mermaid
+flowchart LR
+  L["Paste a link<br/>วางลิงก์"] --> K{"Kind?"}
+  K -->|"http(s)"| H["Server downloads<br/>(resumes after restart)"]
+  K -->|"magnet / .torrent"| RT["rtorrent<br/>downloads & seeds"]
+  K -->|"YouTube"| Y["yt-dlp<br/>video or tagged audio"]
+  L --> DUP{"Already have it?<br/>torrent · file · same movie<br/>เช็คไฟล์ซ้ำ"}
+  DUP -->|"yes"| W["⚠ Warn · Download anyway?"]
+  H --> F[("Library folder")]
+  RT --> F
+  Y --> F
+  F --> S["Scan → TMDB match<br/>→ shows up for everyone<br/>สแกนและขึ้นในแอปทันที"]
+```
+
+### 📱 Remote control · รีโมต
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Phone as 📱 Phone (app)
+  participant Server as 🌱 Delos server
+  participant PC as 💻 PC / TV browser
+  PC->>Server: hello (every 30 s) + what's playing
+  Phone->>Server: list my devices
+  Server-->>Phone: PC · idle
+  Phone->>Server: Play "Low Orbit" on PC
+  Server-->>PC: remote-cmd (live event)
+  PC->>PC: opens the player
+  PC->>Server: state: playing 00:12
+  Server-->>Phone: remote-state → seek bar, subs, audio, next episode
+```
+
+### 📺 Share to a TV (DLNA) · แชร์ให้ทีวี
+
+```mermaid
+flowchart LR
+  TV["📺 TV<br/>Media Player"] -- "browse / play" --> DA["💻 Desktop app<br/>DLNA server"]
+  DA --> LF[("Offline downloads<br/>+ your folders")]
+  DA -. "Online folder<br/>(passthrough)" .-> SV["🌱 Delos server"]
+  DA --> Q{"Audio the TV<br/>can't play?<br/>DTS · TrueHD"}
+  Q -->|"no"| D1["Sent as it is<br/>byte-range seeking"]
+  Q -->|"yes"| Q2{"TV copy made?"}
+  Q2 -->|"yes"| D2["Play the copy<br/>(AC3, seeks anywhere)"]
+  Q2 -->|"no"| D3["Convert live → AC3<br/>on this PC or on the server<br/>seek by time"]
+```
+
+### 🏷️ Who sees what · ใครเห็นอะไร
+
+```mermaid
+flowchart LR
+  subgraph Roles
+    F["🏷 Family"]
+    MU["🏷 Music lovers"]
+  end
+  F --> L1["🎬 Movies"]
+  F --> L2["📺 TV Shows"]
+  MU --> L3["🎵 Music"]
+  U1["theo"] --> F
+  U1 --> MU
+  U2["ploy"] --> F
+  U3["sam (Guest)"] -. "own list only" .-> L1
+  A["👑 admin"] ==> ALL["everything"]
+```
+
+## 🚀 Quick start · เริ่มใช้งาน
+
+**🐳 Docker** (server + ffmpeg + rtorrent in one image · ครบในอิมเมจเดียว)
+
+```bash
+curl -O https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/docker-compose.yml
+# edit /path/to/media and PUID/PGID · แก้ path ของไฟล์หนังและ PUID/PGID
+docker compose up -d && docker compose logs delos   # first start prints the admin password
+```
+
+**🌱 Seedbox without root** · **seedbox ที่ไม่มี root**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/deploy/install.sh | MEDIA_ROOT=~/torrents bash
+```
+
+Or run the deploy script from your PC: [`deploy/deploy.cmd`](deploy/deploy.cmd) (Windows) / [`deploy/deploy.sh`](deploy/deploy.sh) (Linux / macOS). · หรือรันสคริปต์จาก PC แล้วตอบคำถามไม่กี่ข้อ
+
+**📲 Apps** · **แอป** — [download from Releases](https://github.com/un4ckn0wl3z/delos/releases/latest):
+
+| Platform | File | Notes · หมายเหตุ |
+|---|---|---|
+| 🤖 Android | `streammkv-android-arm64-v8a.apk` | open the APK · เปิดไฟล์ติดตั้ง |
+| 🍎 iOS / iPadOS | `streammkv-ios.ipa` | via SideStore / AltStore · ติดตั้งผ่าน SideStore |
+| 🪟 Windows | `streammkv-windows-x64.zip` | unzip → `Delos.exe` |
+| 🐧 Linux | `streammkv-linux-x64.tar.gz` | needs `libmpv2` |
+| 🍏 macOS | `streammkv-macos.zip` | Intel & Apple Silicon |
+
+Then open `http://<server>:8090` and sign in — or enter the same address in the app. · จากนั้นเปิด `http://<server>:8090` แล้ว login หรือใส่ address เดียวกันในแอป
+
+## 📚 Documentation · คู่มือ
+
+Click a topic to open it. · กดหัวข้อเพื่อเปิดอ่าน
+
+<details>
+<summary><strong>🗂️ Libraries & metadata</strong></summary>
+
+> 🇹🇭 เพิ่ม library ได้ไม่จำกัด (หนัง / ซีรีส์ / เพลง / วิดีโออื่น) ดึงโปสเตอร์และข้อมูลจาก TMDB และ MusicBrainz อัตโนมัติ แก้ข้อมูลที่ match ผิดได้เอง
 
 Admins can add as many libraries as they like from **/admin → Libraries**. Pick a folder on the seedbox with the folder browser, then choose its type:
 
@@ -39,7 +242,12 @@ Admins can add as many libraries as they like from **/admin → Libraries**. Pic
 - **Music playback:** files the browser or app can play natively are streamed as they are, with Range support. Anything else (wma, ape, …) is transcoded to mp3 on the fly through `/api/audio`. Playback continues in the background, with lock-screen and media-key controls.
 - **Upgrading from ≤1.3:** your old `-root` becomes a library called `main` (type *Other videos*), and watch progress carries over. You can change its type to Movies or TV in the dashboard.
 
-## Downloads (HTTP, torrent, YouTube)
+</details>
+
+<details>
+<summary><strong>⬇️ Downloads (HTTP, torrent, YouTube)</strong></summary>
+
+> 🇹🇭 วางลิงก์ http, magnet / .torrent หรือ YouTube แล้วเลือก library ปลายทาง ระบบเช็คไฟล์ซ้ำ จัดการ torrent ได้ครบ (หยุด / seed / ลบ) และสแกน library ให้เมื่อโหลดเสร็จ
 
 Use **/admin → Downloads** to paste a link, then pick a library and an optional folder:
 
@@ -60,7 +268,12 @@ Use **/admin → Downloads** to paste a link, then pick a library and an optiona
 - **🧹 Unused files (admins):** **/admin → Torrents → Find unused files** scans rtorrent's download folder (or any folder you type) for files and folders that no torrent in rtorrent uses any more, e.g. left behind after removing torrents, with their size. Pick what to delete; each item is checked again just before it's removed. Libraries, Delos's own folders and anything containing them are never offered whole; their contents are listed one by one, and items still in a library are marked.
 - **Who can add downloads:** admins, plus users given **Make downloader** in Users. Downloaders only see libraries they have access to, and only they or an admin can cancel or remove their downloads. They can't download from private or loopback addresses.
 
-## Stream limits
+</details>
+
+<details>
+<summary><strong>🚦 Stream limits</strong></summary>
+
+> 🇹🇭 จำกัดจำนวน transcode, งานเบา และจำนวนเรื่องที่แต่ละคนดูพร้อมกันได้ เปลี่ยนค่าได้ทันทีไม่ต้อง restart
 
 Set these under **/admin → Connections → Limits**. Changes apply straight away, with no restart.
 
@@ -72,7 +285,12 @@ Set these under **/admin → Connections → Limits**. Changes apply straight aw
 
 The app's Direct play doesn't use ffmpeg, so it only counts toward the per-user limit. When a limit is reached, the player shows why, e.g. "The server is busy: 2 of 2 transcodes running — try Direct mode" or "You're already watching 1 video at once".
 
-## Personal libraries & limits
+</details>
+
+<details>
+<summary><strong>👤 Personal libraries & limits</strong></summary>
+
+> 🇹🇭 user ที่เป็น downloader สร้าง library ของตัวเองได้ เลือกเก็บส่วนตัวหรือแชร์ให้ทุกคน admin จำกัดจำนวนไฟล์ / พื้นที่ได้
 
 Users with the **downloader** role can create **their own libraries** under Downloads → *My libraries*. They give it a name and a type (Movies / TV / Music / Other videos), and choose whether to **share it with everyone**.
 
@@ -84,7 +302,12 @@ Users with the **downloader** role can create **their own libraries** under Down
 - **Deleting:** owners can delete files in their own libraries (🗑 in the web app, long-press → *Delete from server* in the app). The movie's folder (nfo, posters, subs) and the matching rtorrent download are removed too. Admins can delete anywhere. Nobody can delete from someone else's library.
 - **Limits:** set under **/admin → Users → Limits**, as max items and/or max GB across the user's personal libraries. Downloads that would go over the limit are refused, including magnets once their size is known. A user with a limit can only download into their own libraries. Usage shows in the dashboard and on the user's Downloads page.
 
-## People & chat
+</details>
+
+<details>
+<summary><strong>💬 People & chat</strong></summary>
+
+> 🇹🇭 เห็นว่าใครออนไลน์และกำลังดูอะไร แชทส่วนตัว / กลุ่ม ส่งไฟล์ รูป emoji และส่งหนังให้เพื่อนกดเล่นได้เลย
 
 - **Who's online:** see who is online and **what they're watching or listening to**, e.g. "▶ Children of Men · 45:12". You can press ▶ to open the same title, if you have access to its library. Anyone can switch on *Hide what I'm watching*; others will still see that they are online.
 - **Chats:** 1-to-1 chats and **group chats**. Any member can rename a group or add people; only the group's creator (or an admin) can remove people, and anyone can leave. Unread counts and new-message notifications update live (Server-Sent Events, `GET /api/events`). Admins can't read other people's chats.
@@ -95,9 +318,12 @@ Users with the **downloader** role can create **their own libraries** under Down
 - **Profile pictures:** set or remove yours in the app (Settings → Account) or the web app (Chats → *Change picture*). Any JPG/PNG/GIF up to 10 MB; the server crops it square and scales it to 256 px. People without one get their initial on a colour. Admins can remove a picture in /admin → Users.
 - **Admins** carry an **ADMIN** tag next to their name in People and Chat.
 
+</details>
 
+<details>
+<summary><strong>🎉 Watch party</strong></summary>
 
-## Watch party
+> 🇹🇭 ดูหนัง / ฟังเพลงพร้อมกัน หัวห้องคุมการเล่น มีแชท emoji ลอย รหัสผ่าน ห้อง public / private นัดเวลา และขอเข้าร่วมกับเพื่อนที่กำลังดูได้
 
 Watch a movie or listen to music together: one **host** plays, everyone in the party follows (play, pause, seeking and the next episode / song). Guests can't control playback.
 
@@ -106,7 +332,12 @@ Watch a movie or listen to music together: one **host** plays, everyone in the p
 - **In the party:** chat, emoji that float over the video, members (👑 = host). **Mute chat** hides chat and emoji just for you. The host can turn chat off for everyone, invite people, let people in, **remove** someone (they can't come back unless invited again), change the title / visibility / password, hand the party over, or end it. If the host leaves, the next person becomes host.
 - Time is synced to the server clock; a guest drifting more than ~2.5 s is moved back in step. A guest needs access to the library of what's playing. Parties nobody's in for 30 minutes end by themselves.
 
-## Remote control
+</details>
+
+<details>
+<summary><strong>📱 Remote control</strong></summary>
+
+> 🇹🇭 ใช้มือถือเป็นรีโมตคุม Delos บน PC หรือทีวี เลือกเรื่องบนมือถือแล้วสั่งเล่นบนเครื่องอื่น คุมเล่น / หยุด / ซับ / เสียงพากย์ / ตอนถัดไป ผ่าน server ไม่ต้องอยู่ Wi-Fi เดียวกัน
 
 Use your phone as the remote for Delos on a PC or TV (the app, or the web page in any browser, TV browsers included), signed in as the same user.
 
@@ -116,7 +347,12 @@ Use your phone as the remote for Delos on a PC or TV (the app, or the web page i
 - Commands go through your server, so the phone and the TV don't need to be on the same Wi-Fi. A device appears while Delos is open on it.
 - Rename a device: Remote → 🪪 (e.g. "Living room PC").
 
-## Share to TV (DLNA, desktop apps)
+</details>
+
+<details>
+<summary><strong>📺 Share to TV (DLNA, desktop apps)</strong></summary>
+
+> 🇹🇭 แอปบน PC (Windows / Mac / Linux) เปิดเป็น DLNA server ให้ทีวีในบ้านเล่นไฟล์ในเครื่องได้ แปลงเสียง DTS / TrueHD ให้ทีวี แปลงเก็บล่วงหน้าได้ และส่งต่อ library ออนไลน์จาก server ได้
 
 The desktop apps (Windows, macOS, Linux) can act as a DLNA media server so a smart TV on the same network plays what's saved on that PC (offline downloads and your own folders) — handy on a PC or handheld (e.g. ROG Ally) next to the TV.
 
@@ -129,15 +365,30 @@ The desktop apps (Windows, macOS, Linux) can act as a DLNA media server so a sma
 - **Convert ahead (TV copies)**: make a converted copy of a file (or all of them, or automatically for new files) so nothing is converted while you watch and seeking works on every TV. Copies live in the app's folder; delete them any time. Online files can get a copy too (fetched from the server).
 - **Online library (passthrough)**: also show the server's libraries in an "Online" folder; files stream from the server through the PC (seeking works). For files that need converting, choose where: **This PC** (ffmpeg on the PC) or **Server** (the seedbox converts; uses its CPU).
 
-## Roles
+</details>
+
+<details>
+<summary><strong>🏷️ Roles</strong></summary>
+
+> 🇹🇭 สร้าง role เป็นชุด library + สิทธิ์ แล้วแจกให้ user หลายคน คนที่ยังไม่มี role แสดงเป็น Guest
 
 Admin → **Roles**: a role is a named set of libraries (e.g. *Family*: Movies + Kids, *Music only*: Music, or *All libraries* including ones added later), optionally with permissions (editor, downloader, offline). Give users one or more roles in **Users → Roles**; they see every library of their roles, and the permissions add up. **Extra libraries** gives one user more on top of their roles. Deleting a role takes it off its members. Users without roles keep working as before (their own library list).
 
-## Ranking
+</details>
+
+<details>
+<summary><strong>🏆 Ranking</strong></summary>
+
+> 🇹🇭 จัดอันดับคนที่ดูหนัง / ฟังเพลงมากที่สุด พร้อม badge
 
 🏆 *Ranking* (web sidebar; app: Chat → Ranking) shows who watched and listened the most this week / month / year / ever, with badges for hours, finished titles, songs, streaks and this month's top watcher / listener. Only time actually playing counts. People who hide their activity aren't ranked.
 
-## Announcements
+</details>
+
+<details>
+<summary><strong>📣 Announcements</strong></summary>
+
+> 🇹🇭 admin ประกาศข่าวถึงทุกคนหรือเฉพาะบางคน แสดงทันทีในเว็บและแอป
 
 Admins post messages to users from **/admin → 📣 Announcements**: a title and a message (links are clickable), a level, who gets it (everyone or chosen users), an optional expiry, and *Pin* to keep it in the list after it's read.
 
@@ -146,7 +397,12 @@ Admins post messages to users from **/admin → 📣 Announcements**: a title an
 - The **📣** button (web app sidebar, app top bar) lists the active ones with an unread count; reading or dismissing marks them read.
 - The dashboard shows how many of the audience have read each one (hover for names). Editing can **show it again to everyone**; deleting removes it everywhere.
 
-## Offline library (app)
+</details>
+
+<details>
+<summary><strong>📥 Offline library (app)</strong></summary>
+
+> 🇹🇭 ดาวน์โหลดหนังลงเครื่องไว้ดูตอนไม่มีเน็ต หรือเพิ่มโฟลเดอร์วิดีโอของตัวเองให้แอปจัดหมวดและดึงโปสเตอร์ให้
 
 The app can play things **without the server**, in two clearly separate places (📥 Offline tab):
 
@@ -161,7 +417,12 @@ The player shows where a video comes from: **LOCAL** (green: downloaded / my fol
 
 Notes: the permission controls the app's download feature — anyone who can stream (Direct) technically receives the whole file anyway. `GET /api/download?path=` (Range supported, 3 at a time per user) and `POST /api/meta/lookup` back this.
 
-## Users & admin dashboard
+</details>
+
+<details>
+<summary><strong>🛡️ Users & admin dashboard</strong></summary>
+
+> 🇹🇭 หน้า admin: เพิ่ม user, รีเซ็ตรหัส, ดูว่าใครดูอะไรอยู่, สถิติ library / disk และสถานะอัปเดต
 
 Delos supports several users. Each user has their own watch progress, resume positions and track choices. Admins choose which libraries each user can see.
 
@@ -170,14 +431,24 @@ Delos supports several users. Each user has their own watch progress, resume pos
 - **Storage:** users are kept in `<data>/users.json` with PBKDF2-SHA256 password hashes. When you change a password or sign a user out, every existing session for that user stops working.
 - **First start:** the first admin is created from `-user/-pass`. After that those flags are ignored. When you upgrade from a single-user install, your existing account becomes the admin and keeps its watch progress.
 
-## Versions & updates
+</details>
+
+<details>
+<summary><strong>🔄 Versions & updates</strong></summary>
+
+> 🇹🇭 server อัปเดตตัวเองจาก GitHub ได้ แอปเช็คและเสนอเวอร์ชันใหม่ให้เอง
 
 - The `VERSION` file is the single source for the version. `tools/bump.sh X.Y.Z` updates it together with the app version (and the retired userscript stub). Commit and push, and CI builds the server binaries, `SHA256SUMS` and the APKs. It uploads them to a draft release and publishes the release once everything is there.
 - **Server:** checks GitHub every 6 hours. With auto-update on (the default, which you can toggle in the dashboard), it downloads the new binary, checks it against `SHA256SUMS`, swaps it in and re-execs itself with the same PID. The previous binary is kept as `streammkv.old`. It only installs while nobody is streaming. You can also press **Update now** in the dashboard.
 - **App:** when it starts, it checks the latest release and offers the APK built for your phone's CPU. *Settings → Check for app updates* runs the check by hand. Android does not let sideloaded apps install updates silently, so you still have to tap Install.
 - **Web app:** part of the server — it updates with it.
 
-## Apps: Android, iOS, Windows, Linux, macOS
+</details>
+
+<details>
+<summary><strong>📲 Apps: Android, iOS, Windows, Linux, macOS</strong></summary>
+
+> 🇹🇭 แอป Flutter ตัวเดียวกันทุก platform เล่นได้ทุก codec ผ่าน mpv
 
 The app is written in Flutter with [media_kit](https://github.com/media-kit/media-kit) (libmpv) and is the same on every platform. Download it from [Releases](https://github.com/un4ckn0wl3z/delos/releases/latest).
 
@@ -193,7 +464,7 @@ The app browses libraries the same way the web app does: Home (continue watching
 
 On Windows, Linux and macOS: press **F** or double-click the middle of the video for fullscreen. Other keys: space play/pause, ←/→ ±10s, J/L ±30s, ↑/↓ volume, A cycles audio, C cycles subtitles, Z/X adjust subtitle delay, Esc leaves fullscreen.
 
-### iOS with SideStore / AltStore (free Apple ID)
+#### iOS with SideStore / AltStore (free Apple ID)
 
 1. Set up SideStore or AltStore once, following their guides. The first setup needs a computer.
 2. In SideStore/AltStore open **Sources → +** and add
@@ -203,7 +474,7 @@ On Windows, Linux and macOS: press **F** or double-click the middle of the video
 
 With a paid Apple Developer account, the same CI could upload to TestFlight instead.
 
-### Android details
+#### Android details
 
 The `app/` folder holds a Flutter app that uses [media_kit](https://github.com/media-kit/media-kit) (libmpv). Install the APK from [Releases](https://github.com/un4ckn0wl3z/delos/releases): `streammkv-android-arm64-v8a.apk` works on most phones.
 
@@ -223,7 +494,12 @@ flutter build apk --release --split-per-abi
 
 CI (`.github/workflows/app.yml`) signs the APK with the key from the `ANDROID_DEBUG_KEYSTORE_B64` secret, a base64-encoded keystore with alias `androiddebugkey` and password `android`. If that secret isn't set, every build gets a different key, and you have to uninstall the old version before installing a new one.
 
-## How it works
+</details>
+
+<details>
+<summary><strong>⚙️ How it works</strong></summary>
+
+> 🇹🇭 เว็บเล่นไฟล์ต้นฉบับใน browser เองด้วย WebCodecs + WASM ถ้าเล่นไม่ได้จะให้ server remux / transcode แทนอัตโนมัติ
 
 ### Playing in the browser (default)
 
@@ -236,7 +512,7 @@ The web app plays the **original file** itself, like mpv does in the app:
 - Browsers only offer WebCodecs on a **secure page** (https or localhost) — see [HTTPS](#https-built-in); on plain http the web app offers a one-click switch.
 - It falls back to the server **automatically** when the browser can't do it — e.g. a video codec the device can't decode (old DivX, HEVC 10-bit without hardware support), image subtitles (PGS/VobSub, burned in by the server), or a browser without WebCodecs. The player's badge says which is used: **direct · in browser**, **remux · server** or **transcode**. *Video* lets you pick, and ⚙ Settings → *Playback* can make the server the default.
 
-### Playing through the server
+#### Playing through the server
 
 - **Video**: if the browser can decode the video codec (H.264 8-bit, HEVC/AV1/VP9 when supported), it is passed through unchanged with `-c:v copy`, which uses almost no CPU. Otherwise it is transcoded to H.264 with `libx264 veryfast`, scaled down to the max height you choose.
 - **Audio**: only the selected track is sent (`-map 0:a:N`). It is always converted to stereo AAC, because browsers cannot play AC3/DTS/TrueHD.
@@ -245,7 +521,12 @@ The web app plays the **original file** itself, like mpv does in the app:
 - **Image subtitles** (PGS/VobSub): burned into the video, which forces transcode mode.
 - **The UI is served by the server itself** (same origin as the media), so there are no CORS, mixed-content or CSP problems.
 
-## Run with Docker
+</details>
+
+<details>
+<summary><strong>🐳 Run with Docker</strong></summary>
+
+> 🇹🇭 ติดตั้งด้วย Docker ได้ในไม่กี่คำสั่ง มี ffmpeg และ rtorrent ในตัว
 
 The image has the server, ffmpeg and a built-in rtorrent (for downloads), for `linux/amd64` and `linux/arm64`:
 
@@ -279,7 +560,12 @@ Torrents download to `/media/downloads` by default (or to the library you pick).
 
 **Updating:** `docker compose pull && docker compose up -d` (the dashboard's self-update is turned off inside Docker). Put it behind a reverse proxy with HTTPS for access from the internet.
 
-## Install on the seedbox (no root, no package manager needed)
+</details>
+
+<details>
+<summary><strong>🌱 Install on the seedbox (no root, no package manager needed)</strong></summary>
+
+> 🇹🇭 ติดตั้งบน seedbox โดยไม่ต้องใช้ root ด้วยสคริปต์จาก PC หรือคำสั่งเดียวบน seedbox
 
 **From your PC (easiest):** download and run the deploy script. It asks for the seedbox host, SSH user/port, your movie folder and an optional port, then installs or upgrades over SSH. You only type the SSH password. It remembers your answers for next time.
 
@@ -296,7 +582,7 @@ curl -fsSL https://raw.githubusercontent.com/un4ckn0wl3z/delos/main/deploy/insta
 
 Re-running it upgrades to the latest release and keeps the port/password. Manage with `~/streammkv/run.sh {start|stop|restart|status}`; config lives in `~/streammkv/streammkv.env`.
 
-### Manual install
+#### Manual install
 
 ```bash
 mkdir -p ~/bin ~/streammkv && cd ~/streammkv
@@ -319,7 +605,7 @@ STREAMMKV_PASS='change-me' ./streammkv-linux-amd64 \
 
 To keep it running with no systemd: `nohup ... > streammkv.log 2>&1 &` or `screen -dmS streammkv ...`. Add it to `crontab -e` with `@reboot ...` so it starts again after a reboot.
 
-### Flags / env
+#### Flags / env
 
 | flag | env | default | |
 |---|---|---|---|
@@ -337,7 +623,7 @@ To keep it running with no systemd: `nohup ... > streammkv.log 2>&1 &` or `scree
 | | `STREAMMKV_TLS_HOSTS` | — | extra names/IPs for the built-in certificate, comma-separated |
 | `-max-streams` | `STREAMMKV_MAX_STREAMS` | `3` | starting value for the transcode limit (change it later in /admin) |
 
-### HTTPS (built in)
+#### HTTPS (built in)
 
 The server answers **http and https on the same port** — `http://box:port` and `https://box:port` both work, and the apps don't need any change. Browsers need https for in-browser playback (WebCodecs), so on an http page the web app shows a **Switch to https** button (your login carries over).
 
@@ -345,7 +631,7 @@ The server answers **http and https on the same port** — `http://box:port` and
 - That certificate is **name-constrained** to this server's own names/IPs, so it can't be misused for any other website. The names are learned from the address you open **/admin** with, and can be edited in the dashboard's *HTTPS* section (changing them makes a new certificate that devices must install again).
 - Have a real certificate (Let's Encrypt, Cloudflare origin cert, …)? Set `STREAMMKV_TLS_CERT` / `STREAMMKV_TLS_KEY`.
 
-### Reverse proxy
+#### Reverse proxy
 
 If the seedbox already has nginx with a real certificate, you can also mount Delos under a subpath:
 
@@ -360,7 +646,12 @@ location /streammkv/ {
 
 Then open `https://your.box/streammkv/`.
 
-## Use it in a browser
+</details>
+
+<details>
+<summary><strong>🌐 Use it in a browser</strong></summary>
+
+> 🇹🇭 เปิด URL ของ server ใน browser ได้เลย ติดตั้งเป็นแอป (PWA) ได้
 
 1. Open the server's address, e.g. `http://your-seedbox:8090/`, and sign in. Nothing to install.
 2. To get an app icon: Chrome/Edge → **Install app** (address bar or menu), Android Chrome → **Add to Home screen**, iPhone Safari → Share → **Add to Home Screen**.
@@ -370,22 +661,32 @@ The left sidebar lists your libraries. **Home** shows *Continue watching* and *R
 
 > **Upgrading from the userscript (≤ 1.9):** the web app replaces it — remove *Delos* from Tampermonkey. Until you do, the userscript stays out of the way (and on servers older than 2.0 it keeps working as before).
 
-### Keyboard
+#### Keyboard
 
 `space`/`k` play/pause · `←/→` ±10s · `j/l` ±30s · `a` cycle audio · `c` cycle subs · `z/x` sub delay ±0.1s · `f` fullscreen · `m` mute · `↑/↓` volume
 
-### Remembered per file
+#### Remembered per file
 
 For each file, the server remembers your playback position and the audio/subtitle tracks you picked. The browser and the Android app share this, so you can stop on one and continue on the other.
 
-## Limitations
+</details>
+
+<details>
+<summary><strong>⚠️ Limitations</strong></summary>
+
+> 🇹🇭 ข้อจำกัดที่ควรรู้
 
 - The first time you open a text subtitle track, the server has to read the whole MKV to extract it (a 20 GB file can take tens of seconds). After that it is served from cache.
 - Copy mode seeks to the nearest keyframe before the point you chose (usually no more than 2–10 seconds earlier).
 - Transcoding 4K or burning in subtitles uses a lot of CPU. If the seedbox is weak, set Max height to 720p.
 - In-browser playback needs WebCodecs (Chrome / Edge / Firefox / Safari, recent versions); HEVC needs a hardware decoder on the device. Otherwise the server is used.
 
-## API
+</details>
+
+<details>
+<summary><strong>🔌 API</strong></summary>
+
+> 🇹🇭 รายการ API สำหรับคนที่อยากต่อยอด
 
 All endpoints except the web app's files (`/`, `/app.js`, `/vendor/…`, icons) and `/api/login` need auth: the `streammkv` cookie, an `Authorization: Bearer <token>` header, or `?token=`.
 
@@ -426,3 +727,9 @@ GET    /api/admin/browse ?path=           folder picker
 POST   /api/admin/users/{name}/libraries  {"libraries": [ids] | null (= all)}
 POST   /api/admin/users/{name}/editor     {"editor": bool}
 ```
+
+</details>
+
+---
+
+<p align="center"><sub>Made for a seedbox and a sofa. · ทำไว้ดูหนังจาก seedbox บนโซฟา 🛋️</sub></p>

@@ -1,0 +1,42 @@
+# Fictional demo catalog for README screenshots (titles, people and art are all made up).
+MOVIES = [
+  dict(id=9001, title="The Glass Orchard", year=2023, genres=["Drama"], c=("#f4b860", "#7a2e1d"), sun=(0.5, 0.33), rating=7.8,
+       overview="After her grandmother's death, a glassblower returns to the family orchard and finds the trees full of letters nobody ever sent."),
+  dict(id=9002, title="Neon Tide", year=2024, genres=["Science Fiction", "Thriller"], c=("#ff4fa3", "#1b1446"), sun=(0.3, 0.28), rating=7.4,
+       overview="In a drowned megacity, a salvage diver hears a broadcast from a district that sank forty years ago."),
+  dict(id=9003, title="Paper Lanterns", year=2022, genres=["Romance"], c=("#ff7a59", "#2a0f2f"), sun=(0.7, 0.3), rating=7.1,
+       overview="Two strangers keep missing each other at the same night market, one lantern festival after another."),
+  dict(id=9004, title="Low Orbit", year=2025, genres=["Science Fiction"], c=("#5aa9ff", "#050b1f"), sun=(0.5, 0.62), rating=8.0,
+       overview="The last crew of a decommissioned station has ninety minutes to decide who rides the only capsule home."),
+  dict(id=9005, title="The Last Ferry", year=2021, genres=["Mystery"], c=("#7fd1c7", "#0d2b33"), sun=(0.62, 0.3), rating=7.2,
+       overview="Fog strands nine passengers on an island ferry — and the ferryman insists there were ten."),
+  dict(id=9006, title="Salt and Ember", year=2024, genres=["Adventure"], c=("#ffb347", "#3b1105"), sun=(0.4, 0.4), rating=7.6,
+       overview="A cook and a cartographer cross a salt desert to deliver a recipe worth a kingdom."),
+  dict(id=9007, title="Quiet Hours", year=2023, genres=["Drama"], c=("#b69cff", "#1d1238"), sun=(0.66, 0.26), rating=7.0,
+       overview="A night-shift radio host keeps a stranger talking until morning."),
+  dict(id=9008, title="Monsoon Road", year=2022, genres=["Thriller"], c=("#8be28b", "#0f2a1c"), sun=(0.35, 0.3), rating=7.3,
+       overview="One rainy season, one delivery truck, and a package nobody will sign for."),
+  dict(id=9009, title="Starling", year=2020, genres=["Family", "Animation"], c=("#9ee7ff", "#24476b"), sun=(0.6, 0.35), rating=7.9,
+       overview="A clockwork bird sets out to find the girl who built it."),
+  dict(id=9010, title="Northbound", year=2025, genres=["Adventure", "Drama"], c=("#e7eef7", "#2b3a55"), sun=(0.45, 0.3), rating=7.5,
+       overview="Two estranged brothers drive their father's old bus to the top of the map."),
+]
+SHOWS = [
+  dict(id=9101, title="Harbor Lights", year=2024, genres=["Drama", "Mystery"], c=("#ffd27a", "#0e2236"), sun=(0.7, 0.3), rating=8.2,
+       overview="A lighthouse keeper's daughter runs the harbour's only night café — and hears every secret the town keeps.",
+       seasons={1: ["The Keeper's Daughter", "Low Tide", "Night Café", "Signal Fires", "The Wreck", "Morning Light"],
+                2: ["New Moorings", "Storm Season", "The Inspector"]}),
+  dict(id=9102, title="Kitchen Nightshift", year=2025, genres=["Comedy"], c=("#ff8a65", "#2b1a12"), sun=(0.3, 0.35), rating=7.7,
+       overview="Four cooks, one tiny kitchen, every night from midnight to six.",
+       seasons={1: ["Mise en Place", "Family Meal", "The Critic", "Last Order"]}),
+]
+ALBUMS = [
+  dict(artist="Velvet Static", album="Afterglow", year=2024, genre="Synthpop", c=("#ff6ec7", "#2c0b4a"),
+       tracks=["Neon Hearts", "Afterglow", "Slow Motion City", "Radio Silence", "Midnight Train"]),
+  dict(artist="Moon Ferry", album="Tidal", year=2023, genre="Indie", c=("#6fd3ff", "#0a2540"),
+       tracks=["Undertow", "Lighthouse", "Salt in the Air", "Harbour Song"]),
+  dict(artist="Kaew", album="Night Market", year=2025, genre="Thai Pop", c=("#ffd166", "#3d1a5a"),
+       tracks=["ตลาดกลางคืน", "Rain on Sukhumvit", "Tuk-Tuk Love", "แสงไฟ", "Last Train Home"]),
+  dict(artist="The Quiet Hours", album="Lo-Fi Sundays", year=2022, genre="Lo-fi", c=("#c3f0ca", "#22313a"),
+       tracks=["Coffee Steam", "Window Seat", "Paper Planes", "Sunday Nap"]),
+]
