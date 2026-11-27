@@ -36,6 +36,7 @@
 |---|---|
 | 🎬 | **Plays any MKV in the browser** — the original file, any audio track (DTS / TrueHD / AC-3 decoded in WebAssembly), any subtitle. The server only transcodes when it must. |
 | 🗂️ | **Movies, series, music & videos** with posters and info from TMDB / MusicBrainz, series grouping and *Next up*. |
+| 🎤 | **Synced lyrics** for music, **seek-bar previews** for videos, and **requests**: ask for what isn't here yet, vote, get told when it lands. |
 | ⬇️ | **Downloads** from http, torrents (rtorrent) and YouTube straight into a library, with duplicate checks. |
 | 📲 | **Apps for Android, iOS, Windows, macOS, Linux** (mpv inside), offline downloads and your own folders. |
 | 🎉 | **Watch party, chat & ranking** — watch together in sync, see what friends play, badges. |
@@ -378,6 +379,36 @@ Everyone sees their own roles on the card under *Delos* in the web app, in Chats
 </details>
 
 <details>
+<summary><strong>🙋 Requests</strong></summary>
+
+
+🙋 *Requests* (web sidebar; app: Chat → Requests) is where people ask for films and series that aren't on the server yet.
+
+- **Search** TMDB for a film or a series. Each result shows whether it's **already here** (open it straight away), **already asked for** (add your 👍 instead), or can be requested. A year at the end (`Dune 2021`) narrows the search.
+- **Open requests** are sorted by votes, so the most wanted are on top. The requester can withdraw an open request.
+- **Admins** get a live notice when someone asks, see a count next to *Requests*, and set the status: ⏳ Waiting, 👍 Approved, ✕ Declined (with an optional reason), ✅ Available — or delete it.
+- **It turns ✅ Available by itself** when the title shows up in a movie or TV library after a scan (TMDB id match), and everyone who asked or voted gets a live notice with an *Open* button.
+- Needs a TMDB key. Admins can switch requests off in **/admin → Features**.
+
+</details>
+
+<details>
+<summary><strong>🎤 Lyrics & seek-bar previews</strong></summary>
+
+
+**Lyrics** — the 🎤 button in *Now playing* (web) or in the music player (app) shows the words of the song. Synced lyrics highlight the current line and scroll along; tap or click a line to jump there. Delos looks, in order, for:
+
+1. a `.lrc` (or plain-text) file next to the song with the same name, e.g. `03 - Song.lrc`;
+2. lyrics in the song's tags (`LYRICS`, `UNSYNCEDLYRICS`, …);
+3. [LRCLIB](https://lrclib.net) by artist, title, album and length.
+
+Results are cached; "not found" is tried again after a week, or straight away with *Search again*. In **/admin → Features** you can turn lyrics off, or set *Look up online* to **local files only** or to **another LRCLIB server** — LRCLIB is open source, so if the public site ever goes away you can point Delos at your own copy.
+
+**Seek-bar previews** — hover the seek bar (web, desktop app) or drag it (phone) to see a small frame of that moment. The first time a video is played, the server makes a few sprite sheets from its keyframes only (no full decode: a two-hour film takes about a minute) and keeps them in the cache. Frames are every 2 s for short videos, 5 s up to 30 minutes, 10 s for anything longer. Turn them off in **/admin → Features** to save CPU.
+
+</details>
+
+<details>
 <summary><strong>📣 Announcements</strong></summary>
 
 
@@ -687,7 +718,14 @@ GET  /api/subtitle     ?path=&sub=N      → text/vtt
 GET  /api/raw          ?path=            → original file (HTTP Range)
 GET  /api/progress     [?path=]          → {"items":{path:{pos,duration,audio,sub,updated}}} or a single entry
 POST /api/progress     {"path","pos","duration","audio","sub" (-1 = off),"done"}      (per user)
-GET  /api/me                              → {"user","admin","editor","version"}
+GET  /api/me                              → {"user","admin","editor","version","roles","features":{lyrics,trickplay,requests}}
+GET  /api/lyrics       ?path=[&refresh=1] → {"synced" (LRC),"plain","source":"file|tags|lrclib"}
+GET  /api/trickplay    ?path=            → {ready,interval,w,h,cols,rows,sheets,count} · 202 {pending,progress} while being made
+GET  /api/trickplay/sheet ?path=&n=      → JPEG sprite sheet n (frame i: sheet i/(cols*rows), cell i%(cols*rows))
+GET  /api/requests                        → {requests[],tmdb,manage}
+GET  /api/requests/search ?q=&kind=movie|tv → TMDB results + {have,lib,where,request}
+POST /api/requests     {"kind","tmdbId"}  (asks, or votes when it was already asked for)
+POST /api/requests/{id}/vote {"on"}       DELETE /api/requests/{id}  (requester while open, or admin)
 
 # editors (admins + users with the editor role)
 GET  /api/meta/search  ?lib=&type=movie|tv&q=&year=   → TMDB results
@@ -703,7 +741,8 @@ POST   /api/admin/users/{name}/role       {"admin": bool}
 POST   /api/admin/users/{name}/revoke     DELETE /api/admin/users/{name}
 GET|DELETE /api/admin/users/{name}/progress
 GET    /api/admin/update                  POST /api/admin/update/check | /api/admin/update/install
-GET|POST /api/admin/settings              {"autoUpdate"?, "tmdbKey"?, "tmdbLang"?}
+GET|POST /api/admin/settings              {"autoUpdate"?, "tmdbKey"?, "tmdbLang"?, "lyrics"?, "lyricsSource"? ("" | "off" | URL), "trickplay"?, "requests"?}
+POST   /api/requests/{id}/status          {"status":"pending|approved|declined|available","note"}
 GET|POST /api/admin/libraries             {"name","type":"movies|tv|music|videos","path"}
 PUT|DELETE /api/admin/libraries/{id}      POST /api/admin/libraries/{id}/scan[?refresh=1]
 GET    /api/admin/browse ?path=           folder picker
