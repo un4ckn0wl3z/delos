@@ -1205,10 +1205,13 @@
             <input id="smkv-np-seek" type="range" min="0" max="0" step="0.1" value="0">
             <div class="smkv-np-times"><span id="smkv-np-t">0:00</span><span id="smkv-np-d">0:00</span></div>
             <div class="smkv-np-btns"><button id="smkv-np-shuf" title="Shuffle what's left">🔀</button><button id="smkv-np-prev" title="Previous">⏮</button>
-              <button id="smkv-np-pp" class="big" title="Play/Pause">▶</button><button id="smkv-np-next" title="Next">⏭</button><button id="smkv-np-rep"></button></div>
-          </div></div>
+              <button id="smkv-np-pp" class="big" title="Play/Pause">▶</button><button id="smkv-np-next" title="Next">⏭</button><button id="smkv-np-rep"></button>
+              <button id="smkv-np-lyrb" title="Lyrics">🎤</button></div>
+          </div>
+          <div class="smkv-lyrics" id="smkv-np-lyr" hidden></div></div>
         <h3 class="smkv-h">Up next <button id="smkv-np-clear" title="Remove the songs after this one">Clear upcoming</button> <button id="smkv-np-save" title="Save the whole queue as a playlist">＋ Save as playlist</button></h3><div id="smkv-np-queue"></div>`;
       $('#smkv-np-save').onclick = (e) => addToPlaylist(A.queue, e.currentTarget);
+      $('#smkv-np-lyrb').onclick = () => { lsSet('lyrOn', !lsGet('lyrOn', true)); LY.path = null; drawNow(); };
       $('#smkv-np-pp').onclick = aToggle;
       $('#smkv-np-prev').onclick = aPrev;
       $('#smkv-np-next').onclick = () => aNext(true);
@@ -1250,6 +1253,67 @@
       });
       const on = q.querySelector('tr.on');
       if (on && !drawNow.scrolled) { on.scrollIntoView({ block: 'nearest' }); drawNow.scrolled = true; }
+      drawLyrics();
+    }
+
+    // ------------------------------------------------------------ lyrics (synced when we can get them)
+    const LY = { path: null, data: null, lines: [], idx: -1, cache: new Map(), userScroll: 0 };
+    function parseLrc(text) {
+      let offset = 0; const out = [];
+      for (const raw of String(text || '').replace(/\r/g, '').split('\n')) {
+        const om = raw.match(/^\[offset:\s*([+-]?\d+)\]/i); if (om) { offset = +om[1] / 1000; continue; }
+        const times = []; let rest = raw, m;
+        while ((m = rest.match(/^\[(\d+):(\d+(?:[.:]\d+)?)\]/))) { times.push(+m[1] * 60 + parseFloat(m[2].replace(':', '.'))); rest = rest.slice(m[0].length); }
+        for (const t of times) out.push({ t: Math.max(0, t - offset), text: rest.trim() });
+      }
+      return out.sort((a, b) => a.t - b.t);
+    }
+    async function drawLyrics(refresh) {
+      const box = $('#smkv-np-lyr');
+      if (!box || !A.cur) return;
+      const on = lsGet('lyrOn', true);
+      $('#smkv-np-lyrb') && $('#smkv-np-lyrb').classList.toggle('on', on);
+      box.hidden = !on;
+      if (!on) return;
+      const path = A.cur.path;
+      if (LY.path === path && !refresh) return;
+      LY.path = path; LY.data = null; LY.lines = []; LY.idx = -1;
+      box.innerHTML = '<div class="smkv-dim2 smkv-lyr-msg">Looking for lyrics…</div>';
+      let d = !refresh && LY.cache.get(path);
+      if (!d) {
+        try { d = await api('lyrics', { path, ...(refresh ? { refresh: 1 } : {}) }); } catch { d = {}; }
+        LY.cache.set(path, d);
+      }
+      if (LY.path !== path) return; // the song changed meanwhile
+      LY.data = d; LY.lines = d.synced ? parseLrc(d.synced) : [];
+      const src = d.source ? `<div class="smkv-lyr-src">${d.source === 'lrclib' ? 'Lyrics from LRCLIB' : d.source === 'file' ? 'Lyrics from a .lrc file' : 'Lyrics from the file'}${LY.lines.length ? ' · synced' : ''}</div>` : '';
+      if (LY.lines.length) {
+        box.innerHTML = `<div class="smkv-lyr-lines">${LY.lines.map((l, i) => `<p data-i="${i}" class="${l.text ? '' : 'gap'}">${esc(l.text) || '♪'}</p>`).join('')}</div>${src}`;
+        box.querySelectorAll('p[data-i]').forEach((p) => p.onclick = () => aSeek(LY.lines[+p.dataset.i].t + 0.05));
+        const sc = box.querySelector('.smkv-lyr-lines');
+        sc.addEventListener('wheel', () => { LY.userScroll = Date.now(); }, { passive: true });
+        sc.addEventListener('touchmove', () => { LY.userScroll = Date.now(); }, { passive: true });
+        lyrTick(true);
+      } else if (d.plain) {
+        box.innerHTML = `<div class="smkv-lyr-lines plain">${esc(d.plain)}</div>${src}`;
+      } else {
+        box.innerHTML = '<div class="smkv-dim2 smkv-lyr-msg">No lyrics found for this song.<br><button class="smkv-link" id="smkv-lyr-again">Search again</button></div>';
+        box.querySelector('#smkv-lyr-again').onclick = () => drawLyrics(true);
+      }
+    }
+    function lyrTick(force) {
+      if (!LY.lines.length || !A.cur || LY.path !== A.cur.path) return;
+      const box = $('#smkv-np-lyr'); if (!box || box.hidden) return;
+      const t = aTime() + 0.25;
+      let i = -1; for (let k = 0; k < LY.lines.length && LY.lines[k].t <= t; k++) i = k;
+      if (i === LY.idx && !force) return;
+      LY.idx = i;
+      box.querySelectorAll('p.on').forEach((p) => p.classList.remove('on'));
+      const cur = box.querySelector(`p[data-i="${i}"]`);
+      if (!cur) return;
+      cur.classList.add('on');
+      const sc = box.querySelector('.smkv-lyr-lines');
+      if (Date.now() - LY.userScroll > 4000) sc.scrollTo({ top: cur.offsetTop - sc.clientHeight / 2 + cur.clientHeight / 2, behavior: force ? 'auto' : 'smooth' });
     }
 
     // ------------------------------------------------------------ ranking
@@ -2370,6 +2434,7 @@
       A.restoring = !!s.p;
       loadTrack(Math.max(0, (s.t || 0) - 2), !!s.p);
       renderNav();
+      if (location.hash.startsWith('#/music/now') && !$('#smkv-np-cover')) route(); // it said "nothing is playing" before we restored
     }
     const aTime = () => A.offset + (A.el.currentTime || 0);
     const aDur = () => A.cur?.duration || (isFinite(A.el.duration) ? A.el.duration : 0);
@@ -2397,6 +2462,7 @@
     A.el.addEventListener('pause', () => { if (!A.el.ended) A.want = false; $('#smkv-app-pp').textContent = '▶'; drawMini(); drawNow(); aSave(); });
     window.addEventListener('pagehide', aSave);
     document.addEventListener('visibilitychange', () => { if (document.hidden) aSave(); });
+    A.el.addEventListener('timeupdate', () => lyrTick());
     A.el.addEventListener('timeupdate', () => {
       const t = aTime(), dd = aDur();
       if (Date.now() - (A.savedAt || 0) > 5000) { A.savedAt = Date.now(); aSave(); }
@@ -3698,13 +3764,25 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-npbanner .smkv-poster{width:72px;flex:none}
 .smkv-now{display:flex;gap:28px;align-items:center;margin:22px 0 10px;flex-wrap:wrap}
 .smkv-now .smkv-poster.big{width:min(300px,70vw);flex:none;box-shadow:0 18px 50px rgba(0,0,0,.55)}
-.smkv-now-info{flex:1;min-width:260px;max-width:620px}
+.smkv-now-info{flex:1 1 300px;min-width:300px;max-width:620px}
 .smkv-now-info h2{font-size:28px;margin:4px 0}
 #smkv-np-seek{width:100%;margin-top:18px}
 .smkv-np-times{display:flex;justify-content:space-between;color:#8b95a5;font-size:12px}
-.smkv-np-btns{display:flex;gap:14px;align-items:center;margin-top:10px}
+.smkv-np-btns{display:flex;gap:12px;align-items:center;margin-top:10px;flex-wrap:wrap}
+#smkv-np-lyrb:not(.on){opacity:.4;filter:grayscale(1)}
 .smkv-np-btns button{background:transparent!important;border:none!important;font-size:22px!important;color:#c9cfd8!important}
 .smkv-np-btns button.on{color:#ff7eb6!important}
+.smkv-lyrics{flex:1 1 320px;min-width:260px;max-width:520px;align-self:stretch;display:flex;flex-direction:column;background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.015));border:1px solid #1f242d;border-radius:16px;padding:6px 4px 8px;min-height:300px;max-height:min(62vh,460px)}
+.smkv-lyr-lines{flex:1;overflow-y:auto;padding:28% 18px 40%;scrollbar-width:none;-webkit-mask-image:linear-gradient(180deg,transparent,#000 18%,#000 80%,transparent);mask-image:linear-gradient(180deg,transparent,#000 18%,#000 80%,transparent)}
+.smkv-lyr-lines::-webkit-scrollbar{display:none}
+.smkv-lyr-lines p{margin:0;padding:7px 6px;font-size:21px;font-weight:700;line-height:1.3;color:rgba(255,255,255,.32);cursor:pointer;border-radius:8px;transition:color .25s,transform .25s;transform-origin:left center}
+.smkv-lyr-lines p:hover{color:rgba(255,255,255,.6)}
+.smkv-lyr-lines p.on{color:#fff;transform:scale(1.03)}
+.smkv-lyr-lines p.gap{font-size:16px}
+.smkv-lyr-lines.plain{white-space:pre-wrap;font-size:16px;line-height:1.7;color:#d6dbe3;padding:16px 18px;-webkit-mask-image:none;mask-image:none}
+.smkv-lyrics[hidden]{display:none}
+.smkv-lyr-src{font-size:11px;color:#6f7988;text-align:center;padding-top:4px}
+.smkv-lyr-msg{margin:auto;text-align:center;line-height:1.8}
 .smkv-np-btns button.big{background:#fff!important;color:#000!important;border-radius:50%!important;width:56px;height:56px;font-size:20px!important}
 .smkv-tracks tr.played td{opacity:.55}
 .smkv-pageh{margin:18px 0 12px}
@@ -4165,7 +4243,8 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 .smkv-check{font-size:13px;color:#8b95a5;display:flex;gap:6px;align-items:center}
 #smkv-login .msg{color:#ff8a8a;font-size:13px;min-height:1em}
 @media (max-width:820px){
-  #smkv-app{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  #smkv-app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr}
+  #smkv-app>*{min-width:0}
   #smkv-side{border-right:none;border-bottom:1px solid #1f242d}
   #smkv-nav{flex-direction:row;overflow-x:auto;padding:0 8px 8px}
   #smkv-nav details.smkv-ngrp{display:contents}

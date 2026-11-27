@@ -227,6 +227,7 @@ func main() {
 	mux.HandleFunc("GET /api/stream", s.auth(s.handleStream))
 	mux.HandleFunc("GET /api/stream/check", s.auth(s.handleStreamCheck))
 	mux.HandleFunc("GET /api/subtitle", s.auth(s.handleSubtitle))
+	mux.HandleFunc("GET /api/lyrics", s.auth(s.handleLyrics))
 	mux.HandleFunc("GET /api/raw", s.auth(s.handleRaw))
 	mux.HandleFunc("GET /api/progress", s.auth(s.handleProgressGet))
 	mux.HandleFunc("POST /api/progress", s.auth(s.handleProgressPost))

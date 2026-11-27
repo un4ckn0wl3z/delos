@@ -4,6 +4,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 from catalog import MOVIES, SHOWS
 CAST = [("Mira Solano", "Ana"), ("Theo Hartley", "Jonah"), ("Ploy Chanthara", "Nim"), ("Idris Vale", "The Captain"), ("June Okafor", "Sasha")]
+# original demo lyrics (written for the demo)
+LYR = {
+  'Neon Hearts': ['City lights are humming low', 'Every window keeps a glow', '', 'We were running out of night', 'Chasing signals, holding tight',
+                  'Neon hearts, electric skies', 'Static dancing in your eyes', 'Turn it up and let it play', 'Neon hearts will find a way',
+                  '', 'Midnight trains and empty streets', 'Bassline counting all the beats', 'Neon hearts, electric skies', 'Hold on till the morning light'],
+  'Undertow': ['Salt on the window, grey on the sea', 'The tide keeps calling you back to me', 'Pull of the water, hush of the shore',
+               'Undertow, undertow', 'Carry me home once more'],
+}
 def norm(s): return re.sub(r'[^a-z0-9]+', ' ', s.lower().replace('&', ' and ')).strip()
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -42,6 +50,14 @@ class H(BaseHTTPRequestHandler):
             eps = s['seasons'].get(se, [])
             return self.send({'episodes': [{'episode_number': i, 'name': n, 'overview': f'{n}. ' + s['overview'].split('—')[0].strip() + '.', 'still_path': f"/s{s['id']}_{se}_{i}.jpg",
                                             'air_date': f"{s['year'] + se - 1}-03-{i:02d}", 'runtime': 44} for i, n in enumerate(eps, 1)]})
+        if p in ('/api/get', '/api/search'):
+            t = q.get('track_name', '')
+            if t in LYR:
+                lines = LYR[t]; step = 6.0
+                synced = '\n'.join(f'[{int(i*step+4)//60:02d}:{(i*step+4)%60:05.2f}] {l}' for i, l in enumerate(lines))
+                body = {'syncedLyrics': synced, 'plainLyrics': '\n'.join(lines), 'duration': float(q.get('duration', 0) or 0)}
+                return self.send([body] if p == '/api/search' else body)
+            return self.send([] if p == '/api/search' else {'code': 404}, 200 if p == '/api/search' else 404)
         if p.startswith('/ws/2/'): return self.send({'release-groups': [], 'releases': [], 'recordings': []})
         self.send({'error': 'not found ' + p}, 404)
 ThreadingHTTPServer(('127.0.0.1', int(sys.argv[1])), H).serve_forever()

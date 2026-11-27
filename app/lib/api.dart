@@ -116,6 +116,9 @@ class Api {
       _req('POST', 'parties/ask/answer', body: {'user': user, 'accept': accept, 'pos': pos, 'playing': playing});
 
   /// Who watched / listened the most: period = week | month | year | all.
+  /// Lyrics of a song: {synced, plain, source} (synced is LRC text).
+  Future<Map> lyrics(String path, {bool refresh = false}) async =>
+      await _req('GET', 'lyrics', q: {'path': path, if (refresh) 'refresh': '1'}) as Map;
   Future<Map> ranking(String period) async => await _req('GET', 'ranking', q: {'period': period}) as Map;
 
   Map<String, String> get authHeaders => {if (settings.token != null) 'Authorization': 'Bearer ${settings.token}'};

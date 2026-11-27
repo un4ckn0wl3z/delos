@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 
 import 'api.dart';
 import 'library.dart';
+import 'lyrics.dart';
 import 'offline/save_button.dart';
 import 'offline/store.dart';
 import 'widgets.dart';
@@ -313,6 +314,11 @@ class NowPlaying extends StatelessWidget {
                     audio.stop();
                     Navigator.pop(context);
                   },
+                ),
+                IconButton(
+                  tooltip: 'Lyrics',
+                  icon: const Icon(Icons.lyrics_outlined),
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => LyricsView(audio: audio))),
                 ),
                 if (audio.canSave && !t.path.startsWith('file:'))
                   SaveButton(
