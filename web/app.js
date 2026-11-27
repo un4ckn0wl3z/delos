@@ -1861,6 +1861,13 @@
       return `<span class="smkv-pav" style="width:${size}px;height:${size}px">${inner}${dot === null ? '' : `<i class="smkv-pdot ${dot ? 'on' : ''}"></i>`}</span>`;
     }
     const adminBadge = (name) => (SO.people.find((x) => x.name === name) || {}).admin ? '<span class="smkv-adm" title="Admin">ADMIN</span>' : '';
+    // someone's roles, compact: the first one, +N for the rest (all in the tooltip)
+    const roleBadge = (name) => {
+      const r = (SO.people.find((x) => x.name === name) || {}).roles || [];
+      if (!r.length) return '';
+      const g = r[0] === 'Guest' && r.length === 1;
+      return `<span class="smkv-role sm ${g ? 'guest' : ''}" title="${esc(g ? 'Guest — no role yet' : 'Roles: ' + r.join(', '))}">${g ? '' : '🏷 '}${esc(r[0])}${r.length > 1 ? ` +${r.length - 1}` : ''}</span>`;
+    };
     // my roles (what decides which libraries I see); no role = Guest
     const myRoles = () => (BR.me && BR.me.admin ? '<span class="smkv-role adm" title="Admin: sees everything">Admin</span>' : '')
       + ((BR.me && BR.me.roles) || []).map((r) => `<span class="smkv-role ${r.id === 'guest' ? 'guest' : ''}" title="${r.id === 'guest' ? 'No role yet — ask the admin for one' : 'Your role'}">${r.id === 'guest' ? '' : '🏷 '}${esc(r.name)}</span>`).join('');
@@ -1906,7 +1913,7 @@
       const on = others.filter((p) => p.online);
       el.innerHTML = `<div class="smkv-ph">People <span class="smkv-dim2">${on.length} online</span><button id="smkv-chat-open" title="Chats">💬<i id="smkv-unread" hidden></i></button></div>` +
         others.map((p) => `<div class="smkv-person ${p.online ? 'on' : ''}" data-u="${esc(p.name)}" title="${p.online ? 'Online' : p.lastSeen ? 'Last seen ' + new Date(p.lastSeen * 1000).toLocaleString() : 'Offline'}">
-          ${avatarHtml(p.name, 30, p.online)}<div style="min-width:0;flex:1"><b>${esc(p.name)}</b>${adminBadge(p.name)}${badgeIcons(p.badges, 3)}${p.online && p.activity && p.activity.path ? `<button class="smkv-askj" data-ask="${esc(p.name)}" title="Ask ${esc(p.name)} to ${p.activity.kind === 'music' ? 'listen' : 'watch'} together">🎉</button>` : ''}${p.activity ? `<div class="smkv-act ${p.activity.path ? 'link' : ''}" data-p="${esc(p.activity.path || '')}" data-k="${esc(p.activity.kind)}">${actLine(p.activity)}</div>` : ''}</div></div>`).join('');
+          ${avatarHtml(p.name, 30, p.online)}<div style="min-width:0;flex:1"><b>${esc(p.name)}</b>${adminBadge(p.name)}${roleBadge(p.name)}${badgeIcons(p.badges, 3)}${p.online && p.activity && p.activity.path ? `<button class="smkv-askj" data-ask="${esc(p.name)}" title="Ask ${esc(p.name)} to ${p.activity.kind === 'music' ? 'listen' : 'watch'} together">🎉</button>` : ''}${p.activity ? `<div class="smkv-act ${p.activity.path ? 'link' : ''}" data-p="${esc(p.activity.path || '')}" data-k="${esc(p.activity.kind)}">${actLine(p.activity)}</div>` : ''}</div></div>`).join('');
       el.querySelectorAll('.smkv-person').forEach((r) => r.onclick = (e) => {
         const ask = e.target.closest('[data-ask]');
         if (ask) { e.stopPropagation(); return askToJoin(ask.dataset.ask); }
@@ -2050,7 +2057,7 @@
       if (!t || !SO.open) return;
       const p = SO.people.find((x) => x.name === SO.open.title);
       t.innerHTML = SO.open.kind === 'group' ? `👥 ${esc(SO.open.title)} <span class="smkv-dim2">${SO.open.members.length}</span>`
-        : `${avatarHtml(SO.open.title, 26)} ${esc(SO.open.title)}${adminBadge(SO.open.title)} <span class="smkv-dim2">${p && p.online ? '● online' : ''}</span>`;
+        : `${avatarHtml(SO.open.title, 26)} ${esc(SO.open.title)}${adminBadge(SO.open.title)}${roleBadge(SO.open.title)} <span class="smkv-dim2">${p && p.online ? '● online' : ''}</span>`;
       $('#smkv-chat .smkv-cmore').hidden = SO.open.kind !== 'group';
     }
     function drawMsgs(scroll) {
@@ -3803,6 +3810,7 @@ body.smkv-in-party:not(.smkv-party-min) #smkv-browse{padding-right:350px}
 .smkv-roles{display:inline-flex;flex-wrap:wrap;gap:4px}
 .smkv-role{font-size:10.5px;font-weight:600;padding:1px 7px;border-radius:999px;background:rgba(160,120,255,.18);color:#cdb6ff;white-space:nowrap}
 .smkv-role.guest{background:rgba(255,255,255,.09);color:#aab3c0}
+.smkv-role.sm{font-size:9.5px;padding:0 6px;margin-left:5px;vertical-align:1px;font-weight:600}
 .smkv-role.adm{background:#4a3a1c;color:#ffcf7a}
 #smkv-ver{font-size:11px;color:#6f7988;margin-left:6px;align-self:center;font-weight:500;letter-spacing:.2px}
 .smkv-badges{display:inline-flex;gap:1px;margin-left:5px;font-size:12px;vertical-align:1px}

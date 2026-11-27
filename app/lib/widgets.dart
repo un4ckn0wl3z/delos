@@ -268,9 +268,10 @@ enum RolePillKind { role, guest, admin }
 
 /// "🏷 Family" / "Guest" / "Admin": the user's role (it decides which libraries they see).
 class RolePill extends StatelessWidget {
-  const RolePill(this.name, {super.key, this.kind = RolePillKind.role});
+  const RolePill(this.name, {super.key, this.kind = RolePillKind.role, this.small = false});
   final String name;
   final RolePillKind kind;
+  final bool small;
   @override
   Widget build(BuildContext context) {
     final (bg, fg) = switch (kind) {
@@ -279,9 +280,10 @@ class RolePill extends StatelessWidget {
       RolePillKind.role => (const Color(0x2EA078FF), const Color(0xFFCDB6FF)),
     };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: EdgeInsets.symmetric(horizontal: small ? 6 : 8, vertical: small ? 1 : 2),
       decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(99)),
-      child: Text(kind == RolePillKind.role ? '🏷 $name' : name, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg)),
+      child: Text(kind == RolePillKind.role ? '🏷 $name' : name,
+          style: TextStyle(fontSize: small ? 9.5 : 11, fontWeight: FontWeight.w600, color: fg), maxLines: 1, overflow: TextOverflow.ellipsis),
     );
   }
 }

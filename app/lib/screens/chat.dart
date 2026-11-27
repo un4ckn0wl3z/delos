@@ -163,6 +163,21 @@ class AdminBadge extends StatelessWidget {
 Widget nameWithBadge(Social s, String name, {TextStyle? style}) => Row(mainAxisSize: MainAxisSize.min, children: [
       Flexible(child: Text(name, style: style, overflow: TextOverflow.ellipsis)),
       if (s.isAdmin(name)) const AdminBadge(),
+      ...() {
+        // someone's roles, compact: the first one, +N for the rest
+        final r = List<String>.from((s.person(name)?['roles'] as List?) ?? const []);
+        if (r.isEmpty) return const <Widget>[];
+        final guest = r.length == 1 && r.first == 'Guest';
+        return [
+          Padding(
+            padding: const EdgeInsets.only(left: 6),
+            child: Tooltip(
+              message: guest ? 'Guest — no role yet' : 'Roles: ${r.join(', ')}',
+              child: RolePill(r.length > 1 ? '${r.first} +${r.length - 1}' : r.first, kind: guest ? RolePillKind.guest : RolePillKind.role, small: true),
+            ),
+          ),
+        ];
+      }(),
       BadgeIcons(badgesOf(s, name), max: 3),
     ]);
 

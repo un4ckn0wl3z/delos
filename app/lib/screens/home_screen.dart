@@ -49,6 +49,8 @@ class AppCtx {
   Social? social;
   /// Watch party (live, with [social]).
   PartyController? party;
+  /// Who I am here: my roles ({id, name}; Guest when none) and admin.
+  List<Map> roles = const [];
   /// Remote control (this device as a target + driving your other devices).
   RemoteController? remote;
 }
@@ -154,6 +156,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _load();
     widget.api.me().then((m) {
       app.admin = m['admin'] == true;
+      app.roles = List<Map>.from(m['roles'] as List? ?? const []);
       app.editor = m['editor'] == true || app.admin;
       app.downloader = m['downloader'] == true || app.admin;
       app.offline = m['offline'] == true || app.admin;
@@ -297,6 +300,30 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(width: 10),
             Text('Delos', style: Theme.of(context).textTheme.titleLarge),
           ]),
+        ),
+        // me: name + role badges (Admin / 🏷 role / Guest)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+          child: Material(
+            color: const Color(0x0AFFFFFF),
+            borderRadius: BorderRadius.circular(10),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () async {
+                if (drawer) Navigator.pop(context);
+                final out = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => SettingsScreen(api: widget.api, social: app.social)));
+                if (out == true) _signOut();
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  Text(widget.api.settings.username, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  if (app.admin) const RolePill('Admin', kind: RolePillKind.admin, small: true),
+                  for (final r in app.roles) RolePill('${r['name']}', kind: r['id'] == 'guest' ? RolePillKind.guest : RolePillKind.role, small: true),
+                ]),
+              ),
+            ),
+          ),
         ),
         if (section == 1) ...[
           ListTile(

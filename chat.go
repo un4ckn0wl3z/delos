@@ -50,6 +50,8 @@ type OnlinePerson struct {
 	Admin    bool      `json:"admin,omitempty"`
 	Avatar   int64     `json:"avatar,omitempty"` // picture version; 0 = none (show initials)
 	Badges   []Badge   `json:"badges,omitempty"` // see stats.go
+	// Role names ("Guest" when none; admins have none)
+	Roles []string `json:"roles,omitempty"`
 }
 
 // ---------------------------------------------------------------- chat store
@@ -271,10 +273,24 @@ func (c *Chat) online(user string) bool {
 func (c *Chat) People(viewer string, viewerAdmin bool) []OnlinePerson {
 	users := c.s.users.List()
 	badges := c.s.userBadges()
+	roleName := map[string]string{}
+	for _, r := range c.s.users.Roles() {
+		roleName[r.ID] = r.Name
+	}
 	c.pmu.Lock()
 	out := make([]OnlinePerson, 0, len(users))
 	for _, u := range users {
 		p := OnlinePerson{Name: u.Name, Admin: u.Admin, LastSeen: u.LastSeen, Online: c.online(u.Name), Avatar: c.s.avatars.Version(u.Name), Badges: badges[u.Name]}
+		if !u.Admin {
+			for _, id := range u.Roles {
+				if n := roleName[id]; n != "" {
+					p.Roles = append(p.Roles, n)
+				}
+			}
+			if len(p.Roles) == 0 {
+				p.Roles = []string{"Guest"}
+			}
+		}
 		if pr := c.pres[u.Name]; pr != nil {
 			if pr.seen > p.LastSeen {
 				p.LastSeen = pr.seen
