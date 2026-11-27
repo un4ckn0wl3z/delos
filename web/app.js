@@ -4402,7 +4402,8 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 .smkv-trlhead{display:flex;align-items:center;gap:10px;min-width:0}
 .smkv-trlhead b{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .smkv-trlhead .smkv-dim2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
-.smkv-trlhead .smkv-x{position:static!important;flex:none}
+.smkv-trlhead .smkv-x{position:static!important;flex:none;display:grid;place-items:center;width:36px;height:36px;font:16px/1 system-ui,sans-serif;color:#fff;border:1px solid rgba(255,255,255,.18)!important;background:rgba(255,255,255,.08)!important;cursor:pointer;transition:background .15s}
+.smkv-trlhead .smkv-x:hover{background:rgba(255,255,255,.2)!important}
 .smkv-trlyt{color:#8b95a5;font-size:12px;text-decoration:none;white-space:nowrap}.smkv-trlyt:hover{color:#fff}
 .smkv-trlvid{position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6)}
 .smkv-trlvid iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
