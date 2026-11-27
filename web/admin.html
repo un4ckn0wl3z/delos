@@ -97,6 +97,17 @@
   .err{color:var(--bad);min-height:1em;font-size:13px}
   pre.pw{background:#0b0d11;border:1px solid #2c3440;border-radius:8px;padding:12px;font-size:18px;text-align:center;user-select:all;margin:0;color:#fff}
   pre.notes{white-space:pre-wrap;background:#0b0d11;border-radius:8px;padding:12px;margin:0;font:13px/1.5 ui-monospace,monospace;color:var(--dim)}
+  .tabs{display:flex;gap:4px;margin:0 0 18px;border-bottom:1px solid var(--line);overflow-x:auto;position:sticky;top:53px;z-index:4;background:var(--bg);padding-top:4px}
+  .tabs button{background:transparent;border:none;border-bottom:2px solid transparent;border-radius:0;padding:10px 14px;color:var(--dim);font-size:13.5px}
+  .tabs button:hover{background:transparent;color:#fff}
+  .tabs button.on{color:#fff;border-bottom-color:var(--accent)}
+  .tabs .count{margin-left:4px;background:#3b2a12;color:#ffc163}
+  .tab-off{display:none!important}
+  .rq-t{display:flex;gap:10px;align-items:center;min-width:220px}
+  .rq-t img{width:34px;height:51px;object-fit:cover;border-radius:4px;background:#0b0d11;flex:none}
+  .rq-t .o{color:var(--dim);font-size:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:420px}
+  .badge.rq-pending{background:#4a3a1c;color:#ffcf7a}.badge.rq-approved{background:#1e3352;color:#9cc8ff}
+  .badge.rq-available{background:#23402a;color:#8fe0a0}.badge.rq-declined{background:#4a1f22;color:#ff9a9a}
   #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1d232d;border:1px solid #2c3440;padding:9px 16px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:30}
   #toast.show{opacity:1}
   @media (max-width:760px){th.h-m,td.h-m{display:none} main{padding:12px} td,th{padding:8px 10px}}
@@ -115,19 +126,35 @@
 <main id="app" hidden>
   <section id="update-sec"><div class="update" id="update"></div></section>
 
-  <div class="cards" id="cards"></div>
+  <nav class="tabs" id="tabs">
+    <button data-t="overview">📊 Overview</button>
+    <button data-t="libraries">📚 Libraries</button>
+    <button data-t="requests">🙋 Requests <span class="count" id="t-req" hidden></span></button>
+    <button data-t="downloads">⬇ Downloads</button>
+    <button data-t="users">👥 Users &amp; roles</button>
+    <button data-t="settings">⚙ Settings</button>
+  </nav>
 
-  <section id="ann-sec">
+  <section data-tab="requests" id="req-sec">
+    <h2>🙋 Requests <span class="count" id="n-req">0</span><span class="sp"></span>
+      <span class="chips" id="req-filter" style="margin:0"><button data-f="open" class="on">Open</button><button data-f="available">Available</button><button data-f="declined">Declined</button><button data-f="all">All</button></span>
+      <a class="btn" href="./#/requests" target="_blank" rel="noopener" style="font-size:12px;text-decoration:none">Open in Delos ↗</a></h2>
+    <div id="requests"><div class="empty">Loading…</div></div>
+  </section>
+
+  <div class="cards" id="cards" data-tab="overview"></div>
+
+  <section id="ann-sec" data-tab="overview">
     <h2>📣 Announcements <span class="count" id="n-ann">0</span><span class="sp"></span><button id="ann-new" class="primary" style="font-size:12px">+ New announcement</button></h2>
     <div id="ann-list"></div>
   </section>
 
-  <section>
+  <section data-tab="overview">
     <h2>Watching now <span class="count" id="n-watch">0</span></h2>
     <div id="watching"></div>
   </section>
 
-  <section>
+  <section data-tab="overview">
     <h2>Connections <span class="count" id="n-conn">0</span><span class="sp"></span><span class="dim" style="font-weight:normal;font-size:12px" id="tx"></span></h2>
     <div id="conns"></div>
     <form class="add" id="lim-form" style="font-size:13px;flex-wrap:wrap">
@@ -139,7 +166,7 @@
     </form>
   </section>
 
-  <section>
+  <section data-tab="libraries">
     <h2>Libraries <span class="count" id="n-libs">0</span><span class="sp"></span><span class="dim" style="font-weight:normal;font-size:12px" id="scan-status"></span></h2>
     <div id="libs"></div>
     <form class="add" id="lib-form">
@@ -154,7 +181,7 @@
     </form>
   </section>
 
-  <section>
+  <section data-tab="downloads">
     <h2>Downloads <span class="count" id="n-dl">0</span><span class="sp"></span><span class="dim" style="font-weight:normal;font-size:12px" id="rt-status"></span></h2>
     <form class="add" id="dl-form" style="border-top:none;flex-wrap:wrap">
       <input type="text" name="source" placeholder="https://… link or magnet:?xt=… (or pick a .torrent file →)" autocomplete="off" style="flex:1;min-width:260px">
@@ -178,7 +205,7 @@
     </form>
   </section>
 
-  <section id="tor-sec">
+  <section id="tor-sec" data-tab="downloads">
     <h2>Torrents <span class="count" id="n-tor">0</span><span class="dim" style="font-weight:normal;font-size:12px;margin-left:8px">everything in rtorrent</span><span class="sp"></span><span class="dim" style="font-weight:normal;font-size:12px" id="tor-rates"></span><button id="orph-btn" style="margin-left:10px;font-size:12px" title="Files in rtorrent's download folder that no torrent uses any more">🧹 Find unused files</button></h2>
     <div style="padding:0 18px">
       <div class="chips" id="tor-chips"></div>
@@ -200,7 +227,7 @@
     </form>
   </section>
 
-  <section>
+  <section data-tab="libraries">
     <h2>Metadata</h2>
     <form class="add" id="meta-form" style="border-top:none">
       <span class="dim">TMDB API key</span>
@@ -217,7 +244,7 @@
     <div id="meta-test" style="padding:0 16px 12px;font-size:13px;line-height:1.7"></div>
   </section>
 
-  <section>
+  <section data-tab="settings">
     <h2>Features</h2>
     <form class="add" id="feat-form" style="border-top:none;font-size:13px;flex-wrap:wrap;gap:10px 18px">
       <label title="Synced lyrics in the music player"><input type="checkbox" name="lyrics"> Lyrics</label>
@@ -232,7 +259,7 @@
     </form>
   </section>
 
-  <section>
+  <section data-tab="settings">
     <h2>Chat files</h2>
     <form class="add" id="chatf-form" style="border-top:none;font-size:13px;flex-wrap:wrap">
       <label class="dim" title="0 turns attachments off">Largest file <input type="number" name="mb" min="0" max="4096" style="width:76px"> MB</label>
@@ -242,17 +269,17 @@
     </form>
   </section>
 
-  <section id="tls-sec">
+  <section id="tls-sec" data-tab="settings">
     <h2>HTTPS</h2>
     <div id="tls-info" style="padding:4px 18px 14px;font-size:13.5px;line-height:1.7"></div>
   </section>
 
-  <section>
+  <section data-tab="users">
     <h2>Roles <span class="count" id="n-roles">0</span><span class="dim" style="font-weight:normal;font-size:12px;margin-left:8px">which libraries a group of users sees</span><span class="sp"></span><button id="role-new" class="primary" style="font-size:12px">+ New role</button></h2>
     <div id="roles"></div>
   </section>
 
-  <section>
+  <section data-tab="users">
     <h2>Users <span class="count" id="n-users">0</span></h2>
     <div id="users"></div>
     <form class="add" id="add-form">
@@ -263,7 +290,7 @@
     </form>
   </section>
 
-  <section>
+  <section data-tab="overview">
     <h2>Recently watched <span class="count" id="n-recent">0</span> <span class="dim" style="font-weight:normal;font-size:12px">· last 7 days</span></h2>
     <div id="recent"></div>
   </section>
@@ -1414,16 +1441,89 @@
   }
   const loadUpdate = () => api('admin/update').then(renderUpdate).catch(() => {});
 
+  // ---------------------------------------------------------- tabs
+  const TABS = ['overview', 'libraries', 'requests', 'downloads', 'users', 'settings'];
+  function showTab(t) {
+    if (!TABS.includes(t)) t = 'overview';
+    document.querySelectorAll('#app [data-tab]').forEach((el) => el.classList.toggle('tab-off', el.dataset.tab !== t));
+    document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.t === t));
+    if (location.hash !== '#' + t) history.replaceState(null, '', '#' + t);
+    try { localStorage.setItem('admTab', t); } catch {}
+    if (t === 'requests') loadRequests();
+  }
+  document.querySelectorAll('#tabs button').forEach((b) => b.onclick = () => showTab(b.dataset.t));
+  window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
+
+  // ---------------------------------------------------------- requests
+  let reqFilter = 'open';
+  const REQ = { pending: '⏳ Waiting', approved: '👍 Approved', available: '✅ Available', declined: '✕ Declined' };
+  async function reqCount() {
+    try {
+      const c = await api('requests/counts');
+      const b = $('#t-req'); b.textContent = c.pending; b.hidden = !c.pending;
+    } catch {}
+  }
+  async function loadRequests() {
+    let d;
+    try { d = await api('requests'); } catch (x) { $('#requests').innerHTML = `<div class="empty">${esc(x.message)}</div>`; return; }
+    const list = d.requests.filter((x) => reqFilter === 'all' || (reqFilter === 'open' ? x.status === 'pending' || x.status === 'approved' : x.status === reqFilter));
+    $('#n-req').textContent = d.requests.filter((x) => x.status === 'pending').length;
+    const ago = (ts) => { const s = Date.now() / 1000 - ts; return s < 3600 ? Math.max(1, Math.round(s / 60)) + ' min' : s < 86400 ? Math.round(s / 3600) + ' h' : Math.round(s / 86400) + ' d'; };
+    $('#requests').innerHTML = !d.tmdb ? '<div class="empty">Requests need a TMDB API key (Libraries → Metadata).</div>' : !list.length ? `<div class="empty">${reqFilter === 'open' ? 'Nothing waiting.' : 'None.'}</div>` : `<table>
+      <tr><th>Title</th><th class="h-m">Asked by</th><th>Votes</th><th>Status</th><th class="h-m">Note</th><th class="h-m">When</th><th></th></tr>
+      ${list.map((x) => `<tr data-id="${esc(x.id)}">
+        <td><div class="rq-t">${x.poster ? `<img src="${esc(x.poster)}" alt="">` : ''}<div><b>${esc(x.title)}</b>${x.year ? ` <span class="dim">${x.year}</span>` : ''}
+          <span class="badge t-${x.kind === 'tv' ? 'tv' : 'movies'}">${x.kind === 'tv' ? 'Series' : 'Film'}</span>
+          ${x.tmdbId ? ` <a class="dim" style="font-size:12px" href="https://www.themoviedb.org/${x.kind === 'tv' ? 'tv' : 'movie'}/${x.tmdbId}" target="_blank" rel="noopener">TMDB ↗</a>` : ''}
+          ${x.status === 'available' && x.lib ? `<div class="dim" style="font-size:12px">in ${esc(x.lib)}</div>` : ''}
+          <div class="o">${esc(x.overview || '')}</div></div></div></td>
+        <td class="h-m">${esc(x.by)}</td>
+        <td title="${esc((x.votes || []).join(', '))}">👍 ${x.voteCount}</td>
+        <td><select data-a="st">${Object.entries(REQ).map(([k, v]) => `<option value="${k}"${k === x.status ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td class="h-m dim" style="max-width:220px">${esc(x.note || '')}</td>
+        <td class="h-m dim">${ago(x.created)}</td>
+        <td><div class="actions"><button data-a="note" title="Write a note for the people who asked">💬</button><button class="danger" data-a="del" title="Delete">🗑</button></div></td></tr>`).join('')}</table>`;
+    $('#requests').querySelectorAll('tr[data-id]').forEach((tr) => {
+      const x = d.requests.find((r) => r.id === tr.dataset.id);
+      const set = async (status, note) => {
+        try { await api(`requests/${x.id}/status`, { method: 'POST', body: { status, note } }); toast(`${x.title}: ${REQ[status]}`); } catch (e) { toast(e.message); }
+        loadRequests(); reqCount();
+      };
+      tr.querySelector('[data-a=st]').onchange = (e) => {
+        const st = e.target.value;
+        if (st === 'declined') {
+          const n = prompt(`Why is “${x.title}” declined? (shown to the people who asked — optional)`, x.note || '');
+          if (n === null) { e.target.value = x.status; return; }
+          return set(st, n);
+        }
+        set(st, x.note || '');
+      };
+      tr.querySelector('[data-a=note]').onclick = () => { const n = prompt(`Note for “${x.title}” (shown to the people who asked)`, x.note || ''); if (n !== null) set(x.status, n); };
+      tr.querySelector('[data-a=del]').onclick = () => confirmBox(`Delete the request for “${x.title}”?`, 'Delete', async () => { await api(`requests/${x.id}`, { method: 'DELETE' }); loadRequests(); reqCount(); }, true);
+    });
+  }
+  document.querySelectorAll('#req-filter button').forEach((b) => b.onclick = () => {
+    reqFilter = b.dataset.f;
+    document.querySelectorAll('#req-filter button').forEach((y) => y.classList.toggle('on', y === b));
+    loadRequests();
+  });
+
   async function boot() {
     try { me = await api('me', { noLogin: true }); } catch (e) { return showLogin(); }
     $('#who').textContent = me.user;
     $('#ver').textContent = 'v' + me.version;
     if (!me.admin) { $('#self').hidden = false; $('#self-name').textContent = me.user; return; }
     $('#app').hidden = false;
+    let t0 = location.hash.slice(1);
+    if (!TABS.includes(t0)) { try { t0 = localStorage.getItem('admTab') || ''; } catch {} }
+    showTab(t0);
+    const stick = () => { $('#tabs').style.top = document.querySelector('body>header').offsetHeight + 'px'; };
+    stick(); window.addEventListener('resize', stick);
+    reqCount();
     await Promise.all([loadOverview(), loadUsers(), loadUpdate(), loadLibs(), loadDownloads(), loadTorrents(), loadAnn(), loadTLS(), api('admin/settings').then(renderMeta).catch(() => {})]);
     clearInterval(timer);
     let n = 0;
-    timer = setInterval(() => { loadOverview(); loadLibs(); loadTorrents(); if (++n % 3 === 0) loadUsers(); if (n % 12 === 0) loadUpdate(); }, 5000);
+    timer = setInterval(() => { loadOverview(); loadLibs(); loadTorrents(); if (++n % 3 === 0) { loadUsers(); reqCount(); } if (n % 12 === 0) loadUpdate(); }, 5000);
   }
   boot();
 })();

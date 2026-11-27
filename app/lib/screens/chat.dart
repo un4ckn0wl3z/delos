@@ -234,7 +234,13 @@ class ChatView extends StatelessWidget {
               leading: const Text('🙋', style: TextStyle(fontSize: 20)),
               title: const Text('Requests'),
               subtitle: const Text('Ask for films and series that aren\'t here yet'),
-              trailing: const Icon(Icons.chevron_right),
+              trailing: ValueListenableBuilder<int>(
+                valueListenable: app.requestBadge,
+                builder: (_, n, __) => Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (n > 0) Badge(label: Text('$n')),
+                  const Icon(Icons.chevron_right),
+                ]),
+              ),
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RequestsScreen(app: app))),
             ),
           SectionTitle('Online · ${online.length}'),

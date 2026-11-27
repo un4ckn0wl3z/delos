@@ -386,7 +386,8 @@ Everyone sees their own roles on the card under *Delos* in the web app, in Chats
 
 - **Search** TMDB for a film or a series. Each result shows whether it's **already here** (open it straight away), **already asked for** (add your 👍 instead), or can be requested. A year at the end (`Dune 2021`) narrows the search.
 - **Open requests** are sorted by votes, so the most wanted are on top. The requester can withdraw an open request.
-- **Admins** get a live notice when someone asks, see a count next to *Requests*, and set the status: ⏳ Waiting, 👍 Approved, ✕ Declined (with an optional reason), ✅ Available — or delete it.
+- **Admins** get a live notice when someone asks, see a count next to *Requests*, and set the status: ⏳ Waiting, 👍 Approved, ✕ Declined (with an optional reason), ✅ Available — or delete it — on the Requests page or in the **Requests** tab of /admin (with notes, votes and filters).
+- **The people who asked** get a live notice when the status changes; if they weren't online, a count waits next to *Requests* (in the app: a dot on the Chat tab) and the changed requests are marked **NEW** until they've looked.
 - **It turns ✅ Available by itself** when the title shows up in a movie or TV library after a scan (TMDB id match), and everyone who asked or voted gets a live notice with an *Open* button.
 - Needs a TMDB key. Admins can switch requests off in **/admin → Features**.
 
@@ -448,7 +449,7 @@ Notes: the permission controls the app's download feature — anyone who can str
 
 Delos supports several users. Each user has their own watch progress, resume positions and track choices. Admins choose which libraries each user can see.
 
-- **Dashboard:** `http://<server>/admin`. Admins can add users, reset passwords, promote users to admin, sign a user out on every device, and view or clear a user's history. The dashboard also shows who is watching now, the open streams and whether each one is direct or transcode, library and disk stats, and update status. A user who is not an admin only gets a "change password" page there.
+- **Dashboard:** `http://<server>/admin`. Admins can add users, reset passwords, promote users to admin, sign a user out on every device, and view or clear a user's history. The dashboard also shows who is watching now, the open streams and whether each one is direct or transcode, library and disk stats, and update status. A user who is not an admin only gets a "change password" page there. It's split into tabs — 📊 Overview, 📚 Libraries, 🙋 Requests, ⬇ Downloads, 👥 Users & roles, ⚙ Settings — and remembers the last one (`/admin#users` opens a tab directly).
 - **CLI on the seedbox:** `~/streammkv/run.sh user list | add NAME [--admin] [--password P] | passwd NAME | admin NAME on|off | revoke NAME | del NAME`. If you leave out the password, a random one is generated. The running server picks up changes within 2 seconds.
 - **Storage:** users are kept in `<data>/users.json` with PBKDF2-SHA256 password hashes. When you change a password or sign a user out, every existing session for that user stops working.
 - **First start:** the first admin is created from `-user/-pass`. After that those flags are ignored. When you upgrade from a single-user install, your existing account becomes the admin and keeps its watch progress.

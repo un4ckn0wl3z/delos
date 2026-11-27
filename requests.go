@@ -42,8 +42,9 @@ type MediaRequest struct {
 	Note     string   `json:"note,omitempty"` // from the admin, e.g. why it was declined
 	Created  int64    `json:"created"`
 	Updated  int64    `json:"updated"`
-	Lib      string   `json:"lib,omitempty"`   // where it landed
-	Where    string   `json:"where,omitempty"` // movie: item path · tv: show key
+	StatusAt int64    `json:"statusAt,omitempty"` // when the status last changed (for "new" marks)
+	Lib      string   `json:"lib,omitempty"`      // where it landed
+	Where    string   `json:"where,omitempty"`    // movie: item path · tv: show key
 }
 
 type Requests struct {
@@ -51,14 +52,51 @@ type Requests struct {
 	path string
 	mu   sync.Mutex
 	list []*MediaRequest
+	seen map[string]int64 // user → when they last looked at the Requests page
 }
 
 func NewRequests(s *Server) *Requests {
-	q := &Requests{s: s, path: filepath.Join(s.cfg.DataDir, "requests.json")}
+	q := &Requests{s: s, path: filepath.Join(s.cfg.DataDir, "requests.json"), seen: map[string]int64{}}
 	if b, err := os.ReadFile(q.path); err == nil {
 		json.Unmarshal(b, &q.list)
 	}
+	if b, err := os.ReadFile(q.seenPath()); err == nil {
+		json.Unmarshal(b, &q.seen)
+	}
 	return q
+}
+
+func (q *Requests) seenPath() string { return strings.TrimSuffix(q.path, ".json") + "-seen.json" }
+
+// isNew: something happened to a request u asked or voted for since u last looked.
+func (q *Requests) isNewLocked(x *MediaRequest, u string) bool {
+	return x.StatusAt > q.seen[u] && slices.Contains(x.Votes, u)
+}
+
+// Counts for the menu badge: changes the user hasn't seen, and (admins) requests waiting.
+func (q *Requests) Counts(u string, admin bool) (unread, pending int) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	for _, x := range q.list {
+		if q.isNewLocked(x, u) {
+			unread++
+		}
+		if admin && x.Status == ReqPending {
+			pending++
+		}
+	}
+	return
+}
+
+func (q *Requests) markSeen(u string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.seen[u] = time.Now().Unix()
+	b, _ := json.Marshal(q.seen)
+	tmp := q.seenPath() + ".tmp"
+	if os.WriteFile(tmp, b, 0o600) == nil {
+		os.Rename(tmp, q.seenPath())
+	}
 }
 
 func (q *Requests) saveLocked() {
@@ -142,6 +180,9 @@ func (q *Requests) CheckAvailable() {
 		}
 		was := x.Status
 		x.Status, x.Lib, x.Where, x.Updated = ReqAvailable, at.Lib, at.Where, time.Now().Unix()
+		if was != ReqAvailable {
+			x.StatusAt = x.Updated
+		}
 		if was != ReqAvailable { // marked by hand: they were told then
 			done = append(done, x)
 		} else {
@@ -163,6 +204,7 @@ type requestView struct {
 	Voted     bool `json:"voted"`
 	Mine      bool `json:"mine"`
 	CanOpen   bool `json:"canOpen"` // available in a library this user can see
+	New       bool `json:"new"`     // changed since this user last looked
 }
 
 func (s *Server) requestRoutes(mux *http.ServeMux) {
@@ -185,8 +227,23 @@ func (s *Server) requestRoutes(mux *http.ServeMux) {
 			c.Votes = nil // who voted is the admin's business
 		}
 		return requestView{MediaRequest: &c, VoteCount: len(x.Votes), Voted: slices.Contains(x.Votes, u), Mine: x.By == u,
-			CanOpen: x.Status == ReqAvailable && x.Lib != "" && s.canAccess(r, x.Lib)}
+			CanOpen: x.Status == ReqAvailable && x.Lib != "" && s.canAccess(r, x.Lib), New: q.isNewLocked(x, u)}
 	}
+
+	// menu badge: {unread, pending}
+	mux.HandleFunc("GET /api/requests/counts", s.auth(func(w http.ResponseWriter, r *http.Request) {
+		if s.settings.Get().RequestsOff {
+			writeJSON(w, 200, map[string]int{"unread": 0, "pending": 0})
+			return
+		}
+		u, p := q.Counts(userOf(r), isAdmin(r))
+		writeJSON(w, 200, map[string]int{"unread": u, "pending": p})
+	}))
+	// the user has looked at the Requests page: their "new" marks are read
+	mux.HandleFunc("POST /api/requests/seen", s.auth(func(w http.ResponseWriter, r *http.Request) {
+		q.markSeen(userOf(r))
+		writeJSON(w, 200, map[string]any{"ok": true})
+	}))
 
 	mux.HandleFunc("GET /api/requests", s.auth(on(func(w http.ResponseWriter, r *http.Request) {
 		q.mu.Lock()
@@ -419,6 +476,9 @@ func (s *Server) requestRoutes(mux *http.ServeMux) {
 			q.mu.Unlock()
 			httpErr(w, 404, "no such request")
 			return
+		}
+		if x.Status != b.Status || x.Note != strings.TrimSpace(b.Note) {
+			x.StatusAt = time.Now().Unix()
 		}
 		x.Status, x.Note, x.Updated = b.Status, strings.TrimSpace(b.Note), time.Now().Unix()
 		if len(x.Note) > 500 {

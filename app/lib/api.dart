@@ -127,6 +127,9 @@ class Api {
   Future<Map> requestCreate(String kind, int tmdbId) async => await _req('POST', 'requests', body: {'kind': kind, 'tmdbId': tmdbId}) as Map;
   Future<Map> requestVote(String id, bool on) async => await _req('POST', 'requests/${Uri.encodeComponent(id)}/vote', body: {'on': on}) as Map;
   Future<void> requestDelete(String id) => _req('DELETE', 'requests/${Uri.encodeComponent(id)}');
+  /// {unread: changes to my requests I haven't seen, pending: (admins) requests waiting}
+  Future<Map> requestCounts() async => await _req('GET', 'requests/counts') as Map;
+  Future<void> requestsSeen() => _req('POST', 'requests/seen', body: const {});
   Future<Map> requestStatus(String id, String status, String note) async =>
       await _req('POST', 'requests/${Uri.encodeComponent(id)}/status', body: {'status': status, 'note': note}) as Map;
 

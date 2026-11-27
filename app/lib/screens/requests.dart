@@ -83,6 +83,9 @@ class _RequestsScreenState extends State<RequestsScreen> {
     try {
       final d = await api.requests();
       if (mounted) setState(() => data = d);
+      // looked at it: the "new" marks are read (they stay on screen until next time)
+      if ((d['requests'] as List? ?? const []).any((x) => x['new'] == true)) await api.requestsSeen();
+      widget.app.refreshRequestBadge();
     } on ApiException catch (e) {
       if (mounted) setState(() => error = e.message);
     }
@@ -192,6 +195,9 @@ class _RequestsScreenState extends State<RequestsScreen> {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       color: const Color(0xFF12161D),
+      shape: x['new'] == true
+          ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFF3B6FD6), width: 1.5))
+          : null,
       child: Padding(
         padding: const EdgeInsets.all(10),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -202,6 +208,12 @@ class _RequestsScreenState extends State<RequestsScreen> {
               Text('${x['title']}${x['year'] != null ? ' (${x['year']})' : ''}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
               const SizedBox(height: 4),
               Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                if (x['new'] == true)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(color: const Color(0xFF3B6FD6), borderRadius: BorderRadius.circular(6)),
+                    child: const Text('NEW', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+                  ),
                 statusPill(st),
                 Text('${x['kind'] == 'tv' ? 'Series' : 'Film'} · ${x['mine'] == true ? 'you asked' : '${x['by']} asked'}',
                     style: const TextStyle(fontSize: 12, color: Color(0xFF8B95A5))),

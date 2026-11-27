@@ -1423,21 +1423,25 @@
       else movieDetail(x.lib, String(x.tmdbId));
     }
     // admins see how many requests wait for them (in the menu)
-    function rqCount(d) {
-      if (!BR.me || !BR.me.admin || !feat('requests')) return;
-      const set = (d) => { const n = d.requests.filter((x) => x.status === 'pending').length; if (n !== BR.rqOpen) { BR.rqOpen = n; renderNav(); } };
-      if (d) set(d); else api('requests').then(set).catch(() => {});
+    // menu badge: news about requests you asked / voted for, plus (admins) requests waiting
+    function rqCount() {
+      if (!BR.me || !feat('requests')) return;
+      api('requests/counts').then((c) => {
+        const n = (c.unread || 0) + (c.pending || 0);
+        if (n !== BR.rqOpen) { BR.rqOpen = n; renderNav(); }
+      }).catch(() => {});
     }
     async function requestsView() {
       setToolbar('', null);
       toolbar.querySelector('#smkv-q').style.display = 'none'; $('#smkv-rawbtn').hidden = true;
       const d = await api('requests');
-      rqCount(d);
+      if (d.requests.some((x) => x.new)) apiPost('requests/seen', {}).then(rqCount).catch(() => {}); else rqCount();
       const open = d.requests.filter((x) => x.status === 'pending' || x.status === 'approved');
       const done = d.requests.filter((x) => x.status === 'available');
       const no = d.requests.filter((x) => x.status === 'declined');
-      const row = (x) => `<div class="smkv-rq" data-id="${esc(x.id)}">
+      const row = (x) => `<div class="smkv-rq${x.new ? ' new' : ''}" data-id="${esc(x.id)}">
           <div class="smkv-rqp">${x.poster ? `<img src="${esc(x.poster)}" loading="lazy" alt="">` : '<span>🎬</span>'}</div>
+          ${x.new ? '<span class="smkv-rqnew" title="Changed since you last looked">NEW</span>' : ''}
           <div class="smkv-rqb">
             <div class="smkv-rqt"><b>${esc(x.title)}</b>${x.year ? ` <span class="smkv-dim2">${x.year}</span>` : ''} <span class="smkv-dim2">· ${x.kind === 'tv' ? 'Series' : 'Film'}</span></div>
             <div class="smkv-rqm">${rqPill(x.status)}<span class="smkv-dim2">${x.mine ? 'You asked' : `${avatarHtml(x.by, 16)} ${esc(x.by)} asked`} · ${ago(x.created)}</span></div>
@@ -2173,7 +2177,7 @@
         const x = JSON.parse(e.data);
         const msg = { available: `✅ “${x.title}” is here now`, approved: `👍 Your request for “${x.title}” was approved`, declined: `✕ Your request for “${x.title}” was declined${x.note ? ' — ' + x.note : ''}`, pending: `⏳ “${x.title}” is waiting again` }[x.status];
         if (msg) toast(msg, 9000, x.status === 'available' && x.lib ? { label: 'Open', fn: () => rqOpen(x) } : null);
-        if (location.hash.startsWith('#/requests')) requestsView();
+        if (location.hash.startsWith('#/requests')) requestsView(); else rqCount();
       });
       es.addEventListener('request-new', (e) => {
         const x = JSON.parse(e.data);
@@ -4032,7 +4036,9 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-rqct{font-size:13px;margin:7px 0 6px;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .smkv-rqcb{font-size:12px}.smkv-rqcb button{width:100%;font-size:12.5px;padding:6px 8px}
 .smkv-rqs{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
-.smkv-rq{display:flex;gap:14px;align-items:flex-start;background:#12161d;border:1px solid #1f242d;border-radius:12px;padding:10px}
+.smkv-rq{display:flex;gap:14px;align-items:flex-start;background:#12161d;border:1px solid #1f242d;border-radius:12px;padding:10px;position:relative}
+.smkv-rq.new{border-color:#3b6fd6;box-shadow:0 0 0 1px #3b6fd6 inset}
+.smkv-rqnew{position:absolute;top:6px;left:6px;background:#3b6fd6;color:#fff;font-size:10px;font-weight:700;letter-spacing:.06em;padding:2px 6px;border-radius:6px}
 .smkv-rqp{width:64px;flex:none;aspect-ratio:2/3;border-radius:7px;overflow:hidden;background:#1a2029;display:flex;align-items:center;justify-content:center}
 .smkv-rqp img{width:100%;height:100%;object-fit:cover}
 .smkv-rqb{flex:1;min-width:0}

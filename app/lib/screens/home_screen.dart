@@ -37,6 +37,15 @@ class AppCtx {
   final Api api;
   final LibraryRepo repo;
   final AudioController audio;
+  /// Requests menu badge: news on my requests + (admins) requests waiting.
+  final requestBadge = ValueNotifier<int>(0);
+  Future<void> refreshRequestBadge() async {
+    if (features['requests'] == false) return;
+    try {
+      final c = await api.requestCounts();
+      requestBadge.value = ((c['unread'] as num?) ?? 0).toInt() + ((c['pending'] as num?) ?? 0).toInt();
+    } catch (_) {}
+  }
   /// May fix metadata matches (admin or editor role).
   bool editor = false;
   bool admin = false;
@@ -165,6 +174,7 @@ class _HomeScreenState extends State<HomeScreen> {
       app.offline = m['offline'] == true || app.admin;
       app.audio.canSave = app.offline;
       app.features = Map<String, dynamic>.from(m['features'] as Map? ?? const {});
+      app.refreshRequestBadge();
       app.audio.lyrics = app.features['lyrics'] != false;
       if (!app.downloader && section == 3) section = 0;
       if (mounted) setState(() {});
@@ -224,6 +234,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // requests: what happened to one you asked for / (admins) someone asked
     _requests = app.social!.requestEvents.stream.listen((e) {
       if (!mounted) return;
+      app.refreshRequestBadge();
       final (ev, x) = e;
       final t = '“${x['title']}”';
       final msg = ev == 'request-new'
@@ -472,7 +483,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _badged(IconData icon, String label) {
     final n = label == 'Chat' ? app.social?.unread ?? 0 : 0;
-    return n > 0 ? Badge(label: Text(n > 99 ? '99+' : '$n'), child: Icon(icon)) : Icon(icon);
+    if (n > 0) return Badge(label: Text(n > 99 ? '99+' : '$n'), child: Icon(icon));
+    if (label != 'Chat') return Icon(icon);
+    // Requests live in the Chat tab: a dot when there's news there
+    return ValueListenableBuilder<int>(
+      valueListenable: app.requestBadge,
+      builder: (_, r, __) => r > 0 ? Badge(smallSize: 8, child: Icon(icon)) : Icon(icon),
+    );
   }
 
   void _go(int i) {
