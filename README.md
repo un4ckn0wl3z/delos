@@ -681,6 +681,8 @@ The left sidebar lists your libraries. **Home** shows *Continue watching* and *R
 
 `space`/`k` play/pause · `←/→` ±10s · `j/l` ±30s · `a` cycle audio · `c` cycle subs · `z/x` sub delay ±0.1s · `f` fullscreen · `m` mute · `↑/↓` volume
 
+Fold the sidebar to a rail of icons with the ◧ button at its top or `Ctrl+B` (`⌘B` on a Mac); it stays that way.
+
 #### Remembered per file
 
 For each file, the server remembers your playback position and the audio/subtitle tracks you picked. The browser and the Android app share this, so you can stop on one and continue on the other.

@@ -283,9 +283,13 @@
     function renderNav() {
       const cur = location.hash || '#/';
       const music = BR.mode === 'music';
-      const a = (href, label, on, n) => `<a href="${href}" class="${on ? 'on' : ''}">${label}${n ? `<span class="smkv-n">${n}</span>` : ''}</a>`;
+      // "🏠 Home" → icon + text, so the folded sidebar can show just the icon
+      const mini = document.body.classList.contains('smkv-side-mini');
+      const lbl = (label) => { const i = label.indexOf(' '); return i > 0 ? `<span class="smkv-ni">${label.slice(0, i)}</span><span class="smkv-nt">${label.slice(i + 1)}</span>` : label; };
+      const tip = (label, n) => mini ? ` title="${label.slice(label.indexOf(' ') + 1).replace(/<[^>]*>/g, '').replace(/"/g, '&quot;')}${n ? ' · ' + n : ''}"` : '';
+      const a = (href, label, on, n) => `<a href="${href}" class="${on ? 'on' : ''}"${tip(label, n)}>${lbl(label)}${n ? `<span class="smkv-n">${n}</span>` : ''}</a>`;
       const musicCount = BR.libs.filter((l) => l.type === 'music').reduce((t, l) => t + (l.count || 0), 0);
-      let html = `<div class="smkv-modes"><a href="#/" class="${music ? '' : 'on'}">🎬 Videos</a><a href="#/music" class="${music ? 'on' : ''}">🎵 Music</a></div>`;
+      let html = `<div class="smkv-modes">${a('#/', '🎬 Videos', !music)}${a('#/music', '🎵 Music', music)}</div>`;
       // libraries: the server's own first, then each person's (mine first) in a fold-out group
       const libGroups = (list) => {
         const me = BR.me && BR.me.user;
@@ -297,7 +301,7 @@
         for (const o of owners) {
           const mine = list.filter((l) => l.owner === o);
           const here = mine.some((l) => cur.startsWith('#/lib/' + encodeURIComponent(l.id)));
-          h += `<details class="smkv-ngrp" data-o="${esc(o)}" ${narrow || here || open[o] ? 'open' : ''}><summary>${avatarHtml(o, 20)}<b class="smkv-gn">${o === me ? 'My libraries' : esc(o)}</b><span class="smkv-n">${mine.length}</span></summary>${mine.map(link).join('')}</details>`;
+          h += `<details class="smkv-ngrp" data-o="${esc(o)}" ${narrow || here || open[o] ? 'open' : ''}><summary${mini ? ` title="${o === me ? 'My libraries' : esc(o)}"` : ''}>${avatarHtml(o, 20)}<b class="smkv-gn">${o === me ? 'My libraries' : esc(o)}</b><span class="smkv-n">${mine.length}</span></summary>${mine.map(link).join('')}</details>`;
         }
         return h;
       };
@@ -2097,7 +2101,7 @@
       const others = SO.people.filter((p) => p.name !== BR.me.user);
       const on = others.filter((p) => p.online);
       el.innerHTML = `<div class="smkv-ph">People <span class="smkv-dim2">${on.length} online</span><button id="smkv-chat-open" title="Chats">💬<i id="smkv-unread" hidden></i></button></div>` +
-        others.map((p) => `<div class="smkv-person ${p.online ? 'on' : ''}" data-u="${esc(p.name)}" title="${p.online ? 'Online' : p.lastSeen ? 'Last seen ' + new Date(p.lastSeen * 1000).toLocaleString() : 'Offline'}">
+        others.map((p) => `<div class="smkv-person ${p.online ? 'on' : ''}" data-u="${esc(p.name)}" title="${esc(p.name)} · ${p.online ? 'Online' : p.lastSeen ? 'Last seen ' + new Date(p.lastSeen * 1000).toLocaleString() : 'Offline'}">
           ${avatarHtml(p.name, 30, p.online)}<div style="min-width:0;flex:1"><b>${esc(p.name)}</b>${adminBadge(p.name)}${roleBadge(p.name)}${badgeIcons(p.badges, 3)}${p.online && p.activity && p.activity.path ? `<button class="smkv-askj" data-ask="${esc(p.name)}" title="Ask ${esc(p.name)} to ${p.activity.kind === 'music' ? 'listen' : 'watch'} together">🎉</button>` : ''}${p.activity ? `<div class="smkv-act ${p.activity.path ? 'link' : ''}" data-p="${esc(p.activity.path || '')}" data-k="${esc(p.activity.kind)}">${actLine(p.activity)}</div>` : ''}</div></div>`).join('');
       el.querySelectorAll('.smkv-person').forEach((r) => r.onclick = (e) => {
         const ask = e.target.closest('[data-ask]');
@@ -2641,6 +2645,20 @@
       navigator.mediaSession.setActionHandler('previoustrack', aPrev);
     }
 
+    // fold the sidebar to a rail of icons (remembered; Ctrl/⌘+B)
+    function setFold(on) {
+      document.body.classList.toggle('smkv-side-mini', on);
+      lsSet('sideMini', on);
+      $('#smkv-fold').title = on ? 'Unfold the sidebar (Ctrl+B)' : 'Fold the sidebar (Ctrl+B)';
+      renderNav();
+    }
+    document.body.classList.toggle('smkv-side-mini', !!lsGet('sideMini', false));
+    $('#smkv-fold').onclick = () => setFold(!document.body.classList.contains('smkv-side-mini'));
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b' && !e.target.closest('input,textarea,[contenteditable]')) {
+        e.preventDefault(); setFold(!document.body.classList.contains('smkv-side-mini'));
+      }
+    });
     $('#smkv-settings').onclick = () => openSettings((n) => { S.maxh = n.maxh || S.maxh; selH.value = String(S.maxh); });
     $('#smkv-logout').onclick = async () => {
       await fetch(new URL('api/logout', BASE), { method: 'POST', credentials: 'same-origin' });
@@ -3808,6 +3826,7 @@
       <button id="smkv-refresh" class="smkv-hb" title="Reload libraries" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>
       <button id="smkv-ann" class="smkv-hb" title="Announcements"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4a1 1 0 0 0 1 1h2l6 4V5L7 9H5a1 1 0 0 0-1 1z"/><path d="M17 9.5a3.5 3.5 0 0 1 0 5"/><path d="M19.5 7a7 7 0 0 1 0 10"/></svg><i hidden></i></button>
       <button id="smkv-settings" class="smkv-hb" title="Settings · reload libraries · log out"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>
+      <button id="smkv-fold" class="smkv-hb" title="Fold the sidebar (Ctrl+B)"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path class="smkv-fold-ar" d="M15.5 10l-2 2 2 2"/></svg></button>
       <button id="smkv-logout" class="smkv-hb" title="Log out" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M10 16l-4-4 4-4"/><path d="M6 12h10"/></svg></button>
     </header>
     <div id="smkv-whoami" hidden></div>
@@ -4444,6 +4463,35 @@ body.smkv-audio-on.smkv-music-mode #smkv-chat{bottom:72px}
 #smkv-login button{background:#2b6fd6;border-color:#2b6fd6;color:#fff;padding:9px}
 .smkv-check{font-size:13px;color:#8b95a5;display:flex;gap:6px;align-items:center}
 #smkv-login .msg{color:#ff8a8a;font-size:13px;min-height:1em}
+/* folded sidebar: a rail of icons (desktop widths only) */
+@media (min-width:821px){
+  body.smkv-side-mini #smkv-app{grid-template-columns:62px 1fr}
+  body.smkv-side-mini #smkv-side header{flex-direction:column;padding:10px 0 6px;gap:6px!important}
+  body.smkv-side-mini #smkv-side header>b,body.smkv-side-mini #smkv-side header>small,body.smkv-side-mini #smkv-side header>.smkv-sp{display:none}
+  body.smkv-side-mini #smkv-fold{order:-1}
+  body.smkv-side-mini .smkv-fold-ar{transform:rotate(180deg);transform-origin:14.5px 12px}
+  body.smkv-side-mini #smkv-whoami{justify-content:center;margin:0 8px 8px;padding:6px 0}
+  body.smkv-side-mini #smkv-whoami>:not(.smkv-pav){display:none}
+  body.smkv-side-mini #smkv-nav{padding:4px 7px;overflow-x:hidden}
+  body.smkv-side-mini #smkv-nav a{justify-content:center;padding:9px 0;position:relative;font-size:17px}
+  body.smkv-side-mini #smkv-nav .smkv-nt,body.smkv-side-mini .smkv-navh,body.smkv-side-mini #smkv-nav .smkv-gn{display:none}
+  body.smkv-side-mini #smkv-nav .smkv-n{position:absolute;top:2px;right:2px;margin:0;font-size:9.5px;line-height:1;padding:2px 4px;border-radius:8px;background:#232a35;color:#aab3c0}
+  body.smkv-side-mini .smkv-modes{flex-direction:column}
+  body.smkv-side-mini #smkv-nav .smkv-modes a{padding:7px 0}
+  body.smkv-side-mini #smkv-nav details.smkv-ngrp>summary{justify-content:center;padding:7px 0;position:relative}
+  body.smkv-side-mini #smkv-nav details.smkv-ngrp>summary::before{position:absolute;left:0}
+  body.smkv-side-mini #smkv-nav details.smkv-ngrp>summary .smkv-n{display:none}
+  body.smkv-side-mini #smkv-nav details.smkv-ngrp>a{padding-left:0}
+  body.smkv-side-mini #smkv-people{padding:6px 4px}
+  body.smkv-side-mini .smkv-ph{justify-content:center;font-size:0;padding:4px 0 6px}
+  body.smkv-side-mini .smkv-ph>:not(#smkv-chat-open){display:none}
+  body.smkv-side-mini .smkv-ph #smkv-chat-open{font-size:16px!important;margin:0}
+  body.smkv-side-mini .smkv-person{justify-content:center;padding:5px 0}
+  body.smkv-side-mini .smkv-person>div{display:none}
+  body.smkv-side-mini #smkv-mini{justify-content:center;margin:auto 6px 8px;padding:8px 0}
+  body.smkv-side-mini #smkv-mini>div,body.smkv-side-mini #smkv-mini>button{display:none}
+}
+@media (max-width:820px){#smkv-fold{display:none!important}}
 @media (max-width:820px){
   #smkv-app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr}
   #smkv-app>*{min-width:0}
