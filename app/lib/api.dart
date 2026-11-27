@@ -116,6 +116,16 @@ class Api {
       _req('POST', 'parties/ask/answer', body: {'user': user, 'accept': accept, 'pos': pos, 'playing': playing});
 
   /// Who watched / listened the most: period = week | month | year | all.
+  // Requests: ask for films / series that aren't here yet
+  Future<Map> requests() async => await _req('GET', 'requests') as Map;
+  Future<List<Map>> requestSearch(String q, String kind) async =>
+      List<Map>.from((await _req('GET', 'requests/search', q: {'q': q, 'kind': kind}) as Map)['results'] as List? ?? const []);
+  Future<Map> requestCreate(String kind, int tmdbId) async => await _req('POST', 'requests', body: {'kind': kind, 'tmdbId': tmdbId}) as Map;
+  Future<Map> requestVote(String id, bool on) async => await _req('POST', 'requests/${Uri.encodeComponent(id)}/vote', body: {'on': on}) as Map;
+  Future<void> requestDelete(String id) => _req('DELETE', 'requests/${Uri.encodeComponent(id)}');
+  Future<Map> requestStatus(String id, String status, String note) async =>
+      await _req('POST', 'requests/${Uri.encodeComponent(id)}/status', body: {'status': status, 'note': note}) as Map;
+
   /// Seek-bar previews: the sheet layout, or {pending: true} while the server makes them.
   Future<Map> trickplay(String path) async => await _req('GET', 'trickplay', q: {'path': path}) as Map;
   String trickSheetUrl(String path, int n) => _u('trickplay/sheet', {'path': path, 'n': '$n'}).toString();

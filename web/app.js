@@ -272,6 +272,7 @@
     // Music (all music libraries merged + its own player).
     BR.mode = lsGet('mode', 'videos');
     const canDownload = () => !!(BR.me && (BR.me.admin || BR.me.downloader));
+    const feat = (k) => !BR.me || !BR.me.features || BR.me.features[k] !== false; // older servers: everything on
     function modeOf(h) {
       if (/^#\/(downloads|ranking|party)/.test(h)) return BR.mode;
       if (/^#\/(music|album|artist|playlist)(\/|$)/.test(h)) return 'music';
@@ -316,6 +317,7 @@
         if (ml.length > 1 || ml.some((l) => l.owner)) html += '<div class="smkv-navh">Libraries</div>' + libGroups(ml);
       }
       html += `<div class="smkv-navsep"></div>` + a('#/party', '🎉 Party', cur.startsWith('#/party')) + a('#/ranking', '🏆 Ranking', cur.startsWith('#/ranking'));
+      if (feat('requests') && BR.me) html += a('#/requests', '🙋 Requests', cur.startsWith('#/requests'), BR.rqOpen || '');
       if (canDownload()) html += a('#/downloads', '⬇ Downloads', cur.startsWith('#/downloads'));
       $('#smkv-nav').innerHTML = html;
       $('#smkv-nav').querySelectorAll('details.smkv-ngrp').forEach((d) => d.ontoggle = () => {
@@ -374,6 +376,7 @@
         }
         if (parts[0] === 'downloads') return await downloadsView();
         if (parts[0] === 'ranking') return await rankingView(parts[1] || 'month');
+        if (parts[0] === 'requests') return await requestsView();
         if (parts[0] === 'party') return await partyView();
         if (parts[0] === 'lib') {
           const t = libType(parts[1]);
@@ -1257,7 +1260,6 @@
     }
 
     // ------------------------------------------------------------ lyrics (synced when we can get them)
-    const feat = (k) => !BR.me || !BR.me.features || BR.me.features[k] !== false; // older servers: everything on
     const LY = { path: null, data: null, lines: [], idx: -1, cache: new Map(), userScroll: 0 };
     function parseLrc(text) {
       let offset = 0; const out = [];
@@ -1355,6 +1357,123 @@
           A movie or episode counts as finished once you've watched 90 % of it. Badges come from your all-time totals:
           ${(r.tiers || []).map((t) => `${esc(t.video)} / ${esc(t.music)} at ${t.hours} h`).join(' · ')} · 📺 25 / 📼 100 finished · 📻 1000 songs · 🔥 7+ days in a row · 👑 / 🎤 the most this month.
           People who hide their activity aren't ranked.</div></details>`;
+    }
+
+    // ------------------------------------------------------------ requests (ask for films / series that aren't here)
+    const RQ = { kind: lsGet('rqKind', 'movie'), q: '', results: null, seq: 0 };
+    const rqStatus = { pending: ['⏳', 'Waiting'], approved: ['👍', 'Approved'], available: ['✅', 'Available'], declined: ['✕', 'Declined'] };
+    const ago = (ts) => {
+      const s = Date.now() / 1000 - ts;
+      if (s < 3600) return Math.max(1, Math.round(s / 60)) + ' min ago';
+      if (s < 86400) return Math.round(s / 3600) + ' h ago';
+      if (s < 86400 * 30) return Math.round(s / 86400) + ' d ago';
+      return new Date(ts * 1000).toLocaleDateString();
+    };
+    const rqPill = (st) => `<span class="smkv-rqpill ${st}">${rqStatus[st][0]} ${rqStatus[st][1]}</span>`;
+    function rqOpen(x) {
+      if (x.kind === 'tv') location.hash = `#/show/${encodeURIComponent(x.lib)}/${encodeURIComponent(x.where)}`;
+      else movieDetail(x.lib, String(x.tmdbId));
+    }
+    // admins see how many requests wait for them (in the menu)
+    function rqCount(d) {
+      if (!BR.me || !BR.me.admin || !feat('requests')) return;
+      const set = (d) => { const n = d.requests.filter((x) => x.status === 'pending').length; if (n !== BR.rqOpen) { BR.rqOpen = n; renderNav(); } };
+      if (d) set(d); else api('requests').then(set).catch(() => {});
+    }
+    async function requestsView() {
+      setToolbar('', null);
+      toolbar.querySelector('#smkv-q').style.display = 'none'; $('#smkv-rawbtn').hidden = true;
+      const d = await api('requests');
+      rqCount(d);
+      const open = d.requests.filter((x) => x.status === 'pending' || x.status === 'approved');
+      const done = d.requests.filter((x) => x.status === 'available');
+      const no = d.requests.filter((x) => x.status === 'declined');
+      const row = (x) => `<div class="smkv-rq" data-id="${esc(x.id)}">
+          <div class="smkv-rqp">${x.poster ? `<img src="${esc(x.poster)}" loading="lazy" alt="">` : '<span>🎬</span>'}</div>
+          <div class="smkv-rqb">
+            <div class="smkv-rqt"><b>${esc(x.title)}</b>${x.year ? ` <span class="smkv-dim2">${x.year}</span>` : ''} <span class="smkv-dim2">· ${x.kind === 'tv' ? 'Series' : 'Film'}</span></div>
+            <div class="smkv-rqm">${rqPill(x.status)}<span class="smkv-dim2">${x.mine ? 'You asked' : `${avatarHtml(x.by, 16)} ${esc(x.by)} asked`} · ${ago(x.created)}</span></div>
+            ${x.note ? `<div class="smkv-rqnote">💬 ${esc(x.note)}</div>` : ''}
+            ${x.overview ? `<div class="smkv-rqo smkv-dim2">${esc(x.overview)}</div>` : ''}
+          </div>
+          <div class="smkv-rqa">
+            ${x.status === 'available' ? (x.canOpen ? '<button class="smkv-primary" data-a="open">▶ Open</button>' : '') : `<button class="smkv-btn2 smkv-vote${x.voted ? ' on' : ''}" data-a="vote" ${x.mine ? 'disabled title="You asked for it"' : 'title="I want this too"'}>👍 ${x.voteCount}</button>`}
+            ${x.mine && x.status === 'pending' && !d.manage ? '<button class="smkv-btn2" data-a="del" title="Withdraw">Withdraw</button>' : ''}
+            ${d.manage ? `<select class="smkv-btn2" data-a="st" title="Change the status">${Object.entries(rqStatus).map(([k, v]) => `<option value="${k}"${k === x.status ? ' selected' : ''}>${v[0]} ${v[1]}</option>`).join('')}</select>
+              <button class="smkv-btn2" data-a="del" title="Delete the request">🗑</button>` : ''}
+          </div></div>`;
+      const sect = (title, list, empty) => `<h3 class="smkv-h">${title} <span class="smkv-dim2">${list.length || ''}</span></h3>${list.length ? `<div class="smkv-rqs">${list.map(row).join('')}</div>` : `<div class="smkv-dim2" style="padding:4px 0 10px">${empty}</div>`}`;
+      view.innerHTML = `<h2 class="smkv-pageh">🙋 Requests</h2>
+        ${d.tmdb ? `<form class="smkv-rqsearch" id="smkv-rqf">
+          <div class="smkv-seg"><button type="button" data-k="movie">🎬 Films</button><button type="button" data-k="tv">📺 Series</button></div>
+          <input class="smkv-inp" name="q" placeholder="Find a film or a series to ask for…" autocomplete="off" value="${esc(RQ.q)}">
+        </form><div id="smkv-rqres"></div>` : '<div class="smkv-dim2">Searching needs a TMDB API key — an admin can add one in the dashboard.</div>'}
+        ${sect('Open', open, 'Nothing asked for yet — search above.')}
+        ${done.length ? sect('Here now', done.slice(0, 30), '') : ''}
+        ${no.length ? `<details class="smkv-rqdecl"><summary class="smkv-h">Declined <span class="smkv-dim2">${no.length}</span></summary><div class="smkv-rqs">${no.map(row).join('')}</div></details>` : ''}`;
+      const f = $('#smkv-rqf');
+      if (f) {
+        const seg = () => f.querySelectorAll('.smkv-seg button').forEach((b) => b.classList.toggle('on', b.dataset.k === RQ.kind));
+        seg();
+        f.querySelectorAll('.smkv-seg button').forEach((b) => b.onclick = () => { RQ.kind = b.dataset.k; lsSet('rqKind', RQ.kind); seg(); rqSearch(); });
+        let t = 0;
+        f.q.oninput = () => { RQ.q = f.q.value; clearTimeout(t); t = setTimeout(rqSearch, 350); };
+        f.onsubmit = (e) => { e.preventDefault(); clearTimeout(t); rqSearch(); };
+        if (RQ.q) rqSearch(); else if (!open.length) f.q.focus();
+      }
+      view.querySelectorAll('.smkv-rq').forEach((el) => {
+        const x = d.requests.find((r) => r.id === el.dataset.id);
+        el.querySelectorAll('[data-a]').forEach((b) => {
+          const act = async () => {
+            try {
+              if (b.dataset.a === 'open') return rqOpen(x);
+              if (b.dataset.a === 'vote') await apiSend('POST', `requests/${x.id}/vote`, { on: !x.voted });
+              if (b.dataset.a === 'del') {
+                if (!confirm(x.mine && !d.manage ? `Withdraw your request for “${x.title}”?` : `Delete the request for “${x.title}”?`)) return;
+                await apiSend('DELETE', `requests/${x.id}`);
+              }
+              if (b.dataset.a === 'st') {
+                let note = x.note || '';
+                if (b.value === 'declined') { const n = prompt('Why? (shown to the people who asked — optional)', note); if (n === null) { b.value = x.status; return; } note = n; }
+                await apiSend('POST', `requests/${x.id}/status`, { status: b.value, note });
+              }
+              requestsView();
+            } catch (e) { toast(e.message); }
+          };
+          if (b.tagName === 'SELECT') b.onchange = act; else b.onclick = act;
+        });
+      });
+    }
+    async function rqSearch() {
+      const box = $('#smkv-rqres'); if (!box) return;
+      const q = RQ.q.trim(), seq = ++RQ.seq;
+      if (!q) { box.innerHTML = ''; return; }
+      box.innerHTML = '<div class="smkv-dim2" style="padding:10px 0">Searching…</div>';
+      let r;
+      try { r = await api('requests/search', { q, kind: RQ.kind }); } catch (e) { box.innerHTML = `<div class="smkv-dim2">${esc(e.message)}</div>`; return; }
+      if (seq !== RQ.seq) return;
+      if (!r.results.length) { box.innerHTML = `<div class="smkv-dim2" style="padding:10px 0">Nothing found for “${esc(q)}”. Try the original title, or add the year (e.g. “Dune 2021”).</div>`; return; }
+      box.innerHTML = `<div class="smkv-rqgrid">${r.results.map((x, i) => {
+        const rq = x.request;
+        let btn;
+        if (x.have) btn = '<button class="smkv-btn2" data-i="' + i + '" data-a="open">✓ Here — open</button>';
+        else if (rq && rq.status === 'declined') btn = `<span class="smkv-dim2">${rqPill('declined')}</span>`;
+        else if (rq) btn = rq.voted ? `${rqPill(rq.status)}<span class="smkv-dim2"> · 👍 ${rq.voteCount}</span>` : `<button class="smkv-btn2" data-i="${i}" data-a="vote">👍 Me too · ${rq.voteCount}</button>`;
+        else btn = `<button class="smkv-primary" data-i="${i}" data-a="ask">＋ Request</button>`;
+        return `<div class="smkv-rqc"><div class="smkv-poster">${x.poster ? `<img src="${esc(x.poster)}" loading="lazy" alt="">` : `<span>${esc(x.title)}</span>`}</div>
+          <div class="smkv-rqct" title="${esc(x.overview || '')}"><b>${esc(x.title)}</b> <span class="smkv-dim2">${x.year || ''}</span></div><div class="smkv-rqcb">${btn}</div></div>`;
+      }).join('')}</div>`;
+      box.querySelectorAll('button[data-i]').forEach((b) => b.onclick = async () => {
+        const x = r.results[+b.dataset.i];
+        try {
+          if (b.dataset.a === 'open') return rqOpen({ kind: x.kind, lib: x.lib, where: x.where, tmdbId: x.id });
+          b.disabled = true;
+          if (b.dataset.a === 'ask') await apiSend('POST', 'requests', { kind: x.kind, tmdbId: x.id });
+          else await apiSend('POST', `requests/${x.request.id}/vote`, { on: true });
+          toast(b.dataset.a === 'ask' ? `Asked for “${x.title}” — you'll hear when it's here` : `Added your vote for “${x.title}”`);
+          requestsView();
+        } catch (e) { b.disabled = false; toast(e.message); }
+      });
     }
 
     // ------------------------------------------------------------ downloads
@@ -2002,6 +2121,17 @@
       es.addEventListener('open', () => remoteHello(true));
       es.addEventListener('people', (e) => { SO.people = JSON.parse(e.data); drawPeople(); });
       es.addEventListener('announcement', () => loadAnnouncements());
+      es.addEventListener('request', (e) => {
+        const x = JSON.parse(e.data);
+        const msg = { available: `✅ “${x.title}” is here now`, approved: `👍 Your request for “${x.title}” was approved`, declined: `✕ Your request for “${x.title}” was declined${x.note ? ' — ' + x.note : ''}`, pending: `⏳ “${x.title}” is waiting again` }[x.status];
+        if (msg) toast(msg, 9000, x.status === 'available' && x.lib ? { label: 'Open', fn: () => rqOpen(x) } : null);
+        if (location.hash.startsWith('#/requests')) requestsView();
+      });
+      es.addEventListener('request-new', (e) => {
+        const x = JSON.parse(e.data);
+        toast(`🙋 ${x.by} asked for “${x.title}”${x.year ? ` (${x.year})` : ''}`, 8000, { label: 'See', fn: () => (location.hash = '#/requests') });
+        if (location.hash.startsWith('#/requests')) requestsView(); else rqCount();
+      });
       es.addEventListener('open', () => loadAnnouncements()); // also catches up after a reconnect
       es.addEventListener('conversation', (e) => {
         const c = JSON.parse(e.data);
@@ -3652,6 +3782,7 @@
       try {
         BR.me = await api('me');
         $('#smkv-admin').hidden = !BR.me.admin;
+        rqCount();
         $('#smkv-side header b').title = `Signed in as ${BR.me.user} · server ${BR.me.version || '?'}`;
         const ver = $('#smkv-ver'), v = BR.me.version || '';
         ver.textContent = v ? (/^\d/.test(v) ? 'v' + v : v) : '';
@@ -3828,6 +3959,31 @@ body.smkv-video-mode.smkv-audio-on #smkv-app{height:100vh}
 .smkv-np-btns button.big{background:#fff!important;color:#000!important;border-radius:50%!important;width:56px;height:56px;font-size:20px!important}
 .smkv-tracks tr.played td{opacity:.55}
 .smkv-pageh{margin:18px 0 12px}
+.smkv-rqsearch{display:flex;gap:10px;align-items:center;max-width:760px;margin-bottom:6px}
+.smkv-seg{display:flex;background:#151920;border:1px solid #2a313c;border-radius:9px;padding:3px;flex:none}
+.smkv-seg button{background:transparent;border:0;color:#aab3c0;padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit;font-size:13px;white-space:nowrap}
+.smkv-seg button.on{background:#2a313c;color:#fff}
+.smkv-rqgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px;margin:14px 0 20px}
+.smkv-rqc .smkv-poster img{width:100%;height:100%;object-fit:cover}
+.smkv-rqct{font-size:13px;margin:7px 0 6px;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.smkv-rqcb{font-size:12px}.smkv-rqcb button{width:100%;font-size:12.5px;padding:6px 8px}
+.smkv-rqs{display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
+.smkv-rq{display:flex;gap:14px;align-items:flex-start;background:#12161d;border:1px solid #1f242d;border-radius:12px;padding:10px}
+.smkv-rqp{width:64px;flex:none;aspect-ratio:2/3;border-radius:7px;overflow:hidden;background:#1a2029;display:flex;align-items:center;justify-content:center}
+.smkv-rqp img{width:100%;height:100%;object-fit:cover}
+.smkv-rqb{flex:1;min-width:0}
+.smkv-rqt{font-size:15px}
+.smkv-rqm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:5px;font-size:12.5px}
+.smkv-rqm .smkv-av{vertical-align:-3px}
+.smkv-rqo{font-size:12.5px;margin-top:6px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.smkv-rqnote{font-size:13px;margin-top:6px;color:#d6dbe3}
+.smkv-rqa{display:flex;gap:6px;align-items:center;flex:none;flex-wrap:wrap;justify-content:flex-end}
+.smkv-vote.on{border-color:#3b6fd6;background:#1b2a45;color:#cfe0ff}
+.smkv-rqpill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:20px;background:#2a313c;color:#d6dbe3;white-space:nowrap}
+.smkv-rqpill.pending{background:#3a3218;color:#ffd77a}.smkv-rqpill.approved{background:#1b2a45;color:#9cc2ff}
+.smkv-rqpill.available{background:#163222;color:#7fe0a5}.smkv-rqpill.declined{background:#3a1c1c;color:#ff9a9a}
+.smkv-rqdecl summary{cursor:pointer;list-style:none}
+@media (max-width:600px){.smkv-rq{flex-wrap:wrap}.smkv-rqa{width:100%;justify-content:flex-start}.smkv-rqsearch{flex-wrap:wrap}.smkv-rqgrid{grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}}
 .smkv-dlform{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
 .smkv-dlform input[name=source]{flex:1;min-width:260px}
 .smkv-dlform input,.smkv-dlform select{background:#151920;color:#e6e9ee;border:1px solid #2a313c;border-radius:6px;padding:7px 9px;font:inherit}

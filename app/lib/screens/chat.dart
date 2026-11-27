@@ -11,6 +11,7 @@ import 'emoji_picker.dart';
 import 'home_screen.dart';
 import 'party_screen.dart';
 import 'ranking.dart';
+import 'requests.dart';
 
 String _actLine(Map a) {
   final kind = a['kind'] == 'music' ? '♪' : '▶';
@@ -228,6 +229,14 @@ class ChatView extends StatelessWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RankingScreen(app: app))),
           ),
+          if (app.features['requests'] != false)
+            ListTile(
+              leading: const Text('🙋', style: TextStyle(fontSize: 20)),
+              title: const Text('Requests'),
+              subtitle: const Text('Ask for films and series that aren\'t here yet'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RequestsScreen(app: app))),
+            ),
           SectionTitle('Online · ${online.length}'),
           if (online.isEmpty) const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text('Nobody else is online', style: TextStyle(color: Color(0xFF8B95A5)))),
           for (final p in online)

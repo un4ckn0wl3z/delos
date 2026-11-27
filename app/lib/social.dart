@@ -44,6 +44,9 @@ class Social extends ChangeNotifier {
   /// Remote-control events (remote.dart listens): remote-cmd, remote-state, remote-devices, and 'connected'.
   final remoteEvents = StreamController<(String, Map)>.broadcast();
 
+  /// Requests: 'request' (one you asked for changed) and 'request-new' (admins: someone asked).
+  final requestEvents = StreamController<(String, Map)>.broadcast();
+
   /// A message arrived for a chat that isn't open (for a SnackBar).
   final incoming = StreamController<(String conv, Map msg)>.broadcast();
 
@@ -150,6 +153,9 @@ class Social extends ChangeNotifier {
         people = List<Map>.from(v as List);
       case 'announcement':
         loadAnnouncements();
+      case 'request' || 'request-new':
+        if (v is Map) requestEvents.add((event, Map.from(v)));
+        return;
       case 'conversation':
         final c = Map.from(v as Map);
         convs.removeWhere((x) => x['id'] == c['id']);

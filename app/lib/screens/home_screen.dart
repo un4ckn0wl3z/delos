@@ -27,6 +27,7 @@ import 'music.dart';
 import 'party_screen.dart';
 import 'player_screen.dart';
 import 'remote.dart';
+import 'requests.dart';
 import 'settings_screen.dart';
 import 'shows.dart';
 
@@ -132,7 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 0 = Videos, 1 = Music, 2 = Chat, 3 = Downloads, 4 = Offline — separate sides with their own menus
   static int section = 0;
   int _lastMedia = 0;
-  StreamSubscription? _incoming, _announce, _partyNotes, _remoteNotes;
+  StreamSubscription? _incoming, _announce, _partyNotes, _remoteNotes, _requests;
 
   /// A party opens a video: find it in the libraries and play it at the party's spot.
   Future<void> _partyOpenVideo(String path, double pos, bool playing) async {
@@ -220,6 +221,27 @@ class _HomeScreenState extends State<HomeScreen> {
         action: SnackBarAction(label: 'Open', onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(app: app, convId: conv)))),
       ));
     });
+    // requests: what happened to one you asked for / (admins) someone asked
+    _requests = app.social!.requestEvents.stream.listen((e) {
+      if (!mounted) return;
+      final (ev, x) = e;
+      final t = '“${x['title']}”';
+      final msg = ev == 'request-new'
+          ? '🙋 ${x['by']} asked for $t${x['year'] != null ? ' (${x['year']})' : ''}'
+          : switch ('${x['status']}') {
+              'available' => '✅ $t is here now',
+              'approved' => '👍 Your request for $t was approved',
+              'declined' => '✕ Your request for $t was declined${'${x['note'] ?? ''}'.isNotEmpty ? ' — ${x['note']}' : ''}',
+              _ => '⏳ $t is waiting again',
+            };
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 8),
+        content: Text(msg, maxLines: 3, overflow: TextOverflow.ellipsis),
+        action: ev == 'request' && x['status'] == 'available' && x['lib'] != null
+            ? SnackBarAction(label: 'Open', onPressed: () => openRequested(context, app, x))
+            : SnackBarAction(label: 'View', onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => RequestsScreen(app: app)))),
+      ));
+    });
     // announcements: important ones pop up, others show as a SnackBar (📣 lists them all)
     _announce = app.social!.newAnnouncements.stream.listen((a) {
       if (!mounted) return;
@@ -250,6 +272,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _incoming?.cancel();
+    _requests?.cancel();
     _announce?.cancel();
     _partyNotes?.cancel();
     _remoteNotes?.cancel();
