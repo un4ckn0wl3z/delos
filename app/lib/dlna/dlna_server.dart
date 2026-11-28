@@ -539,6 +539,26 @@ class DlnaServer {
   /// The id in /m/<id> URLs for an entry key.
   static String idOf(String key) => _fnv(key);
 
+  /// What a TV is told to play (Play on…): [e]'s URL as the TV at [peer] reaches this computer,
+  /// and its DIDL-Lite (title, poster, the res with its protocolInfo). [e] must be in [entries].
+  ({String uri, String meta, bool live}) mediaFor(DlnaEntry e, InternetAddress peer, String title) {
+    final a = _addrFor(peer) ?? InternetAddress.loopbackIPv4;
+    final base = 'http://${a.address}:$boundPort';
+    final art = e.poster.isNotEmpty && (e.poster.startsWith('http') || File(e.poster).existsSync()) ? 'a/${_fnv(e.key)}' : '';
+    final cls = e.kind == 'music'
+        ? 'object.item.audioItem.musicTrack'
+        : e.kind == 'movie'
+            ? 'object.item.videoItem.movie'
+            : 'object.item.videoItem';
+    final conv = _converts(e);
+    final ext = conv ? 'mkv' : _ext(e.remote ? Uri.parse(e.url).queryParameters['path'] ?? e.file : e.file);
+    return (
+      uri: '$base/m/${_fnv(e.key)}.$ext',
+      meta: _didl([_Node('p/i${_fnv(e.key)}', 'p', title, entry: e, cls: cls, art: art)], base),
+      live: conv,
+    );
+  }
+
   /// Files by their short id (for /m/, /a/, /s/).
   Map<String, DlnaEntry> _byId() => {for (final e in entries()) _fnv(e.key): e};
 

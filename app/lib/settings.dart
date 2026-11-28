@@ -72,6 +72,9 @@ class Settings {
   /// Where online files are converted: pc | server.
   String get dlnaConvertAt => _p.getString('dlnaConvertAt') ?? 'pc';
   set dlnaConvertAt(String v) => _p.setString('dlnaConvertAt', v);
+  /// Play on…: the TVs on this computer's network show up on the phone's device list.
+  bool get dlnaCast => _p.getBool('dlnaCast') ?? true;
+  set dlnaCast(bool v) => _p.setBool('dlnaCast', v);
   String get dlnaUuid => _p.getString('dlnaUuid') ?? '';
   set dlnaUuid(String v) => _p.setString('dlnaUuid', v);
 

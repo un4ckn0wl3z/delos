@@ -98,16 +98,65 @@ class _DlnaScreenState extends State<DlnaScreen> {
   void initState() {
     super.initState();
     h.addListener(_changed);
+    h.cast.addListener(_changed);
   }
 
   @override
   void dispose() {
     h.removeListener(_changed);
+    h.cast.removeListener(_changed);
     super.dispose();
   }
 
   void _changed() {
     if (mounted) setState(() {});
+  }
+
+  bool _searching = false;
+
+  List<Widget> _castSection(BuildContext context) {
+    final s = h.settings;
+    if (s == null) return const [];
+    final c = h.cast;
+    final muted = TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    return [
+      _head(context, 'Play on a TV from your phone'),
+      SwitchListTile(
+        secondary: const Icon(Icons.cast),
+        title: const Text('Show the TVs on your phone'),
+        subtitle: const Text('In "Play on…" and on the Remote screen of your phone (signed in as you): it starts the film on the TV '
+            'through this computer, and the phone is the remote.'),
+        value: s.dlnaCast,
+        onChanged: (v) => c.setOn(v),
+      ),
+      if (s.dlnaCast && h.running) ...[
+        ListTile(
+          leading: const Icon(Icons.tv),
+          title: Text(c.tvs.isEmpty ? 'No TV found yet' : c.tvs.map((r) => r.name).join(', ')),
+          subtitle: Text(c.tvs.isEmpty
+              ? 'Turn the TV on (some only answer with the screen on), on the same network as this computer.'
+              : '${c.tvs.length} TV${c.tvs.length > 1 ? 's' : ''} on the network'),
+          trailing: _searching
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : IconButton(
+                  tooltip: 'Search again',
+                  icon: const Icon(Icons.refresh),
+                  onPressed: () async {
+                    setState(() => _searching = true);
+                    await c.search();
+                    if (mounted) setState(() => _searching = false);
+                  },
+                ),
+        ),
+        if (c.error != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(72, 0, 16, 8),
+            child: Text(c.error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ),
+      ],
+      if (s.dlnaCast && !h.running)
+        Padding(padding: const EdgeInsets.fromLTRB(72, 0, 16, 8), child: Text('Turn the DLNA server on first.', style: muted)),
+    ];
   }
 
   Future<void> _rename() async {
@@ -408,6 +457,7 @@ class _DlnaScreenState extends State<DlnaScreen> {
             subtitle: Text(active.isEmpty ? 'None in the last minute' : active.join(', ')),
           ),
         ],
+        ..._castSection(context),
         ..._audioSection(context),
         ..._copySection(context),
         ..._onlineSection(context),

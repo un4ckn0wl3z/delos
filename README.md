@@ -40,7 +40,7 @@
 | ⬇️ | **Downloads** from http, torrents (rtorrent) and YouTube straight into a library, with duplicate checks. |
 | 📲 | **Apps for Android, iOS, Windows, macOS, Linux** (mpv inside), offline downloads and your own folders. |
 | 🎉 | **Watch party, chat & ranking** — watch together in sync, see what friends play, badges. |
-| 📱 | **Remote control** — your phone drives Delos on the PC / TV, over the internet. |
+| 📱 | **Remote control** — your phone drives Delos on the PC / TV, over the internet — and any DLNA TV at home through the desktop app (**Play on… → TV**). |
 | 📺 | **DLNA for TVs** from the desktop app, with on-the-fly audio conversion and TV copies. |
 | 🛡️ | **Multi-user** with roles, per-library access, limits, announcements and a full admin dashboard. |
 
@@ -143,13 +143,15 @@ sequenceDiagram
   participant Server as 🌱 Delos server
   participant PC as 💻 PC / TV browser
   PC->>Server: hello (every 30 s) + what's playing
+  PC->>Server: hello for each DLNA TV it sees (Play on… → TV)
   Phone->>Server: list my devices
-  Server-->>Phone: PC · idle
+  Server-->>Phone: PC · idle, 📺 LG TV via PC
   Phone->>Server: Play "Low Orbit" on PC
   Server-->>PC: remote-cmd (live event)
   PC->>PC: opens the player
   PC->>Server: state: playing 00:12
   Server-->>Phone: remote-state → seek bar, subs, audio, next episode
+  Note over Phone,PC: For a TV: the PC gets the command, tells the TV (UPnP AVTransport)<br/>to play from its DLNA server, and reports the TV's state back
 ```
 
 ### 📺 Share to a TV (DLNA)
@@ -340,6 +342,7 @@ Use your phone as the remote for Delos on a PC or TV (the app, or the web page i
 - For videos the remote also has shortcuts: subtitles (pick a track or turn them off), subtitle delay ±0.1 s (double-tap to reset), audio track, next episode, full screen, and Home (closes the player and goes back to the start page).
 - Commands go through your server, so the phone and the TV don't need to be on the same Wi-Fi. A device appears while Delos is open on it.
 - Rename a device: Remote → 🪪 (e.g. "Living room PC").
+- **TVs without Delos** (any DLNA TV — LG, Samsung, Sony, Android TV…): while the desktop app at home runs its DLNA server, the TVs on its network show up on the phone as devices too ("TV via *PC name*"). **Play on…** → the TV starts the film from the PC (passed through from the server, DTS / TrueHD converted to AC3 like when browsing), and the remote drives it: play/pause, seek, ±10/30 s, volume, stop, **next episode**, and **audio track** (the TV can't switch tracks, so it starts again from the same spot with the chosen track, converted). Watch progress is saved as usual. Turn it off in Settings → Share to TV (DLNA) → *Show the TVs on your phone*.
 
 </details>
 
@@ -356,6 +359,7 @@ The desktop apps (Windows, macOS, Linux) can act as a DLNA media server so a sma
 - The computer doesn't go to sleep while a TV is playing from it (or paused in the last few minutes) or while converting; on Modern Standby PCs (ROG Ally, most laptops) the screen stays on for that, since screen-off is sleep there. Can be turned off.
 - **Audio the TV can't play** (DTS, TrueHD/Atmos — you pick which): converted to Dolby Digital 5.1 on the fly, the picture untouched, seeking by time. Needs the converter (ffmpeg), which the page downloads for you (≈ 150 MB).
 - **Convert ahead (TV copies)**: make a converted copy of a file (or all of them, or automatically for new files) so nothing is converted while you watch and seeking works on every TV. Copies live in the app's folder; delete them any time. Online files can get a copy too (fetched from the server).
+- **Play on a TV from your phone**: the TVs this PC sees are listed on the page and on your phone's *Play on…* / Remote (see Remote control).
 - **Online library (passthrough)**: also show the server's libraries in an "Online" folder; files stream from the server through the PC (seeking works). For files that need converting, choose where: **This PC** (ffmpeg on the PC) or **Server** (the seedbox converts; uses its CPU).
 
 </details>

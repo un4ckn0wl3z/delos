@@ -9,6 +9,7 @@ import '../widgets.dart';
 import 'home_screen.dart';
 
 IconData _deviceIcon(Map d) {
+  if (d['kind'] == 'dlna') return Icons.tv;
   final p = '${d['platform']} ${d['name']}'.toLowerCase();
   if (p.contains('tv') || p.contains('webos') || p.contains('tizen')) return Icons.tv;
   if (p.contains('android') || p.contains('ios') || p.contains('iphone')) return Icons.smartphone;
@@ -18,7 +19,11 @@ IconData _deviceIcon(Map d) {
 
 String _deviceSub(Map d) {
   final s = d['state'] as Map?;
-  final kind = d['kind'] == 'web' ? 'Web' : 'App';
+  final kind = d['kind'] == 'dlna'
+      ? 'TV via ${s?['via'] ?? 'your computer'}'
+      : d['kind'] == 'web'
+          ? 'Web'
+          : 'App';
   if (s == null || s['idle'] == true || s['title'] == null) return '$kind · idle';
   return '$kind · ${s['playing'] == true ? '▶' : '⏸'} ${s['title']}';
 }
@@ -140,6 +145,29 @@ class _RemoteScreenState extends State<RemoteScreen> {
     final fs = s['fs'] == true;
     final cs = Theme.of(context).colorScheme;
     void local(String k, Object v) => rc.expect(d, {k: v}); // shows right away; the device confirms
+
+    if (d['kind'] == 'dlna') {
+      // a TV over DLNA: another audio track starts it again from here, converted; and the next episode
+      if (audios.length < 2 && next == null) return const [];
+      return [
+        const Divider(height: 24),
+        Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
+          if (audios.length > 1)
+            ActionChip(
+              avatar: const Icon(Icons.audiotrack, size: 18),
+              label: Text(aSel < audios.length ? 'Audio: ${_short('${audios[aSel]}')}' : 'Audio'),
+              onPressed: () async {
+                final i = await _pickTrack(context, 'Audio', audios, aSel);
+                if (i == null) return;
+                local('audioSel', i);
+                _send('audio', {'index': i});
+              },
+            ),
+          if (next != null)
+            FilledButton.tonalIcon(icon: const Icon(Icons.skip_next), label: Text('Next: ${_short(next, 26)}'), onPressed: () => _send('nextEp')),
+        ]),
+      ];
+    }
 
     return [
       const Divider(height: 24),
@@ -274,7 +302,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
             ),
             const SizedBox(height: 8),
             Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-              if (music) IconButton(tooltip: 'Previous', iconSize: 32, icon: const Icon(Icons.skip_previous), onPressed: () => _send('previous')),
+              if (music && d['kind'] != 'dlna') IconButton(tooltip: 'Previous', iconSize: 32, icon: const Icon(Icons.skip_previous), onPressed: () => _send('previous')),
               IconButton(tooltip: 'Back 10 s', iconSize: 32, icon: const Icon(Icons.replay_10), onPressed: () => _send('seekBy', {'by': -10})),
               IconButton.filled(
                 tooltip: playing ? 'Pause' : 'Play',
@@ -286,7 +314,7 @@ class _RemoteScreenState extends State<RemoteScreen> {
                 },
               ),
               IconButton(tooltip: 'Forward 30 s', iconSize: 32, icon: const Icon(Icons.forward_30), onPressed: () => _send('seekBy', {'by': 30})),
-              if (music) IconButton(tooltip: 'Next', iconSize: 32, icon: const Icon(Icons.skip_next), onPressed: () => _send('next')),
+              if (music && d['kind'] != 'dlna') IconButton(tooltip: 'Next', iconSize: 32, icon: const Icon(Icons.skip_next), onPressed: () => _send('next')),
             ]),
             const SizedBox(height: 8),
             Row(children: [
@@ -317,10 +345,10 @@ class _RemoteScreenState extends State<RemoteScreen> {
             const SizedBox(height: 8),
             Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
               OutlinedButton.icon(icon: const Icon(Icons.stop), label: const Text('Stop'), onPressed: () => _send('stop')),
-              OutlinedButton.icon(icon: const Icon(Icons.home_outlined), label: const Text('Home'), onPressed: () => _send('home')),
+              if (d['kind'] != 'dlna') OutlinedButton.icon(icon: const Icon(Icons.home_outlined), label: const Text('Home'), onPressed: () => _send('home')),
             ]),
           ],
-          if (idle) ...[
+          if (idle && d['kind'] != 'dlna') ...[
             const SizedBox(height: 12),
             Center(child: OutlinedButton.icon(icon: const Icon(Icons.home_outlined), label: const Text('Home'), onPressed: () => _send('home'))),
           ],
@@ -379,7 +407,8 @@ Future<void> playOnDevice(BuildContext context, AppCtx app, Item it) async {
         if (rc.devices.isEmpty)
           const Padding(
             padding: EdgeInsets.fromLTRB(20, 8, 20, 24),
-            child: Text('No other device is online. Open Delos on your PC or TV (app or web page), signed in as you.'),
+            child: Text('No other device is online. Open Delos on your PC or TV (app or web page), signed in as you. '
+                'TVs show up here while the Delos app on a computer at home runs its DLNA server (Settings → DLNA).'),
           ),
         for (final d in rc.devices)
           ListTile(

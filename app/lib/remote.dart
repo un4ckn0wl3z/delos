@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
 import 'audio.dart';
+import 'dlna/dlna_host.dart';
 import 'library.dart';
 import 'party.dart';
 import 'social.dart';
@@ -346,6 +347,9 @@ class RemoteController extends ChangeNotifier {
           _run(v).catchError((Object x) {
             if (!_disposed) notices.add('Remote: $x');
           });
+        } else if (DlnaHost.supported && DlnaHost.instance.cast.owns('${v['to']}')) {
+          // a TV this computer plays to (Play on… → TV, via this computer's DLNA server)
+          DlnaHost.instance.cast.handle(v);
         }
       case 'remote-devices':
         if (hasListeners) refresh();

@@ -9,10 +9,14 @@ import 'package:path_provider/path_provider.dart';
 
 import '../api.dart';
 import '../library.dart';
+import '../models.dart';
 import '../offline/store.dart';
 import '../settings.dart';
+import 'dlna_cast.dart';
 import 'dlna_server.dart';
 import 'keep_awake.dart';
+
+part 'cast_bridge.dart';
 
 /// Runs the DLNA server on this PC (Windows): the files saved for offline use, and optionally the
 /// server's libraries passed through this PC ("Online"). Audio a TV can't play (DTS, TrueHD) is
@@ -20,6 +24,9 @@ import 'keep_awake.dart';
 class DlnaHost extends ChangeNotifier {
   DlnaHost._();
   static final instance = DlnaHost._();
+
+  /// Play on… for the TVs on this computer's network (see cast_bridge.dart).
+  late final cast = CastBridge._(this);
 
   static bool get supported => !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 
@@ -323,6 +330,85 @@ class DlnaHost extends ChangeNotifier {
   DateTime? onlineAt;
   int get onlineCount => _online.length;
 
+  _OnlineItem _toOnline(LibraryInfo l, LibData d, Item it) {
+    final kind = l.type == 'music'
+        ? 'music'
+        : it.episode > 0 && it.show.isNotEmpty
+            ? 'episode'
+            : l.type == 'videos'
+                ? 'video'
+                : 'movie';
+    final m = d.movies[it.movieId];
+    final sh = d.shows[it.show];
+    var poster = kind == 'music' ? (it.cover.isEmpty ? '' : _api!.coverUrl(it.cover)) : (kind == 'episode' ? sh?.poster : m?.poster) ?? '';
+    if (poster.isNotEmpty && !poster.startsWith('http')) poster = '';
+    return _OnlineItem(
+      path: it.path,
+      kind: kind,
+      title: kind == 'movie' ? (m?.title.isNotEmpty == true ? m!.title : (it.title.isNotEmpty ? it.title : it.name)) : (it.title.isNotEmpty ? it.title : it.name),
+      year: m?.year ?? it.year,
+      show: sh?.title.isNotEmpty == true ? sh!.title : it.show,
+      showKey: it.show,
+      season: it.season,
+      episode: it.episode,
+      episodeTitle: it.episodeTitle,
+      artist: it.albumArtist,
+      album: it.album,
+      track: it.track,
+      duration: it.duration,
+      size: it.size,
+      poster: poster,
+      overview: m?.overview ?? '',
+      genres: m?.genres ?? const [],
+      added: it.added,
+    );
+  }
+
+  LibraryRepo? _castRepo;
+
+  /// A file of the server's libraries, for Play on… (from the Online list, else read now).
+  Future<(LibraryInfo, _OnlineItem)?> _findItem(String path) async {
+    for (final o in _online) {
+      if (o.$2.path == path) return o;
+    }
+    final api = _account;
+    if (api == null) return null;
+    final repo = _castRepo ??= LibraryRepo(api);
+    final l = (await repo.libraries()).where((x) => x.id == path.split('/').first).firstOrNull;
+    if (l == null) return null;
+    final d = await repo.lib(l);
+    final it = d.items.where((i) => i.path == path).firstOrNull;
+    return it == null ? null : (l, _toOnline(l, d, it));
+  }
+
+  /// The episode after [o] in its series: (path, label).
+  Future<(String, String)?> _nextEpisode(LibraryInfo l, _OnlineItem o) async {
+    final api = _account;
+    if (api == null || o.showKey.isEmpty) return null;
+    try {
+      final d = await (_castRepo ??= LibraryRepo(api)).lib(l);
+      Item? best;
+      for (final it in d.items) {
+        if (it.show != o.showKey) continue;
+        final after = it.season > o.season || (it.season == o.season && it.episode > o.episode);
+        if (!after) continue;
+        if (best == null || it.season < best.season || (it.season == best.season && it.episode < best.episode)) best = it;
+      }
+      if (best == null) return null;
+      final c = 'S${best.season.toString().padLeft(2, '0')}E${best.episode.toString().padLeft(2, '0')}';
+      return (best.path, best.episodeTitle.isNotEmpty ? '$c · ${best.episodeTitle}' : c);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The signed-in account's API (null when signed out).
+  Api? get _account {
+    final s = _settings;
+    if (s == null || !s.loggedIn) return null;
+    return _api ??= Api(s);
+  }
+
   Future<void> refreshOnline() async {
     final s = _settings;
     if (s == null || !s.dlnaOnline || !s.loggedIn) {
@@ -338,39 +424,7 @@ class DlnaHost extends ChangeNotifier {
       for (final l in await repo.libraries(force: true)) {
         final d = await repo.lib(l, force: true);
         for (final it in d.items) {
-          final kind = l.type == 'music'
-              ? 'music'
-              : it.episode > 0 && it.show.isNotEmpty
-                  ? 'episode'
-                  : l.type == 'videos'
-                      ? 'video'
-                      : 'movie';
-          final m = d.movies[it.movieId];
-          final sh = d.shows[it.show];
-          var poster = kind == 'music' ? (it.cover.isEmpty ? '' : _api!.coverUrl(it.cover)) : (kind == 'episode' ? sh?.poster : m?.poster) ?? '';
-          if (poster.isNotEmpty && !poster.startsWith('http')) poster = '';
-          out.add((
-            l,
-            _OnlineItem(
-              path: it.path,
-              kind: kind,
-              title: kind == 'movie' ? (m?.title.isNotEmpty == true ? m!.title : (it.title.isNotEmpty ? it.title : it.name)) : (it.title.isNotEmpty ? it.title : it.name),
-              year: m?.year ?? it.year,
-              show: sh?.title.isNotEmpty == true ? sh!.title : it.show,
-              season: it.season,
-              episode: it.episode,
-              episodeTitle: it.episodeTitle,
-              artist: it.albumArtist,
-              album: it.album,
-              track: it.track,
-              duration: it.duration,
-              size: it.size,
-              poster: poster,
-              overview: m?.overview ?? '',
-              genres: m?.genres ?? const [],
-              added: it.added,
-            )
-          ));
+          out.add((l, _toOnline(l, d, it)));
         }
       }
       _online
@@ -403,7 +457,7 @@ class DlnaHost extends ChangeNotifier {
   /// Everything the TV can browse. With [useCopies], files that have a TV copy play from it.
   List<DlnaEntry> _build({bool useCopies = true}) {
     final s = _settings;
-    final out = <DlnaEntry>[];
+    final out = <DlnaEntry>[...cast.entries.values]; // what was sent to a TV with Play on…
     DlnaEntry withCopy(DlnaEntry e) {
       if (!useCopies || !e.convert) return e;
       final c = _copies[e.key];
@@ -690,6 +744,7 @@ class DlnaHost extends ChangeNotifier {
       _onlineTimer = Timer.periodic(const Duration(minutes: 15), (_) => refreshOnline());
       refreshOnline();
       _probeAll();
+      cast.start();
     } catch (e) {
       error = '$e';
     }
@@ -698,6 +753,7 @@ class DlnaHost extends ChangeNotifier {
   }
 
   Future<void> stop() async {
+    await cast.stop();
     _tick?.cancel();
     KeepAwake.instance.set(false);
     _onlineTimer?.cancel();
@@ -744,6 +800,7 @@ class _OnlineItem {
     required this.title,
     required this.year,
     required this.show,
+    this.showKey = '',
     required this.season,
     required this.episode,
     required this.episodeTitle,
@@ -757,7 +814,7 @@ class _OnlineItem {
     required this.genres,
     required this.added,
   });
-  final String path, kind, title, show, episodeTitle, artist, album, poster, overview;
+  final String path, kind, title, show, showKey, episodeTitle, artist, album, poster, overview;
   final int year, season, episode, track, size, added;
   final double duration;
   final List<String> genres;

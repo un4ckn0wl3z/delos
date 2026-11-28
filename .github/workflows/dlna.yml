@@ -1,7 +1,7 @@
 name: dlna
 on:
   push:
-    paths: ['app/lib/dlna/**', 'app/tool/dlna_check.*', '.github/workflows/dlna.yml']
+    paths: ['app/lib/dlna/**', 'app/tool/dlna_check.*', 'app/tool/dlna_cast_check.dart', '.github/workflows/dlna.yml']
   workflow_dispatch:
 jobs:
   check:
@@ -39,7 +39,7 @@ jobs:
           fi
       - name: Analyze
         run: |
-          mkdir -p ../d/bin && cp app/lib/dlna/dlna_server.dart app/tool/dlna_check.dart ../d/bin/
+          mkdir -p ../d/bin && cp app/lib/dlna/dlna_server.dart app/lib/dlna/dlna_cast.dart app/tool/dlna_check.dart app/tool/dlna_cast_check.dart ../d/bin/
           printf 'name: d\nenvironment:\n  sdk: ^3.5.0\n' > ../d/pubspec.yaml
           cd ../d && dart pub get && dart analyze --fatal-infos bin
       - name: Serve and browse like a TV
@@ -53,3 +53,5 @@ jobs:
           if [ "$RUNNER_OS" = Windows ]; then L=$(cygpath -w "$L"); PY=python; fi
           SRVLOG="$L" $PY "$W/app/tool/dlna_check.py" || (cat ../srv.log; exit 1)
           pkill -f dlna_check.dart || true
+      - name: Play on a TV (a fake renderer)
+        run: cd ../d && dart run bin/dlna_cast_check.dart
