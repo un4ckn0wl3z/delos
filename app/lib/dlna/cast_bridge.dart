@@ -21,7 +21,8 @@ class CastBridge extends ChangeNotifier {
   String? error;
 
   bool get on => host._settings?.dlnaCast ?? true;
-  String get _pc => host.name.replaceFirst(RegExp(r'^Delos \((.*)\)$'), r'$1');
+  /// "DESKTOP-3L6R773" out of the DLNA name "Delos (DESKTOP-3L6R773)".
+  String get _pc => RegExp(r'^Delos \((.*)\)$').firstMatch(host.name)?.group(1) ?? host.name;
 
   String deviceId(DlnaRenderer r) => 'tv-${DlnaServer.idOf('${host._settings?.dlnaUuid ?? ''}|${r.id}')}';
   DlnaRenderer? _byDevice(String id) => ctl.list.where((r) => deviceId(r) == id).firstOrNull;
